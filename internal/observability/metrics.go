@@ -9,13 +9,13 @@ import (
 )
 
 type Metrics struct {
-	requestsTotal       atomic.Uint64
-	requestDurationNS   atomic.Uint64
-	inFlightRequests    atomic.Int64
-	panicsTotal         atomic.Uint64
-	rateLimitedTotal    atomic.Uint64
-	readinessChecks     atomic.Uint64
-	readinessFailures   atomic.Uint64
+	requestsTotal     atomic.Uint64
+	requestDurationNS atomic.Uint64
+	inFlightRequests  atomic.Int64
+	panicsTotal       atomic.Uint64
+	rateLimitedTotal  atomic.Uint64
+	readinessChecks   atomic.Uint64
+	readinessFailures atomic.Uint64
 }
 
 func NewMetrics() *Metrics {

@@ -101,9 +101,9 @@ func TestLoadCustomValues(t *testing.T) {
 
 func TestLoadRejectsInvalidValues(t *testing.T) {
 	tests := []struct {
-		name       string
-		envName    string
-		value      string
+		name    string
+		envName string
+		value   string
 	}{
 		{name: "invalid port", envName: "PORT", value: "abc"},
 		{name: "port out of range", envName: "PORT", value: "70000"},
