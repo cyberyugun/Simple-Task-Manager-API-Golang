@@ -3,6 +3,8 @@ package repository
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 
 	"go-simple-task-api/internal/model"
 )
@@ -33,17 +35,54 @@ func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 	))
 }
 
-func (r *PostgresTaskRepository) FindAll(userID int64) ([]model.Task, error) {
-	const query = `
+func (r *PostgresTaskRepository) FindAll(userID int64, query model.TaskQuery) (model.TaskPage, error) {
+	conditions := []string{"user_id = $1"}
+	args := []any{userID}
+
+	if query.Search != "" {
+		args = append(args, "%"+query.Search+"%")
+		conditions = append(conditions, fmt.Sprintf("(title ILIKE $%d OR description ILIKE $%d)", len(args), len(args)))
+	}
+	if query.Completed != nil {
+		args = append(args, *query.Completed)
+		conditions = append(conditions, fmt.Sprintf("completed = $%d", len(args)))
+	}
+
+	where := strings.Join(conditions, " AND ")
+	var total int64
+	if err := r.db.QueryRow("SELECT COUNT(*) FROM tasks WHERE "+where, args...).Scan(&total); err != nil {
+		return model.TaskPage{}, err
+	}
+
+	sortColumns := map[string]string{
+		"id":         "id",
+		"title":      "LOWER(title)",
+		"created_at": "created_at",
+		"updated_at": "updated_at",
+		"completed":  "completed",
+	}
+	sortColumn := sortColumns[query.Sort]
+	order := "ASC"
+	if query.Order == "desc" {
+		order = "DESC"
+	}
+
+	args = append(args, query.Limit)
+	limitPos := len(args)
+	args = append(args, (query.Page-1)*query.Limit)
+	offsetPos := len(args)
+
+	statement := fmt.Sprintf(`
 		SELECT id, user_id, title, description, completed, created_at, updated_at
 		FROM tasks
-		WHERE user_id = $1
-		ORDER BY id ASC
-	`
+		WHERE %s
+		ORDER BY %s %s, id %s
+		LIMIT $%d OFFSET $%d
+	`, where, sortColumn, order, order, limitPos, offsetPos)
 
-	rows, err := r.db.Query(query, userID)
+	rows, err := r.db.Query(statement, args...)
 	if err != nil {
-		return nil, err
+		return model.TaskPage{}, err
 	}
 	defer rows.Close()
 
@@ -51,16 +90,23 @@ func (r *PostgresTaskRepository) FindAll(userID int64) ([]model.Task, error) {
 	for rows.Next() {
 		task, err := scanTask(rows)
 		if err != nil {
-			return nil, err
+			return model.TaskPage{}, err
 		}
 		tasks = append(tasks, task)
 	}
-
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return model.TaskPage{}, err
 	}
 
-	return tasks, nil
+	return model.TaskPage{
+		Items: tasks,
+		Pagination: model.Pagination{
+			Page:       query.Page,
+			Limit:      query.Limit,
+			Total:      total,
+			TotalPages: totalPages(total, query.Limit),
+		},
+	}, nil
 }
 
 func (r *PostgresTaskRepository) FindByID(userID, id int64) (model.Task, error) {

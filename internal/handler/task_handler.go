@@ -31,7 +31,7 @@ func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		h.list(w, userID)
+		h.list(w, r, userID)
 	case http.MethodPost:
 		h.create(w, r, userID)
 	default:
@@ -85,13 +85,52 @@ func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *TaskHandler) list(w http.ResponseWriter, userID int64) {
-	tasks, err := h.service.FindAll(userID)
+func (h *TaskHandler) list(w http.ResponseWriter, r *http.Request, userID int64) {
+	query, err := parseTaskQuery(r)
 	if err != nil {
-		response.JSON(w, http.StatusInternalServerError, response.Envelope{Success: false, Message: "failed to get tasks"})
+		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 		return
 	}
-	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: tasks})
+
+	result, err := h.service.FindAll(userID, query)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: result})
+}
+
+func parseTaskQuery(r *http.Request) (model.TaskQuery, error) {
+	values := r.URL.Query()
+	query := model.TaskQuery{
+		Search: values.Get("search"),
+		Sort:   values.Get("sort"),
+		Order:  values.Get("order"),
+	}
+
+	if value := values.Get("page"); value != "" {
+		page, err := strconv.Atoi(value)
+		if err != nil || page < 1 {
+			return model.TaskQuery{}, errors.New("page must be a positive integer")
+		}
+		query.Page = page
+	}
+	if value := values.Get("limit"); value != "" {
+		limit, err := strconv.Atoi(value)
+		if err != nil || limit < 1 || limit > 100 {
+			return model.TaskQuery{}, errors.New("limit must be between 1 and 100")
+		}
+		query.Limit = limit
+	}
+	if value := values.Get("completed"); value != "" {
+		if value != "true" && value != "false" {
+			return model.TaskQuery{}, errors.New("completed must be true or false")
+		}
+		completed := value == "true"
+		query.Completed = &completed
+	}
+
+	return query, nil
 }
 
 func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID int64) {
@@ -158,7 +197,7 @@ func (h *TaskHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, repository.ErrTaskNotFound):
 		response.JSON(w, http.StatusNotFound, response.Envelope{Success: false, Message: err.Error()})
-	case errors.Is(err, service.ErrInvalidTask):
+	case errors.Is(err, service.ErrInvalidTask), errors.Is(err, service.ErrInvalidTaskQuery):
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 	default:
 		response.JSON(w, http.StatusInternalServerError, response.Envelope{Success: false, Message: "internal server error"})
