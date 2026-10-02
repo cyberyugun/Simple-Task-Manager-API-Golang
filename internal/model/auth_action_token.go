@@ -3,8 +3,8 @@ package model
 import "time"
 
 const (
-	ActionPasswordReset    = "password_reset"
-	ActionEmailVerification = "email_verification"
+	ActionPasswordReset		= "password_reset"
+	ActionEmailVerification	= "email_verification"
 )
 
 type AuthActionToken struct {
