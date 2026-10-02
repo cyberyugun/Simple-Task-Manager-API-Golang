@@ -11,25 +11,31 @@ import (
 const (
 	defaultPort                  = "8080"
 	defaultShutdownTimeout       = 10 * time.Second
+	defaultReadinessTimeout      = 2 * time.Second
 	defaultAccessTokenTTL        = 15 * time.Minute
 	defaultRefreshTokenTTL       = 30 * 24 * time.Hour
 	defaultPasswordResetTTL      = 30 * time.Minute
 	defaultEmailVerificationTTL  = 24 * time.Hour
 	defaultAuthRateLimitRequests = 20
 	defaultAuthRateLimitWindow   = time.Minute
+	defaultLogLevel              = "info"
 )
 
 type Config struct {
 	Port                  string
 	DatabaseURL           string
+	RedisURL              string
 	JWTSecret             string
+	LogLevel              string
 	ShutdownTimeout       time.Duration
+	ReadinessTimeout      time.Duration
 	AccessTokenTTL        time.Duration
 	RefreshTokenTTL       time.Duration
 	PasswordResetTTL      time.Duration
 	EmailVerificationTTL  time.Duration
 	AuthRateLimitRequests int
 	AuthRateLimitWindow   time.Duration
+	RateLimitFailOpen     bool
 	ExposeAuthTokens      bool
 }
 
@@ -37,22 +43,36 @@ func Load() (Config, error) {
 	cfg := Config{
 		Port:                  strings.TrimSpace(os.Getenv("PORT")),
 		DatabaseURL:           strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		RedisURL:              strings.TrimSpace(os.Getenv("REDIS_URL")),
 		JWTSecret:             os.Getenv("JWT_SECRET"),
+		LogLevel:              strings.TrimSpace(os.Getenv("LOG_LEVEL")),
 		ShutdownTimeout:       defaultShutdownTimeout,
+		ReadinessTimeout:      defaultReadinessTimeout,
 		AccessTokenTTL:        defaultAccessTokenTTL,
 		RefreshTokenTTL:       defaultRefreshTokenTTL,
 		PasswordResetTTL:      defaultPasswordResetTTL,
 		EmailVerificationTTL:  defaultEmailVerificationTTL,
 		AuthRateLimitRequests: defaultAuthRateLimitRequests,
 		AuthRateLimitWindow:   defaultAuthRateLimitWindow,
+		RateLimitFailOpen:     true,
 	}
 
 	if cfg.Port == "" {
 		cfg.Port = defaultPort
 	}
+	if cfg.LogLevel == "" {
+		cfg.LogLevel = defaultLogLevel
+	}
+
 	port, err := strconv.Atoi(cfg.Port)
 	if err != nil || port < 1 || port > 65535 {
 		return Config{}, fmt.Errorf("PORT must be an integer between 1 and 65535")
+	}
+
+	switch strings.ToLower(cfg.LogLevel) {
+	case "debug", "info", "warn", "warning", "error":
+	default:
+		return Config{}, fmt.Errorf("LOG_LEVEL must be debug, info, warn, or error")
 	}
 
 	if len(cfg.JWTSecret) < 32 {
@@ -60,6 +80,9 @@ func Load() (Config, error) {
 	}
 
 	if cfg.ShutdownTimeout, err = parsePositiveDuration("SHUTDOWN_TIMEOUT", cfg.ShutdownTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.ReadinessTimeout, err = parsePositiveDuration("READINESS_TIMEOUT", cfg.ReadinessTimeout); err != nil {
 		return Config{}, err
 	}
 	if cfg.AccessTokenTTL, err = parsePositiveDuration("ACCESS_TOKEN_TTL", cfg.AccessTokenTTL); err != nil {
@@ -92,12 +115,11 @@ func Load() (Config, error) {
 		cfg.AuthRateLimitRequests = limit
 	}
 
-	if value := strings.TrimSpace(os.Getenv("EXPOSE_AUTH_TOKENS")); value != "" {
-		expose, err := strconv.ParseBool(value)
-		if err != nil {
-			return Config{}, fmt.Errorf("EXPOSE_AUTH_TOKENS must be true or false")
-		}
-		cfg.ExposeAuthTokens = expose
+	if cfg.RateLimitFailOpen, err = parseBool("RATE_LIMIT_FAIL_OPEN", cfg.RateLimitFailOpen); err != nil {
+		return Config{}, err
+	}
+	if cfg.ExposeAuthTokens, err = parseBool("EXPOSE_AUTH_TOKENS", false); err != nil {
+		return Config{}, err
 	}
 
 	return cfg, nil
@@ -114,4 +136,17 @@ func parsePositiveDuration(name string, fallback time.Duration) (time.Duration, 
 		return 0, fmt.Errorf("%s must be a positive duration", name)
 	}
 	return duration, nil
+}
+
+func parseBool(name string, fallback bool) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be true or false", name)
+	}
+	return parsed, nil
 }
