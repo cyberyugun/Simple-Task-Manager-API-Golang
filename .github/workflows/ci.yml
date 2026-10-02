@@ -118,14 +118,32 @@ jobs:
           grep -q '^kind: NetworkPolicy$' /tmp/kubernetes.yaml
           grep -q '^kind: Ingress$' /tmp/kubernetes.yaml
 
-      - name: Parse manifests client-side
+      - name: Validate manifest YAML structure
         run: |
-          kubectl create --dry-run=client --validate=false \
-            -f /tmp/kubernetes.yaml -o yaml >/dev/null
-          kubectl create --dry-run=client --validate=false \
-            -f deploy/k8s/base/migration-job.yaml -o yaml >/dev/null
-          kubectl create --dry-run=client --validate=false \
-            -f deploy/k8s/base/secret.example.yaml -o yaml >/dev/null
+          ruby <<'RUBY'
+          require "yaml"
+
+          paths = [
+            "/tmp/kubernetes.yaml",
+            "deploy/k8s/base/migration-job.yaml",
+            "deploy/k8s/base/secret.example.yaml"
+          ]
+
+          paths.each do |path|
+            documents = YAML.load_stream(File.read(path)).compact
+            raise "#{path}: no YAML documents" if documents.empty?
+
+            documents.each_with_index do |document, index|
+              raise "#{path}: document #{index + 1} is not a mapping" unless document.is_a?(Hash)
+              raise "#{path}: document #{index + 1} missing apiVersion" if document["apiVersion"].to_s.empty?
+              raise "#{path}: document #{index + 1} missing kind" if document["kind"].to_s.empty?
+              metadata = document["metadata"]
+              raise "#{path}: document #{index + 1} missing metadata.name" unless metadata.is_a?(Hash) && !metadata["name"].to_s.empty?
+            end
+
+            puts "#{path}: #{documents.length} document(s) valid"
+          end
+          RUBY
 
   container:
     name: Docker Compose Smoke Test
