@@ -15,7 +15,11 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Email verification with one-time hashed action tokens
 - Active session/device listing and per-session revocation
 - Logout all devices
-- Per-IP authentication rate limiting
+- Per-IP authentication rate limiting with optional Redis-backed distributed storage
+- Structured JSON request/application logs
+- Correlation/request IDs via `X-Request-ID`
+- Liveness, dependency readiness, and Prometheus metrics endpoints
+- Versioned deployment migration runner with PostgreSQL advisory locking
 - Per-user task ownership
 - Task CRUD and complete action
 - Pagination, search, filtering, sorting, and ordering
@@ -35,13 +39,17 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 | --- | --- | --- | --- |
 | `PORT` | No | `8080` | HTTP server port, 1-65535 |
 | `DATABASE_URL` | No | empty | PostgreSQL URL; empty uses in-memory storage |
+| `REDIS_URL` | No | empty | Redis URL; when set, auth rate limits are shared across API instances |
 | `JWT_SECRET` | Yes | none | JWT signing secret, minimum 32 characters |
+| `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, or `error` |
+| `READINESS_TIMEOUT` | No | `2s` | Timeout for dependency readiness probes |
 | `ACCESS_TOKEN_TTL` | No | `15m` | Access JWT lifetime |
 | `REFRESH_TOKEN_TTL` | No | `720h` | Refresh token lifetime; must exceed access TTL |
 | `PASSWORD_RESET_TTL` | No | `30m` | Password reset token lifetime |
 | `EMAIL_VERIFICATION_TTL` | No | `24h` | Email verification token lifetime |
 | `AUTH_RATE_LIMIT_REQUESTS` | No | `20` | Auth requests allowed per client IP/window |
 | `AUTH_RATE_LIMIT_WINDOW` | No | `1m` | Authentication rate-limit window |
+| `RATE_LIMIT_FAIL_OPEN` | No | `true` | Allow auth requests if Redis fails after startup |
 | `EXPOSE_AUTH_TOKENS` | No | `false` | Show reset/verification tokens for local/testing only |
 | `SHUTDOWN_TIMEOUT` | No | `10s` | Graceful shutdown timeout |
 
@@ -86,10 +94,13 @@ Then:
 
 ```text
 API:         http://localhost:8080
-Health:      http://localhost:8080/health
+Liveness:    http://localhost:8080/health
+Readiness:   http://localhost:8080/ready
+Metrics:     http://localhost:8080/metrics
 Swagger UI:  http://localhost:8080/docs
 OpenAPI:     http://localhost:8080/openapi.yaml
 PostgreSQL:  localhost:5432
+Redis:       localhost:6379
 ```
 
 Check containers:
@@ -126,18 +137,25 @@ Build directly:
 docker build -t simple-task-manager-api .
 ```
 
-The Dockerfile uses a multi-stage build, produces a stripped Linux binary, and runs the final container as a non-root user.
+The Dockerfile uses a multi-stage build, produces stripped API and migration binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs the migration job to completion, then starts the API.
 
 ## PostgreSQL migrations
 
-For a fresh Compose database volume, migrations are applied automatically.
+For Docker Compose, the dedicated `migrate` service applies pending migrations before the API starts.
 
-For an existing database:
+Run migrations manually:
 
 ```bash
-psql "$DATABASE_URL" -f migrations/002_add_users_and_task_ownership.sql
-psql "$DATABASE_URL" -f migrations/003_task_list_indexes.sql
+DATABASE_URL="$DATABASE_URL" MIGRATIONS_DIR=migrations go run ./cmd/migrate
 ```
+
+The migration runner:
+
+- creates `schema_migrations`
+- serializes concurrent migration runs with a PostgreSQL advisory lock
+- applies migration files in lexical order
+- records each successfully committed migration
+- safely skips versions that were already applied
 
 ## API documentation
 
@@ -148,6 +166,8 @@ Swagger UI supports the Bearer JWT security scheme. Register/login, copy the ret
 | Method | Endpoint | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness health check |
+| `GET` | `/ready` | PostgreSQL/Redis readiness check |
+| `GET` | `/metrics` | Prometheus text metrics |
 | `GET` | `/docs` | Swagger UI |
 | `GET` | `/openapi.yaml` | OpenAPI specification |
 | `POST` | `/api/auth/register` | Register |
@@ -237,7 +257,11 @@ email_verified_at is set
 
 ### Authentication rate limiting
 
-Sensitive authentication routes are protected by an in-memory fixed-window rate limiter keyed by the direct client IP. The server intentionally does not trust `X-Forwarded-For` by default. If deployed behind a trusted reverse proxy, proxy-aware client IP handling should be added explicitly rather than trusting forwarded headers globally.
+Sensitive authentication routes use a fixed-window limiter keyed by the direct client IP. Without `REDIS_URL`, the limiter is process-local. With `REDIS_URL`, counters are stored atomically in Redis so limits are shared across API replicas.
+
+The server intentionally does not trust `X-Forwarded-For` by default. If deployed behind a trusted reverse proxy, proxy-aware client IP handling should be added explicitly rather than trusting forwarded headers globally.
+
+`RATE_LIMIT_FAIL_OPEN=true` keeps auth endpoints available if Redis fails after the API has started. The readiness probe still fails while Redis is unavailable, allowing an orchestrator to stop routing new traffic to the instance.
 
 ## Protected task endpoints
 
@@ -267,6 +291,20 @@ Authorization: Bearer <access_token>
 | `sort` | `created_at` | `id`, `title`, `created_at`, `updated_at`, `completed` |
 | `order` | `desc` | `asc`, `desc` |
 
+## Observability and operations
+
+Every request receives an `X-Request-ID`. A valid incoming ID is preserved; otherwise the API generates a random 128-bit ID. Structured JSON request logs include the request ID, method, path, status, response bytes, duration, and direct remote IP.
+
+```text
+GET /health   -> process liveness only
+GET /ready    -> PostgreSQL + Redis readiness when configured
+GET /metrics  -> Prometheus text exposition
+```
+
+The metrics endpoint currently exports aggregate request count/duration, in-flight requests, recovered panics, rate-limit rejections, readiness checks, and readiness failures. It deliberately avoids raw URL-path labels to prevent high-cardinality metrics from task IDs.
+
+Panic recovery is centralized in HTTP middleware. Recovered panics return HTTP 500, increment the panic metric, and emit a structured error log with the request ID and stack trace.
+
 ## Tests
 
 Unit tests:
@@ -295,20 +333,19 @@ PostgreSQL Integration Test
 Docker Compose Smoke Test
 ```
 
-It validates formatting, `go vet`, race-enabled unit tests, compilation, real PostgreSQL repository behavior, refresh-token rotation/replay protection, one-time reset/verification tokens, session revocation, Docker image construction, container health, OpenAPI, and Swagger UI.
+It validates formatting, `go vet`, race-enabled unit tests, compilation, migration-runner idempotency, real PostgreSQL repository behavior, refresh-token rotation/replay protection, one-time reset/verification tokens, session revocation, Redis-backed rate limiting, readiness/metrics endpoints, structured request logs, Docker image construction, OpenAPI, and Swagger UI.
 
 ## Graceful shutdown
 
 The API handles `SIGINT` and `SIGTERM`. On shutdown it stops accepting new requests and gives active requests up to `SHUTDOWN_TIMEOUT` to finish before forcing the server closed.
 
 
-## Auth migration
+## Existing databases
 
-Existing PostgreSQL databases must also apply:
+Use the migration runner for existing databases instead of applying individual files manually:
 
 ```bash
-psql "$DATABASE_URL" -f migrations/004_refresh_tokens.sql
-psql "$DATABASE_URL" -f migrations/005_account_security.sql
+DATABASE_URL="$DATABASE_URL" MIGRATIONS_DIR=migrations go run ./cmd/migrate
 ```
 
-Fresh Docker Compose volumes apply migrations 004 and 005 automatically.
+Docker Compose uses the same runner automatically before starting the API.

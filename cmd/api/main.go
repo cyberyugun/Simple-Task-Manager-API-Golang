@@ -2,39 +2,57 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"go-simple-task-api/internal/apidocs"
 	"go-simple-task-api/internal/auth"
+	"go-simple-task-api/internal/cache"
 	"go-simple-task-api/internal/config"
 	appdb "go-simple-task-api/internal/database"
 	"go-simple-task-api/internal/handler"
 	"go-simple-task-api/internal/middleware"
+	"go-simple-task-api/internal/observability"
+	"go-simple-task-api/internal/readiness"
 	"go-simple-task-api/internal/repository"
 	"go-simple-task-api/internal/service"
 	"go-simple-task-api/pkg/response"
 )
 
 func main() {
+	bootstrapLogger := observability.NewJSONLogger(os.Getenv("LOG_LEVEL"))
+	slog.SetDefault(bootstrapLogger)
+
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		bootstrapLogger.Error("configuration_error", "error", err)
+		os.Exit(1)
 	}
 
+	logger := observability.NewJSONLogger(cfg.LogLevel)
+	slog.SetDefault(logger)
+	metrics := observability.NewMetrics()
+
+	var db *sql.DB
+	var redisClient *redis.Client
 	var taskRepo repository.TaskRepository
 	var userRepo repository.UserRepository
 	var refreshRepo repository.RefreshTokenRepository
 	var actionRepo repository.AuthActionTokenRepository
 
 	if cfg.DatabaseURL != "" {
-		db, err := appdb.OpenPostgres(cfg.DatabaseURL)
+		db, err = appdb.OpenPostgres(cfg.DatabaseURL)
 		if err != nil {
-			log.Fatalf("failed to connect to PostgreSQL: %v", err)
+			logger.Error("postgres_connection_failed", "error", err)
+			os.Exit(1)
 		}
 		defer db.Close()
 
@@ -42,13 +60,23 @@ func main() {
 		userRepo = repository.NewPostgresUserRepository(db)
 		refreshRepo = repository.NewPostgresRefreshTokenRepository(db)
 		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
-		log.Println("storage: PostgreSQL")
+		logger.Info("storage_configured", "backend", "postgresql")
 	} else {
 		taskRepo = repository.NewInMemoryTaskRepository()
 		userRepo = repository.NewInMemoryUserRepository()
 		refreshRepo = repository.NewInMemoryRefreshTokenRepository()
 		actionRepo = repository.NewInMemoryAuthActionTokenRepository()
-		log.Println("storage: in-memory (set DATABASE_URL to use PostgreSQL)")
+		logger.Warn("storage_configured", "backend", "in-memory")
+	}
+
+	if cfg.RedisURL != "" {
+		redisClient, err = cache.OpenRedis(cfg.RedisURL)
+		if err != nil {
+			logger.Error("redis_connection_failed", "error", err)
+			os.Exit(1)
+		}
+		defer redisClient.Close()
+		logger.Info("redis_configured")
 	}
 
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
@@ -66,7 +94,26 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
 	authMiddleware := middleware.Auth(tokenManager)
-	authRateLimiter := middleware.NewRateLimiter(cfg.AuthRateLimitRequests, cfg.AuthRateLimitWindow)
+
+	var authRateLimiter middleware.AuthRateLimiter
+	if redisClient != nil {
+		authRateLimiter = middleware.NewRedisRateLimiter(
+			redisClient,
+			cfg.AuthRateLimitRequests,
+			cfg.AuthRateLimitWindow,
+			cfg.RateLimitFailOpen,
+			logger,
+			metrics,
+		)
+		logger.Info("rate_limiter_configured", "backend", "redis")
+	} else {
+		authRateLimiter = middleware.NewObservedRateLimiter(
+			cfg.AuthRateLimitRequests,
+			cfg.AuthRateLimitWindow,
+			metrics,
+		)
+		logger.Info("rate_limiter_configured", "backend", "in-memory")
+	}
 
 	rateLimited := func(h http.HandlerFunc) http.Handler {
 		return authRateLimiter.Handler(http.HandlerFunc(h))
@@ -78,6 +125,8 @@ func main() {
 		return authMiddleware(authRateLimiter.Handler(http.HandlerFunc(h)))
 	}
 
+	ready := readiness.New(db, redisClient, cfg.ReadinessTimeout, metrics)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -86,6 +135,8 @@ func main() {
 		}
 		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "API is healthy"})
 	})
+	mux.HandleFunc("/ready", ready.Handler)
+	mux.Handle("/metrics", metrics.Handler())
 	apidocs.Register(mux)
 
 	mux.Handle("/api/auth/register", rateLimited(authHandler.Register))
@@ -105,9 +156,14 @@ func main() {
 	mux.Handle("/api/tasks", protected(taskHandler.Tasks))
 	mux.Handle("/api/tasks/", protected(taskHandler.TaskByID))
 
+	var root http.Handler = mux
+	root = middleware.Recover(logger, metrics, root)
+	root = middleware.AccessLog(logger, metrics, root)
+	root = middleware.RequestID(root)
+
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           mux,
+		Handler:           root,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -119,30 +175,31 @@ func main() {
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("server running on http://localhost:%s", cfg.Port)
+		logger.Info("server_started", "address", server.Addr)
 		serverErrors <- server.ListenAndServe()
 	}()
 
 	select {
 	case err := <-serverErrors:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server failed: %v", err)
+			logger.Error("server_failed", "error", err)
+			os.Exit(1)
 		}
 	case <-ctx.Done():
-		log.Println("shutdown signal received")
+		logger.Info("shutdown_signal_received")
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("graceful shutdown failed: %v; forcing close", err)
+			logger.Error("graceful_shutdown_failed", "error", err)
 			_ = server.Close()
 		}
 
 		if err := <-serverErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("server stopped with error: %v", err)
+			logger.Error("server_stop_error", "error", err)
 		}
 	}
 
-	log.Println("server stopped")
+	logger.Info("server_stopped")
 }

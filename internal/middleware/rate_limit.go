@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"go-simple-task-api/internal/observability"
 	"go-simple-task-api/pkg/response"
 )
 
@@ -19,19 +20,32 @@ type RateLimiter struct {
 	limit   int
 	window  time.Duration
 	clients map[string]rateLimitEntry
+	metrics *observability.Metrics
 }
 
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
+	return newRateLimiter(limit, window, nil)
+}
+
+func NewObservedRateLimiter(limit int, window time.Duration, metrics *observability.Metrics) *RateLimiter {
+	return newRateLimiter(limit, window, metrics)
+}
+
+func newRateLimiter(limit int, window time.Duration, metrics *observability.Metrics) *RateLimiter {
 	return &RateLimiter{
 		limit:   limit,
 		window:  window,
 		clients: make(map[string]rateLimitEntry),
+		metrics: metrics,
 	}
 }
 
 func (l *RateLimiter) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !l.Allow(clientIP(r), time.Now()) {
+			if l.metrics != nil {
+				l.metrics.IncRateLimited()
+			}
 			response.JSON(w, http.StatusTooManyRequests, response.Envelope{
 				Success: false,
 				Message: "too many requests",

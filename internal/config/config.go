@@ -77,6 +77,9 @@ func Load() (Config, error) {
 	if cfg.AuthRateLimitWindow, err = parsePositiveDuration("AUTH_RATE_LIMIT_WINDOW", cfg.AuthRateLimitWindow); err != nil {
 		return Config{}, err
 	}
+	if cfg.AuthRateLimitWindow < time.Millisecond {
+		return Config{}, fmt.Errorf("AUTH_RATE_LIMIT_WINDOW must be at least 1ms")
+	}
 	if cfg.RefreshTokenTTL <= cfg.AccessTokenTTL {
 		return Config{}, fmt.Errorf("REFRESH_TOKEN_TTL must be greater than ACCESS_TOKEN_TTL")
 	}
