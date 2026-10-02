@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"go-simple-task-api/internal/apidocs"
 	"go-simple-task-api/internal/auth"
 	appdb "go-simple-task-api/internal/database"
 	"go-simple-task-api/internal/handler"
@@ -56,6 +57,7 @@ func main() {
 		}
 		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "API is healthy"})
 	})
+	apidocs.Register(mux)
 	mux.HandleFunc("/api/auth/register", authHandler.Register)
 	mux.HandleFunc("/api/auth/login", authHandler.Login)
 	mux.Handle("/api/tasks", authMiddleware(http.HandlerFunc(taskHandler.Tasks)))
