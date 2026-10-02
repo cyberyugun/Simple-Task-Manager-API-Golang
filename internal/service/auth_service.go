@@ -20,10 +20,10 @@ var (
 )
 
 type AuthService struct {
-	users       repository.UserRepository
-	refreshes   repository.RefreshTokenRepository
-	tokens      *auth.TokenManager
-	accessTTL   time.Duration
+	users      repository.UserRepository
+	refreshes  repository.RefreshTokenRepository
+	tokens     *auth.TokenManager
+	accessTTL  time.Duration
 	refreshTTL time.Duration
 }
 
