@@ -23,6 +23,14 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Kubernetes base + production Kustomize manifests
 - Rolling deployment, startup/liveness/readiness probes, HPA, PDB, and NetworkPolicy
 - GHCR image publishing and production deployment workflow
+- CycloneDX SBOM generation for CI and release images
+- Trivy source, secret, IaC, and container vulnerability scanning
+- Gitleaks secret scanning and pull-request dependency review
+- Keyless Cosign image signing with GitHub OIDC
+- GitHub provenance + SBOM attestations stored with release images
+- Immutable SHA-pinned GitHub Actions with CI enforcement
+- Dependabot updates for Go, Actions, and Docker
+- External Secrets Operator and cert-manager production examples
 - Build/version endpoint with commit metadata
 - Per-user task ownership
 - Task CRUD and complete action
@@ -146,7 +154,7 @@ docker build \
   -t simple-task-manager-api .
 ```
 
-The Dockerfile uses a multi-stage build, produces stripped API and migration binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs the migration job to completion, then starts the API.
+The Dockerfile uses Go 1.26.8 in a multi-stage build, produces stripped API and migration binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs the migration job to completion, then starts the API.
 
 ## PostgreSQL migrations
 
@@ -333,6 +341,9 @@ deploy/k8s/
 │   ├── migration-job.yaml
 │   ├── secret.example.yaml
 │   └── kustomization.yaml
+├── optional/
+│   ├── external-secret.example.yaml
+│   └── cert-manager-clusterissuer.example.yaml
 └── overlays/
     └── production/
         ├── ingress.yaml
@@ -354,7 +365,7 @@ kubectl -n task-manager create secret generic task-api-secrets \
   --from-literal=JWT_SECRET='replace-with-a-random-secret-at-least-32-characters'
 ```
 
-The production Ingress expects a TLS secret named `task-api-tls`:
+The production Ingress is annotated for cert-manager with the `letsencrypt-prod` ClusterIssuer and expects the resulting TLS secret to be named `task-api-tls`. If cert-manager is not installed, create the TLS secret manually:
 
 ```bash
 kubectl -n task-manager create secret tls task-api-tls \
@@ -372,6 +383,8 @@ kubectl -n task-manager create secret docker-registry ghcr-pull-secret \
 ```
 
 If the GHCR image is public, Kubernetes can pull it anonymously; a missing pull secret may still produce a warning event, so removing the `imagePullSecrets` entry is cleaner for a fully public deployment.
+
+For production secret management, `deploy/k8s/optional/external-secret.example.yaml` shows an External Secrets Operator `ExternalSecret` that materializes the existing `task-api-secrets` Secret from a provider-backed `ClusterSecretStore`. The optional cert-manager issuer example uses `cert-manager.io/v1`.
 
 Render the production manifests without applying them:
 
@@ -402,7 +415,102 @@ Variable:
   KUBE_INGRESS_HOST   production DNS host, for example api.example.com
 ```
 
-The workflow verifies the deployed revision by port-forwarding the Service and checking that `GET /version` returns the exact `GITHUB_SHA` embedded in the image.
+The workflow builds the release, blocks HIGH/CRITICAL image vulnerabilities with available fixes, generates a CycloneDX SBOM, creates GitHub build-provenance and SBOM attestations, signs the image keylessly with Cosign using GitHub OIDC, verifies that signature, and deploys the immutable image digest. Before migration and rollout, the deploy job verifies the signature again. Finally, it port-forwards the Service and checks that `GET /version` returns the exact `GITHUB_SHA` embedded in the image.
+
+`KUBE_CONFIG_B64` remains the provider-neutral cluster credential fallback. For a managed Kubernetes provider, replace only the **Configure cluster access** step with that provider's GitHub OIDC login action so the production environment no longer needs a long-lived kubeconfig secret.
+
+## Security and software supply chain
+
+Security automation lives in `.github/workflows/security.yml` and runs on pushes to `main`, pull requests, manual dispatches, and a weekly schedule.
+
+```text
+Source
+  |
+  +-- Gitleaks secret scan
+  +-- Dependency Review on PRs
+  +-- Trivy dependency + secret scan
+  +-- Trivy Kubernetes/Docker misconfiguration scan
+  |
+  v
+Container build
+  |
+  +-- Trivy HIGH/CRITICAL image scan
+  +-- CycloneDX SBOM
+  |
+  v
+Release
+  |
+  +-- GitHub build provenance attestation
+  +-- GitHub SBOM attestation
+  +-- Cosign keyless OIDC signature
+  +-- Cosign verification
+  |
+  v
+Kubernetes deployment by sha256 digest
+```
+
+All external GitHub Actions are pinned to full 40-character commit SHAs. CI scans every workflow and fails if a future `uses:` entry is added with a mutable tag such as `@v4`. Version comments are retained beside the SHA so Dependabot can keep those pins current.
+
+Dependabot is configured for weekly Go module, GitHub Actions, and Docker base-image updates. Security reporting guidance is in `SECURITY.md`, and `.github/CODEOWNERS` marks workflows, Kubernetes manifests, dependency files, and the Dockerfile as security-sensitive.
+
+A signed release image can be verified with Cosign using the GitHub Actions identity:
+
+```bash
+cosign verify ghcr.io/cyberyugun/simple-task-manager-api-golang@sha256:<digest> \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/cyberyugun/Simple-Task-Manager-API-Golang/.github/workflows/deploy.yml@refs/(heads/main|tags/v.*)
+`GET /version` reports the image build identity:
+
+```json
+{
+  "success": true,
+  "data": {
+    "version": "v1.2.0",
+    "commit": "<git-sha>",
+    "build_time": "2026-10-03T00:00:00Z",
+    "go_version": "go1.26.x"
+  }
+}
+```
+
+The production image sets these values through Docker build arguments and Go linker flags, so a running pod can be tied back to an immutable source commit.
+
+## Tests
+
+Unit tests:
+
+```bash
+go test ./...
+```
+
+PostgreSQL integration tests:
+
+```bash
+TEST_DATABASE_URL="postgres://task_user:task_password@localhost:5432/task_manager_test?sslmode=disable"   go test -tags=integration ./internal/repository -run Integration -v
+```
+
+## CI pipeline
+
+The main CI workflow validates unit/build quality, immutable GitHub Action pins, PostgreSQL behavior, Kubernetes manifests, optional security CRD examples, and the full Docker Compose stack. A separate Security workflow performs Gitleaks, Dependency Review, Trivy source/IaC/image scans, and SBOM generation. Kubernetes validation renders the production Kustomize overlay and parses the rendered resources plus migration and Secret templates client-side.
+
+It validates formatting, `go vet`, race-enabled unit tests, both binaries, migration-runner idempotency, real PostgreSQL repository behavior, refresh-token rotation/replay protection, one-time reset/verification tokens, session revocation, Redis-backed rate limiting, readiness/metrics/version endpoints, structured request logs, Kubernetes manifests, Docker image construction, OpenAPI, and Swagger UI.
+
+## Graceful shutdown
+
+The API handles `SIGINT` and `SIGTERM`. On shutdown it stops accepting new requests and gives active requests up to `SHUTDOWN_TIMEOUT` to finish before forcing the server closed.
+
+
+## Existing databases
+
+Use the migration runner for existing databases instead of applying individual files manually:
+
+```bash
+DATABASE_URL="$DATABASE_URL" MIGRATIONS_DIR=migrations go run ./cmd/migrate
+```
+
+Docker Compose uses the same runner automatically before starting the API.
+
+```
 
 ## Build metadata
 
@@ -415,7 +523,7 @@ The workflow verifies the deployed revision by port-forwarding the Service and c
     "version": "v1.2.0",
     "commit": "<git-sha>",
     "build_time": "2026-10-03T00:00:00Z",
-    "go_version": "go1.23.x"
+    "go_version": "go1.26.x"
   }
 }
 ```

@@ -1,8 +1,9 @@
 .git
 .github
-.env
+deploy
 coverage.out
-*.out
-*.exe
-bin/
-tmp/
+*.log
+.env
+.env.*
+README.md
+SECURITY.md

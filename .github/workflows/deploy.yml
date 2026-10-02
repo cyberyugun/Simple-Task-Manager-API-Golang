@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: production-deploy
@@ -20,19 +23,33 @@ env:
 
 jobs:
   build:
-    name: Build and Push Image
+    name: Build, Scan, Sign and Attest
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    outputs:
+      image-digest: ${{ steps.push.outputs.digest }}
 
     steps:
+      - name: Restrict production refs
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/main|refs/tags/v*) ;;
+            *)
+              echo "::error::Production deployment is allowed only from main or version tags."
+              exit 1
+              ;;
+          esac
+
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -43,7 +60,8 @@ jobs:
         run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        id: push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           push: true
@@ -57,19 +75,94 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Scan published image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REPOSITORY }}@${{ steps.push.outputs.digest }}
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Generate CycloneDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REPOSITORY }}@${{ steps.push.outputs.digest }}
+          format: cyclonedx
+          output: sbom.cdx.json
+          exit-code: "0"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-sbom-${{ github.sha }}
+          path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Keyless sign image
+        run: cosign sign --yes "$IMAGE_REPOSITORY@${{ steps.push.outputs.digest }}"
+
+      - name: Verify image signature
+        run: |
+          cosign verify "$IMAGE_REPOSITORY@${{ steps.push.outputs.digest }}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/deploy.yml@refs/(heads/main|tags/v.*)$"
+
   deploy:
     name: Deploy Production
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     needs: build
     environment: production
+    env:
+      IMAGE_DIGEST: ${{ needs.build.outputs.image-digest }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify signed release before deployment
+        run: |
+          test -n "$IMAGE_DIGEST"
+          cosign verify "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/deploy.yml@refs/(heads/main|tags/v.*)$"
 
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
 
       - name: Configure cluster access
         env:
@@ -77,6 +170,7 @@ jobs:
         run: |
           if [ -z "$KUBE_CONFIG_B64" ]; then
             echo "::error::Production environment secret KUBE_CONFIG_B64 is required."
+            echo "::notice::For managed Kubernetes, replace this step with the provider's GitHub OIDC login action to remove long-lived kubeconfig credentials."
             exit 1
           fi
           mkdir -p "$HOME/.kube"
@@ -93,17 +187,20 @@ jobs:
             echo "::warning::ghcr-pull-secret is missing. This is okay only when the GHCR package is public."
           fi
 
-      - name: Run database migration
+      - name: Run database migration from signed digest
         run: |
           kubectl -n "$KUBE_NAMESPACE" delete job task-api-migrate --ignore-not-found --wait=true
-          sed "s|image: task-api:latest|image: $IMAGE_REPOSITORY:$GITHUB_SHA|"             deploy/k8s/base/migration-job.yaml | kubectl apply -f -
+          sed "s|image: task-api:latest|image: $IMAGE_REPOSITORY@$IMAGE_DIGEST|" \
+            deploy/k8s/base/migration-job.yaml | kubectl apply -f -
 
-          if ! kubectl -n "$KUBE_NAMESPACE" wait             --for=condition=complete job/task-api-migrate             --timeout=5m; then
+          if ! kubectl -n "$KUBE_NAMESPACE" wait \
+            --for=condition=complete job/task-api-migrate \
+            --timeout=5m; then
             kubectl -n "$KUBE_NAMESPACE" logs job/task-api-migrate --all-containers=true || true
             exit 1
           fi
 
-      - name: Deploy application
+      - name: Deploy application by immutable digest
         env:
           INGRESS_HOST: ${{ vars.KUBE_INGRESS_HOST }}
         run: |
@@ -112,8 +209,10 @@ jobs:
             exit 1
           fi
 
-          sed -i "s/task-api.example.com/$INGRESS_HOST/g"             deploy/k8s/overlays/production/ingress.yaml
-          sed -i "s/newTag: .*/newTag: $GITHUB_SHA/"             deploy/k8s/overlays/production/kustomization.yaml
+          sed -i "s/task-api.example.com/$INGRESS_HOST/g" \
+            deploy/k8s/overlays/production/ingress.yaml
+          sed -i "s/newTag: latest/digest: $IMAGE_DIGEST/" \
+            deploy/k8s/overlays/production/kustomization.yaml
 
           kubectl apply -k deploy/k8s/overlays/production
           kubectl -n "$KUBE_NAMESPACE" rollout status deployment/task-api --timeout=5m

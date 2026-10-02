@@ -1,0 +1,7 @@
+# Security-sensitive automation and deployment configuration.
+/.github/workflows/ @cyberyugun
+/deploy/k8s/ @cyberyugun
+/Dockerfile @cyberyugun
+/go.mod @cyberyugun
+/go.sum @cyberyugun
+/SECURITY.md @cyberyugun
