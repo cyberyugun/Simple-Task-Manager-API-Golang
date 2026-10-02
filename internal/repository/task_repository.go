@@ -11,10 +11,10 @@ var ErrTaskNotFound = errors.New("task not found")
 
 type TaskRepository interface {
 	Create(task model.Task) (model.Task, error)
-	FindAll() ([]model.Task, error)
-	FindByID(id int64) (model.Task, error)
+	FindAll(userID int64) ([]model.Task, error)
+	FindByID(userID, id int64) (model.Task, error)
 	Update(task model.Task) (model.Task, error)
-	Delete(id int64) error
+	Delete(userID, id int64) error
 }
 
 type InMemoryTaskRepository struct {
@@ -40,23 +40,25 @@ func (r *InMemoryTaskRepository) Create(task model.Task) (model.Task, error) {
 	return task, nil
 }
 
-func (r *InMemoryTaskRepository) FindAll() ([]model.Task, error) {
+func (r *InMemoryTaskRepository) FindAll(userID int64) ([]model.Task, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	tasks := make([]model.Task, 0, len(r.tasks))
+	tasks := make([]model.Task, 0)
 	for _, task := range r.tasks {
-		tasks = append(tasks, task)
+		if task.UserID == userID {
+			tasks = append(tasks, task)
+		}
 	}
 	return tasks, nil
 }
 
-func (r *InMemoryTaskRepository) FindByID(id int64) (model.Task, error) {
+func (r *InMemoryTaskRepository) FindByID(userID, id int64) (model.Task, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	task, ok := r.tasks[id]
-	if !ok {
+	if !ok || task.UserID != userID {
 		return model.Task{}, ErrTaskNotFound
 	}
 	return task, nil
@@ -66,7 +68,8 @@ func (r *InMemoryTaskRepository) Update(task model.Task) (model.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.tasks[task.ID]; !ok {
+	existing, ok := r.tasks[task.ID]
+	if !ok || existing.UserID != task.UserID {
 		return model.Task{}, ErrTaskNotFound
 	}
 
@@ -74,11 +77,12 @@ func (r *InMemoryTaskRepository) Update(task model.Task) (model.Task, error) {
 	return task, nil
 }
 
-func (r *InMemoryTaskRepository) Delete(id int64) error {
+func (r *InMemoryTaskRepository) Delete(userID, id int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.tasks[id]; !ok {
+	task, ok := r.tasks[id]
+	if !ok || task.UserID != userID {
 		return ErrTaskNotFound
 	}
 

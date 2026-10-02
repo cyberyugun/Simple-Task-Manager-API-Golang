@@ -17,13 +17,14 @@ func NewPostgresTaskRepository(db *sql.DB) *PostgresTaskRepository {
 
 func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 	const query = `
-		INSERT INTO tasks (title, description, completed, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, title, description, completed, created_at, updated_at
+		INSERT INTO tasks (user_id, title, description, completed, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, user_id, title, description, completed, created_at, updated_at
 	`
 
 	return scanTask(r.db.QueryRow(
 		query,
+		task.UserID,
 		task.Title,
 		task.Description,
 		task.Completed,
@@ -32,14 +33,15 @@ func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 	))
 }
 
-func (r *PostgresTaskRepository) FindAll() ([]model.Task, error) {
+func (r *PostgresTaskRepository) FindAll(userID int64) ([]model.Task, error) {
 	const query = `
-		SELECT id, title, description, completed, created_at, updated_at
+		SELECT id, user_id, title, description, completed, created_at, updated_at
 		FROM tasks
+		WHERE user_id = $1
 		ORDER BY id ASC
 	`
 
-	rows, err := r.db.Query(query)
+	rows, err := r.db.Query(query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -61,14 +63,14 @@ func (r *PostgresTaskRepository) FindAll() ([]model.Task, error) {
 	return tasks, nil
 }
 
-func (r *PostgresTaskRepository) FindByID(id int64) (model.Task, error) {
+func (r *PostgresTaskRepository) FindByID(userID, id int64) (model.Task, error) {
 	const query = `
-		SELECT id, title, description, completed, created_at, updated_at
+		SELECT id, user_id, title, description, completed, created_at, updated_at
 		FROM tasks
-		WHERE id = $1
+		WHERE id = $1 AND user_id = $2
 	`
 
-	task, err := scanTask(r.db.QueryRow(query, id))
+	task, err := scanTask(r.db.QueryRow(query, id, userID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Task{}, ErrTaskNotFound
 	}
@@ -78,17 +80,18 @@ func (r *PostgresTaskRepository) FindByID(id int64) (model.Task, error) {
 func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 	const query = `
 		UPDATE tasks
-		SET title = $2,
-			description = $3,
-			completed = $4,
-			updated_at = $5
-		WHERE id = $1
-		RETURNING id, title, description, completed, created_at, updated_at
+		SET title = $3,
+			description = $4,
+			completed = $5,
+			updated_at = $6
+		WHERE id = $1 AND user_id = $2
+		RETURNING id, user_id, title, description, completed, created_at, updated_at
 	`
 
 	updated, err := scanTask(r.db.QueryRow(
 		query,
 		task.ID,
+		task.UserID,
 		task.Title,
 		task.Description,
 		task.Completed,
@@ -100,8 +103,8 @@ func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 	return updated, err
 }
 
-func (r *PostgresTaskRepository) Delete(id int64) error {
-	result, err := r.db.Exec(`DELETE FROM tasks WHERE id = $1`, id)
+func (r *PostgresTaskRepository) Delete(userID, id int64) error {
+	result, err := r.db.Exec(`DELETE FROM tasks WHERE id = $1 AND user_id = $2`, id, userID)
 	if err != nil {
 		return err
 	}
@@ -125,6 +128,7 @@ func scanTask(scanner taskScanner) (model.Task, error) {
 	var task model.Task
 	err := scanner.Scan(
 		&task.ID,
+		&task.UserID,
 		&task.Title,
 		&task.Description,
 		&task.Completed,

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go-simple-task-api/internal/middleware"
 	"go-simple-task-api/internal/model"
 	"go-simple-task-api/internal/repository"
 	"go-simple-task-api/internal/service"
@@ -22,17 +23,29 @@ func NewTaskHandler(service *service.TaskService) *TaskHandler {
 }
 
 func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.JSON(w, http.StatusUnauthorized, response.Envelope{Success: false, Message: "authentication required"})
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
-		h.list(w, r)
+		h.list(w, userID)
 	case http.MethodPost:
-		h.create(w, r)
+		h.create(w, r, userID)
 	default:
 		response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
 	}
 }
 
 func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		response.JSON(w, http.StatusUnauthorized, response.Envelope{Success: false, Message: "authentication required"})
+		return
+	}
+
 	path := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 0 || parts[0] == "" {
@@ -51,7 +64,7 @@ func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 			response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
 			return
 		}
-		h.complete(w, id)
+		h.complete(w, userID, id)
 		return
 	}
 
@@ -62,18 +75,18 @@ func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		h.get(w, id)
+		h.get(w, userID, id)
 	case http.MethodPut:
-		h.update(w, r, id)
+		h.update(w, r, userID, id)
 	case http.MethodDelete:
-		h.delete(w, id)
+		h.delete(w, userID, id)
 	default:
 		response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
 	}
 }
 
-func (h *TaskHandler) list(w http.ResponseWriter, _ *http.Request) {
-	tasks, err := h.service.FindAll()
+func (h *TaskHandler) list(w http.ResponseWriter, userID int64) {
+	tasks, err := h.service.FindAll(userID)
 	if err != nil {
 		response.JSON(w, http.StatusInternalServerError, response.Envelope{Success: false, Message: "failed to get tasks"})
 		return
@@ -81,7 +94,7 @@ func (h *TaskHandler) list(w http.ResponseWriter, _ *http.Request) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: tasks})
 }
 
-func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request) {
+func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID int64) {
 	defer r.Body.Close()
 
 	var req model.CreateTaskRequest
@@ -90,7 +103,7 @@ func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.service.Create(req)
+	task, err := h.service.Create(userID, req)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -98,8 +111,8 @@ func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusCreated, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) get(w http.ResponseWriter, id int64) {
-	task, err := h.service.FindByID(id)
+func (h *TaskHandler) get(w http.ResponseWriter, userID, id int64) {
+	task, err := h.service.FindByID(userID, id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -107,7 +120,7 @@ func (h *TaskHandler) get(w http.ResponseWriter, id int64) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, id int64) {
+func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, userID, id int64) {
 	defer r.Body.Close()
 
 	var req model.UpdateTaskRequest
@@ -116,7 +129,7 @@ func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	}
 
-	task, err := h.service.Update(id, req)
+	task, err := h.service.Update(userID, id, req)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -124,8 +137,8 @@ func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, id int64) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) complete(w http.ResponseWriter, id int64) {
-	task, err := h.service.Complete(id)
+func (h *TaskHandler) complete(w http.ResponseWriter, userID, id int64) {
+	task, err := h.service.Complete(userID, id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -133,8 +146,8 @@ func (h *TaskHandler) complete(w http.ResponseWriter, id int64) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) delete(w http.ResponseWriter, id int64) {
-	if err := h.service.Delete(id); err != nil {
+func (h *TaskHandler) delete(w http.ResponseWriter, userID, id int64) {
+	if err := h.service.Delete(userID, id); err != nil {
 		h.handleError(w, err)
 		return
 	}

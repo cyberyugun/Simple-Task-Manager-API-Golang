@@ -19,7 +19,7 @@ func NewTaskService(repo repository.TaskRepository) *TaskService {
 	return &TaskService{repo: repo}
 }
 
-func (s *TaskService) Create(req model.CreateTaskRequest) (model.Task, error) {
+func (s *TaskService) Create(userID int64, req model.CreateTaskRequest) (model.Task, error) {
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		return model.Task{}, ErrInvalidTask
@@ -27,6 +27,7 @@ func (s *TaskService) Create(req model.CreateTaskRequest) (model.Task, error) {
 
 	now := time.Now()
 	task := model.Task{
+		UserID:      userID,
 		Title:       title,
 		Description: strings.TrimSpace(req.Description),
 		Completed:   false,
@@ -37,21 +38,21 @@ func (s *TaskService) Create(req model.CreateTaskRequest) (model.Task, error) {
 	return s.repo.Create(task)
 }
 
-func (s *TaskService) FindAll() ([]model.Task, error) {
-	return s.repo.FindAll()
+func (s *TaskService) FindAll(userID int64) ([]model.Task, error) {
+	return s.repo.FindAll(userID)
 }
 
-func (s *TaskService) FindByID(id int64) (model.Task, error) {
-	return s.repo.FindByID(id)
+func (s *TaskService) FindByID(userID, id int64) (model.Task, error) {
+	return s.repo.FindByID(userID, id)
 }
 
-func (s *TaskService) Update(id int64, req model.UpdateTaskRequest) (model.Task, error) {
+func (s *TaskService) Update(userID, id int64, req model.UpdateTaskRequest) (model.Task, error) {
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		return model.Task{}, ErrInvalidTask
 	}
 
-	task, err := s.repo.FindByID(id)
+	task, err := s.repo.FindByID(userID, id)
 	if err != nil {
 		return model.Task{}, err
 	}
@@ -62,8 +63,8 @@ func (s *TaskService) Update(id int64, req model.UpdateTaskRequest) (model.Task,
 	return s.repo.Update(task)
 }
 
-func (s *TaskService) Complete(id int64) (model.Task, error) {
-	task, err := s.repo.FindByID(id)
+func (s *TaskService) Complete(userID, id int64) (model.Task, error) {
+	task, err := s.repo.FindByID(userID, id)
 	if err != nil {
 		return model.Task{}, err
 	}
@@ -73,6 +74,6 @@ func (s *TaskService) Complete(id int64) (model.Task, error) {
 	return s.repo.Update(task)
 }
 
-func (s *TaskService) Delete(id int64) error {
-	return s.repo.Delete(id)
+func (s *TaskService) Delete(userID, id int64) error {
+	return s.repo.Delete(userID, id)
 }
