@@ -47,6 +47,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	userRepo := repository.NewPostgresUserRepository(db)
 	taskRepo := repository.NewPostgresTaskRepository(db)
 	refreshRepo := repository.NewPostgresRefreshTokenRepository(db)
+	actionRepo := repository.NewPostgresAuthActionTokenRepository(db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	user1, err := userRepo.Create(model.User{
@@ -82,10 +83,13 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	}
 
 	if err := refreshRepo.Create(model.RefreshSession{
-		UserID:    user1.ID,
-		TokenHash: "old-refresh-hash",
-		ExpiresAt: now.Add(time.Hour),
-		CreatedAt: now,
+		UserID:     user1.ID,
+		TokenHash:  "old-refresh-hash",
+		UserAgent:  "integration-agent",
+		IPAddress:  "203.0.113.20",
+		ExpiresAt:  now.Add(time.Hour),
+		LastUsedAt: now,
+		CreatedAt:  now,
 	}); err != nil {
 		t.Fatalf("create refresh session: %v", err)
 	}
@@ -120,6 +124,62 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 		now.Add(4*time.Minute),
 	); !errors.Is(err, repository.ErrInvalidRefreshToken) {
 		t.Fatalf("refresh after revoke error = %v, want ErrInvalidRefreshToken", err)
+	}
+
+	if err := refreshRepo.Create(model.RefreshSession{
+		UserID:     user1.ID,
+		TokenHash:  "session-list-hash",
+		UserAgent:  "second-agent",
+		IPAddress:  "203.0.113.21",
+		ExpiresAt:  now.Add(time.Hour),
+		LastUsedAt: now.Add(5 * time.Minute),
+		CreatedAt:  now.Add(5 * time.Minute),
+	}); err != nil {
+		t.Fatalf("create list session: %v", err)
+	}
+	sessions, err := refreshRepo.ListActive(user1.ID, now.Add(6*time.Minute))
+	if err != nil {
+		t.Fatalf("list active sessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].TokenHash != "" || sessions[0].UserAgent != "second-agent" {
+		t.Fatalf("unexpected active sessions: %+v", sessions)
+	}
+	if err := refreshRepo.RevokeByID(user1.ID, sessions[0].ID, now.Add(7*time.Minute)); err != nil {
+		t.Fatalf("revoke session by id: %v", err)
+	}
+
+	if err := actionRepo.Create(model.AuthActionToken{
+		UserID:    user1.ID,
+		TokenHash: "reset-action-hash",
+		Purpose:   model.ActionPasswordReset,
+		ExpiresAt: now.Add(time.Hour),
+		CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("create action token: %v", err)
+	}
+	action, err := actionRepo.Consume("reset-action-hash", model.ActionPasswordReset, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("consume action token: %v", err)
+	}
+	if action.UserID != user1.ID {
+		t.Fatalf("action UserID = %d, want %d", action.UserID, user1.ID)
+	}
+	if _, err := actionRepo.Consume("reset-action-hash", model.ActionPasswordReset, now.Add(2*time.Minute)); !errors.Is(err, repository.ErrInvalidActionToken) {
+		t.Fatalf("replayed action token error = %v, want ErrInvalidActionToken", err)
+	}
+
+	if err := userRepo.UpdatePassword(user1.ID, "new-integration-hash", now.Add(8*time.Minute)); err != nil {
+		t.Fatalf("update password: %v", err)
+	}
+	if err := userRepo.MarkEmailVerified(user1.ID, now.Add(9*time.Minute)); err != nil {
+		t.Fatalf("mark email verified: %v", err)
+	}
+	updatedUser, err := userRepo.FindByID(user1.ID)
+	if err != nil {
+		t.Fatalf("find updated user: %v", err)
+	}
+	if updatedUser.PasswordHash != "new-integration-hash" || updatedUser.EmailVerifiedAt == nil {
+		t.Fatalf("unexpected updated user: %+v", updatedUser)
 	}
 
 	first, err := taskRepo.Create(model.Task{
@@ -198,6 +258,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 
 func resetDatabase(db *sql.DB) error {
 	for _, statement := range []string{
+		"DROP TABLE IF EXISTS auth_action_tokens CASCADE",
 		"DROP TABLE IF EXISTS refresh_tokens CASCADE",
 		"DROP TABLE IF EXISTS tasks CASCADE",
 		"DROP TABLE IF EXISTS users CASCADE",
@@ -217,6 +278,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"002_add_users_and_task_ownership.sql",
 		"003_task_list_indexes.sql",
 		"004_refresh_tokens.sql",
+		"005_account_security.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {

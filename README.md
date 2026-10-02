@@ -10,6 +10,12 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Refresh-token rotation and replay rejection
 - Logout/revocation for refresh sessions
 - Configurable access/refresh token TTLs
+- Change password with refresh-session revocation
+- Forgot/reset password with one-time hashed action tokens
+- Email verification with one-time hashed action tokens
+- Active session/device listing and per-session revocation
+- Logout all devices
+- Per-IP authentication rate limiting
 - Per-user task ownership
 - Task CRUD and complete action
 - Pagination, search, filtering, sorting, and ordering
@@ -32,6 +38,11 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 | `JWT_SECRET` | Yes | none | JWT signing secret, minimum 32 characters |
 | `ACCESS_TOKEN_TTL` | No | `15m` | Access JWT lifetime |
 | `REFRESH_TOKEN_TTL` | No | `720h` | Refresh token lifetime; must exceed access TTL |
+| `PASSWORD_RESET_TTL` | No | `30m` | Password reset token lifetime |
+| `EMAIL_VERIFICATION_TTL` | No | `24h` | Email verification token lifetime |
+| `AUTH_RATE_LIMIT_REQUESTS` | No | `20` | Auth requests allowed per client IP/window |
+| `AUTH_RATE_LIMIT_WINDOW` | No | `1m` | Authentication rate-limit window |
+| `EXPOSE_AUTH_TOKENS` | No | `false` | Show reset/verification tokens for local/testing only |
 | `SHUTDOWN_TIMEOUT` | No | `10s` | Graceful shutdown timeout |
 
 ## Run locally
@@ -143,6 +154,9 @@ Swagger UI supports the Bearer JWT security scheme. Register/login, copy the ret
 | `POST` | `/api/auth/login` | Login |
 | `POST` | `/api/auth/refresh` | Rotate refresh token and issue a new token pair |
 | `POST` | `/api/auth/logout` | Revoke a refresh token |
+| `POST` | `/api/auth/forgot-password` | Request password-reset instructions |
+| `POST` | `/api/auth/reset-password` | Reset password with one-time token |
+| `POST` | `/api/auth/email-verification/confirm` | Confirm email with one-time token |
 
 ## Refresh token flow
 
@@ -177,6 +191,53 @@ curl -X POST http://localhost:8080/api/auth/logout \
 ```
 
 Logout revokes the refresh session. An access JWT already issued remains valid only until its short access TTL expires.
+
+## Account security endpoints
+
+These endpoints require a valid access JWT:
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `POST` | `/api/auth/change-password` | Change password and revoke all refresh sessions |
+| `POST` | `/api/auth/logout-all` | Revoke all refresh sessions |
+| `GET` | `/api/auth/sessions` | List active sessions/devices |
+| `DELETE` | `/api/auth/sessions/{id}` | Revoke one session |
+| `POST` | `/api/auth/email-verification/request` | Create email verification instructions |
+
+Session responses expose the session ID, user agent, IP address, created time, last-used time, and expiry to the authenticated owner only. Refresh-token hashes are never returned.
+
+### Password reset
+
+`POST /api/auth/forgot-password` deliberately returns the same generic message whether or not an account exists, reducing email enumeration risk. Reset tokens are random opaque values; only SHA-256 hashes are stored, and tokens are single-use.
+
+For local/CI testing only:
+
+```bash
+export EXPOSE_AUTH_TOKENS=true
+```
+
+This adds `development_token` to password-reset and email-verification request responses. Keep this disabled in production. A production deployment should deliver those tokens through an email provider.
+
+### Email verification
+
+Email verification is implemented as an optional account state. Current task endpoints do not require a verified email. The flow is:
+
+```text
+Authenticated verification request
+        |
+        v
+One-time verification token
+        |
+        v
+POST /api/auth/email-verification/confirm
+        |
+        v
+email_verified_at is set
+```
+
+### Authentication rate limiting
+
+Sensitive authentication routes are protected by an in-memory fixed-window rate limiter keyed by the direct client IP. The server intentionally does not trust `X-Forwarded-For` by default. If deployed behind a trusted reverse proxy, proxy-aware client IP handling should be added explicitly rather than trusting forwarded headers globally.
 
 ## Protected task endpoints
 
@@ -234,7 +295,7 @@ PostgreSQL Integration Test
 Docker Compose Smoke Test
 ```
 
-It validates formatting, `go vet`, race-enabled unit tests, compilation, real PostgreSQL repository behavior, refresh-token rotation/replay protection, Docker image construction, container health, OpenAPI, and Swagger UI.
+It validates formatting, `go vet`, race-enabled unit tests, compilation, real PostgreSQL repository behavior, refresh-token rotation/replay protection, one-time reset/verification tokens, session revocation, Docker image construction, container health, OpenAPI, and Swagger UI.
 
 ## Graceful shutdown
 
@@ -247,6 +308,7 @@ Existing PostgreSQL databases must also apply:
 
 ```bash
 psql "$DATABASE_URL" -f migrations/004_refresh_tokens.sql
+psql "$DATABASE_URL" -f migrations/005_account_security.sql
 ```
 
-Fresh Docker Compose volumes apply migration 004 automatically.
+Fresh Docker Compose volumes apply migrations 004 and 005 automatically.

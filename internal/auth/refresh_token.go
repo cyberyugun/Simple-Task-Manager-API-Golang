@@ -8,19 +8,27 @@ import (
 	"fmt"
 )
 
-const refreshTokenBytes = 32
+const opaqueTokenBytes = 32
 
-func GenerateRefreshToken() (string, string, error) {
-	raw := make([]byte, refreshTokenBytes)
+func GenerateOpaqueToken() (string, string, error) {
+	raw := make([]byte, opaqueTokenBytes)
 	if _, err := rand.Read(raw); err != nil {
-		return "", "", fmt.Errorf("generate refresh token: %w", err)
+		return "", "", fmt.Errorf("generate opaque token: %w", err)
 	}
 
 	token := base64.RawURLEncoding.EncodeToString(raw)
-	return token, HashRefreshToken(token), nil
+	return token, HashOpaqueToken(token), nil
+}
+
+func HashOpaqueToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func GenerateRefreshToken() (string, string, error) {
+	return GenerateOpaqueToken()
 }
 
 func HashRefreshToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+	return HashOpaqueToken(token)
 }

@@ -14,36 +14,48 @@ import (
 )
 
 var (
-	ErrInvalidUser         = errors.New("name, valid email, and password with at least 8 characters are required")
-	ErrInvalidCredentials  = errors.New("invalid email or password")
-	ErrInvalidRefreshToken = errors.New("invalid or expired refresh token")
+	ErrInvalidUser            = errors.New("name, valid email, and password with at least 8 characters are required")
+	ErrInvalidCredentials     = errors.New("invalid email or password")
+	ErrInvalidRefreshToken    = errors.New("invalid or expired refresh token")
+	ErrInvalidCurrentPassword = errors.New("current password is incorrect")
+	ErrInvalidNewPassword     = errors.New("new password must be at least 8 characters")
+	ErrInvalidActionToken     = errors.New("invalid or expired action token")
 )
 
 type AuthService struct {
-	users      repository.UserRepository
-	refreshes  repository.RefreshTokenRepository
-	tokens     *auth.TokenManager
-	accessTTL  time.Duration
-	refreshTTL time.Duration
+	users             repository.UserRepository
+	refreshes         repository.RefreshTokenRepository
+	actions           repository.AuthActionTokenRepository
+	tokens            *auth.TokenManager
+	accessTTL         time.Duration
+	refreshTTL        time.Duration
+	passwordResetTTL  time.Duration
+	emailVerifyTTL    time.Duration
 }
 
 func NewAuthService(
 	users repository.UserRepository,
 	refreshes repository.RefreshTokenRepository,
+	actions repository.AuthActionTokenRepository,
 	tokens *auth.TokenManager,
 	accessTTL time.Duration,
 	refreshTTL time.Duration,
+	passwordResetTTL time.Duration,
+	emailVerifyTTL time.Duration,
 ) *AuthService {
 	return &AuthService{
-		users:      users,
-		refreshes:  refreshes,
-		tokens:     tokens,
-		accessTTL:  accessTTL,
-		refreshTTL: refreshTTL,
+		users:            users,
+		refreshes:        refreshes,
+		actions:          actions,
+		tokens:           tokens,
+		accessTTL:        accessTTL,
+		refreshTTL:       refreshTTL,
+		passwordResetTTL: passwordResetTTL,
+		emailVerifyTTL:   emailVerifyTTL,
 	}
 }
 
-func (s *AuthService) Register(req model.RegisterRequest) (model.AuthResult, error) {
+func (s *AuthService) Register(req model.RegisterRequest, meta model.SessionMetadata) (model.AuthResult, error) {
 	name := strings.TrimSpace(req.Name)
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if name == "" || !validEmail(email) || len(req.Password) < 8 {
@@ -67,10 +79,10 @@ func (s *AuthService) Register(req model.RegisterRequest) (model.AuthResult, err
 		return model.AuthResult{}, err
 	}
 
-	return s.issueSession(user)
+	return s.issueSession(user, meta)
 }
 
-func (s *AuthService) Login(req model.LoginRequest) (model.AuthResult, error) {
+func (s *AuthService) Login(req model.LoginRequest, meta model.SessionMetadata) (model.AuthResult, error) {
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if email == "" || req.Password == "" {
 		return model.AuthResult{}, ErrInvalidCredentials
@@ -88,7 +100,7 @@ func (s *AuthService) Login(req model.LoginRequest) (model.AuthResult, error) {
 		return model.AuthResult{}, ErrInvalidCredentials
 	}
 
-	return s.issueSession(user)
+	return s.issueSession(user, meta)
 }
 
 func (s *AuthService) Refresh(req model.RefreshRequest) (model.AuthResult, error) {
@@ -135,7 +147,171 @@ func (s *AuthService) Logout(req model.LogoutRequest) error {
 	return s.refreshes.Revoke(auth.HashRefreshToken(raw), time.Now())
 }
 
-func (s *AuthService) issueSession(user model.User) (model.AuthResult, error) {
+func (s *AuthService) Sessions(userID int64) ([]model.RefreshSession, error) {
+	return s.refreshes.ListActive(userID, time.Now())
+}
+
+func (s *AuthService) RevokeSession(userID, sessionID int64) error {
+	err := s.refreshes.RevokeByID(userID, sessionID, time.Now())
+	if errors.Is(err, repository.ErrInvalidRefreshToken) {
+		return ErrInvalidRefreshToken
+	}
+	return err
+}
+
+func (s *AuthService) LogoutAll(userID int64) error {
+	return s.refreshes.RevokeAll(userID, time.Now())
+}
+
+func (s *AuthService) ChangePassword(userID int64, req model.ChangePasswordRequest) error {
+	if len(req.NewPassword) < 8 {
+		return ErrInvalidNewPassword
+	}
+
+	user, err := s.users.FindByID(userID)
+	if err != nil {
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)); err != nil {
+		return ErrInvalidCurrentPassword
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.NewPassword)); err == nil {
+		return ErrInvalidNewPassword
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	if err := s.users.UpdatePassword(userID, string(hash), now); err != nil {
+		return err
+	}
+	return s.refreshes.RevokeAll(userID, now)
+}
+
+func (s *AuthService) ForgotPassword(req model.ForgotPasswordRequest) (model.ActionTokenResult, error) {
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	result := model.ActionTokenResult{
+		Message: "if the account exists, password reset instructions have been created",
+	}
+	if !validEmail(email) {
+		return result, nil
+	}
+
+	user, err := s.users.FindByEmail(email)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return result, nil
+		}
+		return model.ActionTokenResult{}, err
+	}
+
+	token, err := s.issueActionToken(user.ID, model.ActionPasswordReset, s.passwordResetTTL)
+	if err != nil {
+		return model.ActionTokenResult{}, err
+	}
+	result.DevelopmentToken = token
+	return result, nil
+}
+
+func (s *AuthService) ResetPassword(req model.ResetPasswordRequest) error {
+	if len(req.NewPassword) < 8 {
+		return ErrInvalidNewPassword
+	}
+
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		return ErrInvalidActionToken
+	}
+
+	now := time.Now()
+	action, err := s.actions.Consume(
+		auth.HashOpaqueToken(token),
+		model.ActionPasswordReset,
+		now,
+	)
+	if err != nil {
+		if errors.Is(err, repository.ErrInvalidActionToken) {
+			return ErrInvalidActionToken
+		}
+		return err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	if err := s.users.UpdatePassword(action.UserID, string(hash), now); err != nil {
+		return err
+	}
+	return s.refreshes.RevokeAll(action.UserID, now)
+}
+
+func (s *AuthService) RequestEmailVerification(userID int64) (model.ActionTokenResult, error) {
+	result := model.ActionTokenResult{
+		Message: "email verification instructions have been created",
+	}
+
+	user, err := s.users.FindByID(userID)
+	if err != nil {
+		return model.ActionTokenResult{}, err
+	}
+	if user.EmailVerifiedAt != nil {
+		result.Message = "email is already verified"
+		return result, nil
+	}
+
+	token, err := s.issueActionToken(user.ID, model.ActionEmailVerification, s.emailVerifyTTL)
+	if err != nil {
+		return model.ActionTokenResult{}, err
+	}
+	result.DevelopmentToken = token
+	return result, nil
+}
+
+func (s *AuthService) VerifyEmail(req model.VerifyEmailRequest) error {
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		return ErrInvalidActionToken
+	}
+
+	now := time.Now()
+	action, err := s.actions.Consume(
+		auth.HashOpaqueToken(token),
+		model.ActionEmailVerification,
+		now,
+	)
+	if err != nil {
+		if errors.Is(err, repository.ErrInvalidActionToken) {
+			return ErrInvalidActionToken
+		}
+		return err
+	}
+	return s.users.MarkEmailVerified(action.UserID, now)
+}
+
+func (s *AuthService) issueActionToken(userID int64, purpose string, ttl time.Duration) (string, error) {
+	raw, hash, err := auth.GenerateOpaqueToken()
+	if err != nil {
+		return "", err
+	}
+
+	now := time.Now()
+	if err := s.actions.Create(model.AuthActionToken{
+		UserID:    userID,
+		TokenHash: hash,
+		Purpose:   purpose,
+		ExpiresAt: now.Add(ttl),
+		CreatedAt: now,
+	}); err != nil {
+		return "", err
+	}
+	return raw, nil
+}
+
+func (s *AuthService) issueSession(user model.User, meta model.SessionMetadata) (model.AuthResult, error) {
 	raw, hash, err := auth.GenerateRefreshToken()
 	if err != nil {
 		return model.AuthResult{}, err
@@ -143,10 +319,13 @@ func (s *AuthService) issueSession(user model.User) (model.AuthResult, error) {
 
 	now := time.Now()
 	if err := s.refreshes.Create(model.RefreshSession{
-		UserID:    user.ID,
-		TokenHash: hash,
-		ExpiresAt: now.Add(s.refreshTTL),
-		CreatedAt: now,
+		UserID:     user.ID,
+		TokenHash:  hash,
+		UserAgent:  strings.TrimSpace(meta.UserAgent),
+		IPAddress:  strings.TrimSpace(meta.IPAddress),
+		ExpiresAt:  now.Add(s.refreshTTL),
+		LastUsedAt: now,
+		CreatedAt:  now,
 	}); err != nil {
 		return model.AuthResult{}, err
 	}

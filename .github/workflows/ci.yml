@@ -99,6 +99,8 @@ jobs:
       - name: Build and start stack
         env:
           JWT_SECRET: ci-local-secret-123456789012345678901234
+          EXPOSE_AUTH_TOKENS: "true"
+          AUTH_RATE_LIMIT_REQUESTS: "100"
         run: docker compose up -d --build
 
       - name: Wait for API
@@ -118,23 +120,41 @@ jobs:
           curl --fail --silent http://localhost:8080/openapi.yaml | grep "openapi: 3.1.0"
           curl --fail --silent http://localhost:8080/docs | grep "SwaggerUIBundle"
 
-      - name: Smoke test refresh token rotation
+      - name: Smoke test account security flows
         run: |
-          register_response="$(curl --fail --silent             -X POST http://localhost:8080/api/auth/register             -H 'Content-Type: application/json'             -d '{"name":"CI User","email":"ci@example.com","password":"password123"}')"
-          old_refresh="$(printf '%s' "$register_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
+          register_response="$(curl --fail --silent             -X POST http://localhost:8080/api/auth/register             -H 'Content-Type: application/json'             -H 'User-Agent: ci-browser'             -d '{"name":"CI User","email":"ci@example.com","password":"password123"}')"
+          access_token="$(printf '%s' "$register_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+          refresh_token="$(printf '%s' "$register_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
 
-          refresh_response="$(curl --fail --silent             -X POST http://localhost:8080/api/auth/refresh             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$old_refresh\"}")"
-          new_refresh="$(printf '%s' "$refresh_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
+          sessions_response="$(curl --fail --silent             http://localhost:8080/api/auth/sessions             -H "Authorization: Bearer $access_token")"
+          printf '%s' "$sessions_response" | python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert len(data) == 1; assert data[0]["user_agent"] == "ci-browser"'
 
-          test "$old_refresh" != "$new_refresh"
+          verify_request="$(curl --fail --silent             -X POST http://localhost:8080/api/auth/email-verification/request             -H "Authorization: Bearer $access_token")"
+          verify_token="$(printf '%s' "$verify_request" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["development_token"])')"
+          curl --fail --silent             -X POST http://localhost:8080/api/auth/email-verification/confirm             -H 'Content-Type: application/json'             -d "{\"token\":\"$verify_token\"}" >/dev/null
 
-          replay_status="$(curl --silent --output /dev/null --write-out '%{http_code}'             -X POST http://localhost:8080/api/auth/refresh             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$old_refresh\"}")"
-          test "$replay_status" = "401"
+          verify_replay_status="$(curl --silent --output /dev/null --write-out '%{http_code}'             -X POST http://localhost:8080/api/auth/email-verification/confirm             -H 'Content-Type: application/json'             -d "{\"token\":\"$verify_token\"}")"
+          test "$verify_replay_status" = "401"
 
-          curl --fail --silent             -X POST http://localhost:8080/api/auth/logout             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$new_refresh\"}" >/dev/null
+          forgot_response="$(curl --fail --silent             -X POST http://localhost:8080/api/auth/forgot-password             -H 'Content-Type: application/json'             -d '{"email":"ci@example.com"}')"
+          reset_token="$(printf '%s' "$forgot_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["development_token"])')"
 
-          after_logout_status="$(curl --silent --output /dev/null --write-out '%{http_code}'             -X POST http://localhost:8080/api/auth/refresh             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$new_refresh\"}")"
-          test "$after_logout_status" = "401"
+          curl --fail --silent             -X POST http://localhost:8080/api/auth/reset-password             -H 'Content-Type: application/json'             -d "{\"token\":\"$reset_token\",\"new_password\":\"new-password-456\"}" >/dev/null
+
+          reset_replay_status="$(curl --silent --output /dev/null --write-out '%{http_code}'             -X POST http://localhost:8080/api/auth/reset-password             -H 'Content-Type: application/json'             -d "{\"token\":\"$reset_token\",\"new_password\":\"another-password-789\"}")"
+          test "$reset_replay_status" = "401"
+
+          old_refresh_status="$(curl --silent --output /dev/null --write-out '%{http_code}'             -X POST http://localhost:8080/api/auth/refresh             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$refresh_token\"}")"
+          test "$old_refresh_status" = "401"
+
+          login_response="$(curl --fail --silent             -X POST http://localhost:8080/api/auth/login             -H 'Content-Type: application/json'             -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          new_access="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+          new_refresh="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
+
+          curl --fail --silent             -X POST http://localhost:8080/api/auth/logout-all             -H "Authorization: Bearer $new_access" >/dev/null
+
+          logout_all_refresh_status="$(curl --silent --output /dev/null --write-out '%{http_code}'             -X POST http://localhost:8080/api/auth/refresh             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$new_refresh\"}")"
+          test "$logout_all_refresh_status" = "401"
 
       - name: Show container status
         run: docker compose ps

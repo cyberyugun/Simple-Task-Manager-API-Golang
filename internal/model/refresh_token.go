@@ -2,11 +2,19 @@ package model
 
 import "time"
 
+type SessionMetadata struct {
+	UserAgent string
+	IPAddress string
+}
+
 type RefreshSession struct {
-	ID        int64
-	UserID    int64
-	TokenHash string
-	ExpiresAt time.Time
-	RevokedAt *time.Time
-	CreatedAt time.Time
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"-"`
+	TokenHash  string     `json:"-"`
+	UserAgent  string     `json:"user_agent,omitempty"`
+	IPAddress  string     `json:"ip_address,omitempty"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	LastUsedAt time.Time  `json:"last_used_at"`
+	RevokedAt  *time.Time `json:"-"`
+	CreatedAt  time.Time  `json:"created_at"`
 }

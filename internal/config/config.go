@@ -9,29 +9,42 @@ import (
 )
 
 const (
-	defaultPort            = "8080"
-	defaultShutdownTimeout = 10 * time.Second
-	defaultAccessTokenTTL  = 15 * time.Minute
-	defaultRefreshTokenTTL = 30 * 24 * time.Hour
+	defaultPort                  = "8080"
+	defaultShutdownTimeout       = 10 * time.Second
+	defaultAccessTokenTTL        = 15 * time.Minute
+	defaultRefreshTokenTTL       = 30 * 24 * time.Hour
+	defaultPasswordResetTTL      = 30 * time.Minute
+	defaultEmailVerificationTTL  = 24 * time.Hour
+	defaultAuthRateLimitRequests = 20
+	defaultAuthRateLimitWindow   = time.Minute
 )
 
 type Config struct {
-	Port            string
-	DatabaseURL     string
-	JWTSecret       string
-	ShutdownTimeout time.Duration
-	AccessTokenTTL  time.Duration
-	RefreshTokenTTL time.Duration
+	Port                     string
+	DatabaseURL              string
+	JWTSecret                string
+	ShutdownTimeout          time.Duration
+	AccessTokenTTL           time.Duration
+	RefreshTokenTTL          time.Duration
+	PasswordResetTTL         time.Duration
+	EmailVerificationTTL     time.Duration
+	AuthRateLimitRequests    int
+	AuthRateLimitWindow      time.Duration
+	ExposeAuthTokens         bool
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		Port:            strings.TrimSpace(os.Getenv("PORT")),
-		DatabaseURL:     strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		JWTSecret:       os.Getenv("JWT_SECRET"),
-		ShutdownTimeout: defaultShutdownTimeout,
-		AccessTokenTTL:  defaultAccessTokenTTL,
-		RefreshTokenTTL: defaultRefreshTokenTTL,
+		Port:                  strings.TrimSpace(os.Getenv("PORT")),
+		DatabaseURL:           strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		JWTSecret:             os.Getenv("JWT_SECRET"),
+		ShutdownTimeout:       defaultShutdownTimeout,
+		AccessTokenTTL:        defaultAccessTokenTTL,
+		RefreshTokenTTL:       defaultRefreshTokenTTL,
+		PasswordResetTTL:      defaultPasswordResetTTL,
+		EmailVerificationTTL:  defaultEmailVerificationTTL,
+		AuthRateLimitRequests: defaultAuthRateLimitRequests,
+		AuthRateLimitWindow:   defaultAuthRateLimitWindow,
 	}
 
 	if cfg.Port == "" {
@@ -55,8 +68,33 @@ func Load() (Config, error) {
 	if cfg.RefreshTokenTTL, err = parsePositiveDuration("REFRESH_TOKEN_TTL", cfg.RefreshTokenTTL); err != nil {
 		return Config{}, err
 	}
+	if cfg.PasswordResetTTL, err = parsePositiveDuration("PASSWORD_RESET_TTL", cfg.PasswordResetTTL); err != nil {
+		return Config{}, err
+	}
+	if cfg.EmailVerificationTTL, err = parsePositiveDuration("EMAIL_VERIFICATION_TTL", cfg.EmailVerificationTTL); err != nil {
+		return Config{}, err
+	}
+	if cfg.AuthRateLimitWindow, err = parsePositiveDuration("AUTH_RATE_LIMIT_WINDOW", cfg.AuthRateLimitWindow); err != nil {
+		return Config{}, err
+	}
 	if cfg.RefreshTokenTTL <= cfg.AccessTokenTTL {
 		return Config{}, fmt.Errorf("REFRESH_TOKEN_TTL must be greater than ACCESS_TOKEN_TTL")
+	}
+
+	if value := strings.TrimSpace(os.Getenv("AUTH_RATE_LIMIT_REQUESTS")); value != "" {
+		limit, err := strconv.Atoi(value)
+		if err != nil || limit < 1 {
+			return Config{}, fmt.Errorf("AUTH_RATE_LIMIT_REQUESTS must be a positive integer")
+		}
+		cfg.AuthRateLimitRequests = limit
+	}
+
+	if value := strings.TrimSpace(os.Getenv("EXPOSE_AUTH_TOKENS")); value != "" {
+		expose, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("EXPOSE_AUTH_TOKENS must be true or false")
+		}
+		cfg.ExposeAuthTokens = expose
 	}
 
 	return cfg, nil

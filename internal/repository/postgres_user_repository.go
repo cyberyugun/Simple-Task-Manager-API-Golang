@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -19,9 +20,9 @@ func NewPostgresUserRepository(db *sql.DB) *PostgresUserRepository {
 
 func (r *PostgresUserRepository) Create(user model.User) (model.User, error) {
 	const query = `
-		INSERT INTO users (name, email, password_hash, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, name, email, password_hash, created_at, updated_at
+		INSERT INTO users (name, email, password_hash, email_verified_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, name, email, password_hash, email_verified_at, created_at, updated_at
 	`
 
 	created, err := scanUser(r.db.QueryRow(
@@ -29,6 +30,7 @@ func (r *PostgresUserRepository) Create(user model.User) (model.User, error) {
 		user.Name,
 		user.Email,
 		user.PasswordHash,
+		user.EmailVerifiedAt,
 		user.CreatedAt,
 		user.UpdatedAt,
 	))
@@ -43,7 +45,7 @@ func (r *PostgresUserRepository) Create(user model.User) (model.User, error) {
 
 func (r *PostgresUserRepository) FindByID(id int64) (model.User, error) {
 	const query = `
-		SELECT id, name, email, password_hash, created_at, updated_at
+		SELECT id, name, email, password_hash, email_verified_at, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -57,7 +59,7 @@ func (r *PostgresUserRepository) FindByID(id int64) (model.User, error) {
 
 func (r *PostgresUserRepository) FindByEmail(email string) (model.User, error) {
 	const query = `
-		SELECT id, name, email, password_hash, created_at, updated_at
+		SELECT id, name, email, password_hash, email_verified_at, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
@@ -67,6 +69,45 @@ func (r *PostgresUserRepository) FindByEmail(email string) (model.User, error) {
 		return model.User{}, ErrUserNotFound
 	}
 	return user, err
+}
+
+func (r *PostgresUserRepository) UpdatePassword(id int64, passwordHash string, now time.Time) error {
+	result, err := r.db.Exec(`
+		UPDATE users
+		SET password_hash = $2, updated_at = $3
+		WHERE id = $1
+	`, id, passwordHash, now)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *PostgresUserRepository) MarkEmailVerified(id int64, now time.Time) error {
+	result, err := r.db.Exec(`
+		UPDATE users
+		SET email_verified_at = COALESCE(email_verified_at, $2),
+		    updated_at = $2
+		WHERE id = $1
+	`, id, now)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 type userScanner interface {
@@ -80,6 +121,7 @@ func scanUser(scanner userScanner) (model.User, error) {
 		&user.Name,
 		&user.Email,
 		&user.PasswordHash,
+		&user.EmailVerifiedAt,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)

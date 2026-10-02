@@ -118,6 +118,179 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/auth/forgot-password:
+    post:
+      tags: [Authentication]
+      summary: Request password reset instructions
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Generic password reset response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTokenEnvelope'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Reset password with a one-time token
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/auth/change-password:
+    post:
+      tags: [Authentication]
+      summary: Change the current user's password
+      operationId: changePassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed and refresh sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/auth/logout-all:
+    post:
+      tags: [Authentication]
+      summary: Revoke all refresh sessions for the current user
+      operationId: logoutAll
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: All refresh sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/sessions:
+    get:
+      tags: [Authentication]
+      summary: List active refresh sessions
+      operationId: listSessions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active sessions ordered by last use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/sessions/{id}:
+    delete:
+      tags: [Authentication]
+      summary: Revoke one refresh session
+      operationId: revokeSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '200':
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/auth/email-verification/request:
+    post:
+      tags: [Authentication]
+      summary: Request an email verification token
+      operationId: requestEmailVerification
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Verification instructions created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTokenEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/auth/email-verification/confirm:
+    post:
+      tags: [Authentication]
+      summary: Verify email with a one-time token
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+      responses:
+        '200':
+          description: Email verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
   /api/tasks:
     get:
       tags: [Tasks]
@@ -311,6 +484,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    TooManyRequests:
+      description: Authentication rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
     RegisterRequest:
       type: object
@@ -349,6 +528,69 @@ components:
           type: string
           minLength: 1
           example: qJqO4DBpO9dOJKmSZ9Xn0dD7eLw_LiFrZGmCwM0fS6o
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    ResetPasswordRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
+          format: password
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          minLength: 8
+          format: password
+    VerifyEmailRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    ActionTokenResult:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        development_token:
+          type: string
+          description: Present only when EXPOSE_AUTH_TOKENS=true for local/testing.
+    RefreshSession:
+      type: object
+      required: [id, expires_at, last_used_at, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_agent:
+          type: string
+        ip_address:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
     User:
       type: object
       required: [id, name, email, created_at, updated_at]
@@ -361,6 +603,9 @@ components:
         email:
           type: string
           format: email
+        email_verified_at:
+          type: string
+          format: date-time
         created_at:
           type: string
           format: date-time
@@ -481,6 +726,26 @@ components:
           const: true
         data:
           $ref: '#/components/schemas/AuthResult'
+    ActionTokenEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/ActionTokenResult'
+    SessionListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RefreshSession'
     TaskEnvelope:
       type: object
       required: [success, data]

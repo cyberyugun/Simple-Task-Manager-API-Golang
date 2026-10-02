@@ -29,6 +29,7 @@ func main() {
 	var taskRepo repository.TaskRepository
 	var userRepo repository.UserRepository
 	var refreshRepo repository.RefreshTokenRepository
+	var actionRepo repository.AuthActionTokenRepository
 
 	if cfg.DatabaseURL != "" {
 		db, err := appdb.OpenPostgres(cfg.DatabaseURL)
@@ -40,11 +41,13 @@ func main() {
 		taskRepo = repository.NewPostgresTaskRepository(db)
 		userRepo = repository.NewPostgresUserRepository(db)
 		refreshRepo = repository.NewPostgresRefreshTokenRepository(db)
+		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
 		log.Println("storage: PostgreSQL")
 	} else {
 		taskRepo = repository.NewInMemoryTaskRepository()
 		userRepo = repository.NewInMemoryUserRepository()
 		refreshRepo = repository.NewInMemoryRefreshTokenRepository()
+		actionRepo = repository.NewInMemoryAuthActionTokenRepository()
 		log.Println("storage: in-memory (set DATABASE_URL to use PostgreSQL)")
 	}
 
@@ -52,14 +55,28 @@ func main() {
 	authService := service.NewAuthService(
 		userRepo,
 		refreshRepo,
+		actionRepo,
 		tokenManager,
 		cfg.AccessTokenTTL,
 		cfg.RefreshTokenTTL,
+		cfg.PasswordResetTTL,
+		cfg.EmailVerificationTTL,
 	)
 	taskService := service.NewTaskService(taskRepo)
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
 	authMiddleware := middleware.Auth(tokenManager)
+	authRateLimiter := middleware.NewRateLimiter(cfg.AuthRateLimitRequests, cfg.AuthRateLimitWindow)
+
+	rateLimited := func(h http.HandlerFunc) http.Handler {
+		return authRateLimiter.Handler(http.HandlerFunc(h))
+	}
+	protected := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(http.HandlerFunc(h))
+	}
+	protectedRateLimited := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(authRateLimiter.Handler(http.HandlerFunc(h)))
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -70,12 +87,23 @@ func main() {
 		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "API is healthy"})
 	})
 	apidocs.Register(mux)
-	mux.HandleFunc("/api/auth/register", authHandler.Register)
-	mux.HandleFunc("/api/auth/login", authHandler.Login)
-	mux.HandleFunc("/api/auth/refresh", authHandler.Refresh)
-	mux.HandleFunc("/api/auth/logout", authHandler.Logout)
-	mux.Handle("/api/tasks", authMiddleware(http.HandlerFunc(taskHandler.Tasks)))
-	mux.Handle("/api/tasks/", authMiddleware(http.HandlerFunc(taskHandler.TaskByID)))
+
+	mux.Handle("/api/auth/register", rateLimited(authHandler.Register))
+	mux.Handle("/api/auth/login", rateLimited(authHandler.Login))
+	mux.Handle("/api/auth/refresh", rateLimited(authHandler.Refresh))
+	mux.Handle("/api/auth/logout", rateLimited(authHandler.Logout))
+	mux.Handle("/api/auth/forgot-password", rateLimited(authHandler.ForgotPassword))
+	mux.Handle("/api/auth/reset-password", rateLimited(authHandler.ResetPassword))
+	mux.Handle("/api/auth/email-verification/confirm", rateLimited(authHandler.VerifyEmail))
+
+	mux.Handle("/api/auth/change-password", protectedRateLimited(authHandler.ChangePassword))
+	mux.Handle("/api/auth/logout-all", protected(authHandler.LogoutAll))
+	mux.Handle("/api/auth/sessions", protected(authHandler.Sessions))
+	mux.Handle("/api/auth/sessions/", protected(authHandler.SessionByID))
+	mux.Handle("/api/auth/email-verification/request", protectedRateLimited(authHandler.RequestEmailVerification))
+
+	mux.Handle("/api/tasks", protected(taskHandler.Tasks))
+	mux.Handle("/api/tasks/", protected(taskHandler.TaskByID))
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

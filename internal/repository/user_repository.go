@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"go-simple-task-api/internal/model"
 )
@@ -17,6 +18,8 @@ type UserRepository interface {
 	Create(user model.User) (model.User, error)
 	FindByID(id int64) (model.User, error)
 	FindByEmail(email string) (model.User, error)
+	UpdatePassword(id int64, passwordHash string, now time.Time) error
+	MarkEmailVerified(id int64, now time.Time) error
 }
 
 type InMemoryUserRepository struct {
@@ -71,4 +74,32 @@ func (r *InMemoryUserRepository) FindByEmail(email string) (model.User, error) {
 		return model.User{}, ErrUserNotFound
 	}
 	return r.users[id], nil
+}
+
+func (r *InMemoryUserRepository) UpdatePassword(id int64, passwordHash string, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	user, ok := r.users[id]
+	if !ok {
+		return ErrUserNotFound
+	}
+	user.PasswordHash = passwordHash
+	user.UpdatedAt = now
+	r.users[id] = user
+	return nil
+}
+
+func (r *InMemoryUserRepository) MarkEmailVerified(id int64, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	user, ok := r.users[id]
+	if !ok {
+		return ErrUserNotFound
+	}
+	user.EmailVerifiedAt = &now
+	user.UpdatedAt = now
+	r.users[id] = user
+	return nil
 }
