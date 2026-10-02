@@ -11,10 +11,33 @@ services:
       test: ["CMD-SHELL", "pg_isready -U task_user -d task_manager"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://task_user:task_password@postgres:5432/task_manager?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-me-1234567890}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-10s}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   postgres_data:

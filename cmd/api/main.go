@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
-	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"go-simple-task-api/internal/apidocs"
 	"go-simple-task-api/internal/auth"
+	"go-simple-task-api/internal/config"
 	appdb "go-simple-task-api/internal/database"
 	"go-simple-task-api/internal/handler"
 	"go-simple-task-api/internal/middleware"
@@ -17,17 +21,16 @@ import (
 )
 
 func main() {
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if len(jwtSecret) < 32 {
-		log.Fatal("JWT_SECRET is required and must be at least 32 characters")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	var taskRepo repository.TaskRepository
 	var userRepo repository.UserRepository
 
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL != "" {
-		db, err := appdb.OpenPostgres(databaseURL)
+	if cfg.DatabaseURL != "" {
+		db, err := appdb.OpenPostgres(cfg.DatabaseURL)
 		if err != nil {
 			log.Fatalf("failed to connect to PostgreSQL: %v", err)
 		}
@@ -42,7 +45,7 @@ func main() {
 		log.Println("storage: in-memory (set DATABASE_URL to use PostgreSQL)")
 	}
 
-	tokenManager := auth.NewTokenManager(jwtSecret, 24*time.Hour)
+	tokenManager := auth.NewTokenManager(cfg.JWTSecret, 24*time.Hour)
 	authService := service.NewAuthService(userRepo, tokenManager)
 	taskService := service.NewTaskService(taskRepo)
 	authHandler := handler.NewAuthHandler(authService)
@@ -63,18 +66,44 @@ func main() {
 	mux.Handle("/api/tasks", authMiddleware(http.HandlerFunc(taskHandler.Tasks)))
 	mux.Handle("/api/tasks/", authMiddleware(http.HandlerFunc(taskHandler.TaskByID)))
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
 	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: mux,
+		Addr:              ":" + cfg.Port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
-	log.Printf("server running on http://localhost:%s", port)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	serverErrors := make(chan error, 1)
+	go func() {
+		log.Printf("server running on http://localhost:%s", cfg.Port)
+		serverErrors <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverErrors:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server failed: %v", err)
+		}
+	case <-ctx.Done():
+		log.Println("shutdown signal received")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("graceful shutdown failed: %v; forcing close", err)
+			_ = server.Close()
+		}
+
+		if err := <-serverErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server stopped with error: %v", err)
+		}
 	}
+
+	log.Println("server stopped")
 }
