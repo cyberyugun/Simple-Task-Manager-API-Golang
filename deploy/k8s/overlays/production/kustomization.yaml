@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - ../../base
   - ingress.yaml
+  - clusterissuer.yaml
 images:
   - name: task-api
     newName: ghcr.io/cyberyugun/simple-task-manager-api-golang
