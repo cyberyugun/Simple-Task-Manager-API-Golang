@@ -28,6 +28,7 @@ func main() {
 
 	var taskRepo repository.TaskRepository
 	var userRepo repository.UserRepository
+	var refreshRepo repository.RefreshTokenRepository
 
 	if cfg.DatabaseURL != "" {
 		db, err := appdb.OpenPostgres(cfg.DatabaseURL)
@@ -38,15 +39,23 @@ func main() {
 
 		taskRepo = repository.NewPostgresTaskRepository(db)
 		userRepo = repository.NewPostgresUserRepository(db)
+		refreshRepo = repository.NewPostgresRefreshTokenRepository(db)
 		log.Println("storage: PostgreSQL")
 	} else {
 		taskRepo = repository.NewInMemoryTaskRepository()
 		userRepo = repository.NewInMemoryUserRepository()
+		refreshRepo = repository.NewInMemoryRefreshTokenRepository()
 		log.Println("storage: in-memory (set DATABASE_URL to use PostgreSQL)")
 	}
 
-	tokenManager := auth.NewTokenManager(cfg.JWTSecret, 24*time.Hour)
-	authService := service.NewAuthService(userRepo, tokenManager)
+	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
+	authService := service.NewAuthService(
+		userRepo,
+		refreshRepo,
+		tokenManager,
+		cfg.AccessTokenTTL,
+		cfg.RefreshTokenTTL,
+	)
 	taskService := service.NewTaskService(taskRepo)
 	authHandler := handler.NewAuthHandler(authService)
 	taskHandler := handler.NewTaskHandler(taskService)
@@ -63,6 +72,8 @@ func main() {
 	apidocs.Register(mux)
 	mux.HandleFunc("/api/auth/register", authHandler.Register)
 	mux.HandleFunc("/api/auth/login", authHandler.Login)
+	mux.HandleFunc("/api/auth/refresh", authHandler.Refresh)
+	mux.HandleFunc("/api/auth/logout", authHandler.Logout)
 	mux.Handle("/api/tasks", authMiddleware(http.HandlerFunc(taskHandler.Tasks)))
 	mux.Handle("/api/tasks/", authMiddleware(http.HandlerFunc(taskHandler.TaskByID)))
 

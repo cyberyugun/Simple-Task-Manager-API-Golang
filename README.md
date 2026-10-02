@@ -5,7 +5,11 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 ## Features
 
 - Registration/login with bcrypt password hashing
-- HS256 JWT authentication
+- Short-lived HS256 JWT access tokens
+- 256-bit opaque refresh tokens stored only as SHA-256 hashes
+- Refresh-token rotation and replay rejection
+- Logout/revocation for refresh sessions
+- Configurable access/refresh token TTLs
 - Per-user task ownership
 - Task CRUD and complete action
 - Pagination, search, filtering, sorting, and ordering
@@ -26,6 +30,8 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 | `PORT` | No | `8080` | HTTP server port, 1-65535 |
 | `DATABASE_URL` | No | empty | PostgreSQL URL; empty uses in-memory storage |
 | `JWT_SECRET` | Yes | none | JWT signing secret, minimum 32 characters |
+| `ACCESS_TOKEN_TTL` | No | `15m` | Access JWT lifetime |
+| `REFRESH_TOKEN_TTL` | No | `720h` | Refresh token lifetime; must exceed access TTL |
 | `SHUTDOWN_TIMEOUT` | No | `10s` | Graceful shutdown timeout |
 
 ## Run locally
@@ -135,6 +141,42 @@ Swagger UI supports the Bearer JWT security scheme. Register/login, copy the ret
 | `GET` | `/openapi.yaml` | OpenAPI specification |
 | `POST` | `/api/auth/register` | Register |
 | `POST` | `/api/auth/login` | Login |
+| `POST` | `/api/auth/refresh` | Rotate refresh token and issue a new token pair |
+| `POST` | `/api/auth/logout` | Revoke a refresh token |
+
+## Refresh token flow
+
+Register and login return both an access token and a refresh token. Access tokens default to 15 minutes; refresh tokens default to 30 days.
+
+```json
+{
+  "access_token": "<jwt>",
+  "refresh_token": "<opaque-token>",
+  "token_type": "Bearer",
+  "access_token_expires_in": 900,
+  "refresh_token_expires_in": 2592000
+}
+```
+
+Rotate a refresh token:
+
+```bash
+curl -X POST http://localhost:8080/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<refresh_token>"}'
+```
+
+Every successful refresh invalidates the previous refresh token. Reusing an old token returns `401`.
+
+Logout:
+
+```bash
+curl -X POST http://localhost:8080/api/auth/logout \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<refresh_token>"}'
+```
+
+Logout revokes the refresh session. An access JWT already issued remains valid only until its short access TTL expires.
 
 ## Protected task endpoints
 
@@ -192,8 +234,19 @@ PostgreSQL Integration Test
 Docker Compose Smoke Test
 ```
 
-It validates formatting, `go vet`, race-enabled unit tests, compilation, real PostgreSQL repository behavior, Docker image construction, container health, OpenAPI, and Swagger UI.
+It validates formatting, `go vet`, race-enabled unit tests, compilation, real PostgreSQL repository behavior, refresh-token rotation/replay protection, Docker image construction, container health, OpenAPI, and Swagger UI.
 
 ## Graceful shutdown
 
 The API handles `SIGINT` and `SIGTERM`. On shutdown it stops accepting new requests and gives active requests up to `SHUTDOWN_TIMEOUT` to finish before forcing the server closed.
+
+
+## Auth migration
+
+Existing PostgreSQL databases must also apply:
+
+```bash
+psql "$DATABASE_URL" -f migrations/004_refresh_tokens.sql
+```
+
+Fresh Docker Compose volumes apply migration 004 automatically.

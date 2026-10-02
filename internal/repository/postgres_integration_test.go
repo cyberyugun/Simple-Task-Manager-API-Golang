@@ -46,6 +46,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 
 	userRepo := repository.NewPostgresUserRepository(db)
 	taskRepo := repository.NewPostgresTaskRepository(db)
+	refreshRepo := repository.NewPostgresRefreshTokenRepository(db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	user1, err := userRepo.Create(model.User{
@@ -78,6 +79,47 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 		UpdatedAt:    now,
 	}); !errors.Is(err, repository.ErrEmailExists) {
 		t.Fatalf("duplicate email error = %v, want ErrEmailExists", err)
+	}
+
+	if err := refreshRepo.Create(model.RefreshSession{
+		UserID:    user1.ID,
+		TokenHash: "old-refresh-hash",
+		ExpiresAt: now.Add(time.Hour),
+		CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("create refresh session: %v", err)
+	}
+
+	rotated, err := refreshRepo.Rotate(
+		"old-refresh-hash",
+		"new-refresh-hash",
+		now.Add(2*time.Hour),
+		now.Add(time.Minute),
+	)
+	if err != nil {
+		t.Fatalf("rotate refresh session: %v", err)
+	}
+	if rotated.UserID != user1.ID {
+		t.Fatalf("rotated UserID = %d, want %d", rotated.UserID, user1.ID)
+	}
+	if _, err := refreshRepo.Rotate(
+		"old-refresh-hash",
+		"replay-refresh-hash",
+		now.Add(2*time.Hour),
+		now.Add(2*time.Minute),
+	); !errors.Is(err, repository.ErrInvalidRefreshToken) {
+		t.Fatalf("replayed refresh token error = %v, want ErrInvalidRefreshToken", err)
+	}
+	if err := refreshRepo.Revoke("new-refresh-hash", now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("revoke refresh session: %v", err)
+	}
+	if _, err := refreshRepo.Rotate(
+		"new-refresh-hash",
+		"after-logout-hash",
+		now.Add(3*time.Hour),
+		now.Add(4*time.Minute),
+	); !errors.Is(err, repository.ErrInvalidRefreshToken) {
+		t.Fatalf("refresh after revoke error = %v, want ErrInvalidRefreshToken", err)
 	}
 
 	first, err := taskRepo.Create(model.Task{
@@ -156,6 +198,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 
 func resetDatabase(db *sql.DB) error {
 	for _, statement := range []string{
+		"DROP TABLE IF EXISTS refresh_tokens CASCADE",
 		"DROP TABLE IF EXISTS tasks CASCADE",
 		"DROP TABLE IF EXISTS users CASCADE",
 	} {
@@ -173,6 +216,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"001_create_tasks.sql",
 		"002_add_users_and_task_ownership.sql",
 		"003_task_list_indexes.sql",
+		"004_refresh_tokens.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {

@@ -11,6 +11,8 @@ import (
 const (
 	defaultPort            = "8080"
 	defaultShutdownTimeout = 10 * time.Second
+	defaultAccessTokenTTL  = 15 * time.Minute
+	defaultRefreshTokenTTL = 30 * 24 * time.Hour
 )
 
 type Config struct {
@@ -18,6 +20,8 @@ type Config struct {
 	DatabaseURL     string
 	JWTSecret       string
 	ShutdownTimeout time.Duration
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
 }
 
 func Load() (Config, error) {
@@ -26,6 +30,8 @@ func Load() (Config, error) {
 		DatabaseURL:     strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		JWTSecret:       os.Getenv("JWT_SECRET"),
 		ShutdownTimeout: defaultShutdownTimeout,
+		AccessTokenTTL:  defaultAccessTokenTTL,
+		RefreshTokenTTL: defaultRefreshTokenTTL,
 	}
 
 	if cfg.Port == "" {
@@ -40,13 +46,31 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("JWT_SECRET is required and must be at least 32 characters")
 	}
 
-	if value := strings.TrimSpace(os.Getenv("SHUTDOWN_TIMEOUT")); value != "" {
-		timeout, err := time.ParseDuration(value)
-		if err != nil || timeout <= 0 {
-			return Config{}, fmt.Errorf("SHUTDOWN_TIMEOUT must be a positive duration")
-		}
-		cfg.ShutdownTimeout = timeout
+	if cfg.ShutdownTimeout, err = parsePositiveDuration("SHUTDOWN_TIMEOUT", cfg.ShutdownTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.AccessTokenTTL, err = parsePositiveDuration("ACCESS_TOKEN_TTL", cfg.AccessTokenTTL); err != nil {
+		return Config{}, err
+	}
+	if cfg.RefreshTokenTTL, err = parsePositiveDuration("REFRESH_TOKEN_TTL", cfg.RefreshTokenTTL); err != nil {
+		return Config{}, err
+	}
+	if cfg.RefreshTokenTTL <= cfg.AccessTokenTTL {
+		return Config{}, fmt.Errorf("REFRESH_TOKEN_TTL must be greater than ACCESS_TOKEN_TTL")
 	}
 
 	return cfg, nil
+}
+
+func parsePositiveDuration(name string, fallback time.Duration) (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback, nil
+	}
+
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration <= 0 {
+		return 0, fmt.Errorf("%s must be a positive duration", name)
+	}
+	return duration, nil
 }

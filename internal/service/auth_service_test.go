@@ -12,11 +12,14 @@ import (
 
 func newTestAuthService() *AuthService {
 	users := repository.NewInMemoryUserRepository()
-	tokens := auth.NewTokenManager("12345678901234567890123456789012", time.Hour)
-	return NewAuthService(users, tokens)
+	refreshes := repository.NewInMemoryRefreshTokenRepository()
+	accessTTL := 15 * time.Minute
+	refreshTTL := 24 * time.Hour
+	tokens := auth.NewTokenManager("12345678901234567890123456789012", accessTTL)
+	return NewAuthService(users, refreshes, tokens, accessTTL, refreshTTL)
 }
 
-func TestAuthServiceRegisterAndLogin(t *testing.T) {
+func TestAuthServiceRegisterLoginRefreshAndLogout(t *testing.T) {
 	service := newTestAuthService()
 
 	registered, err := service.Register(model.RegisterRequest{
@@ -27,11 +30,14 @@ func TestAuthServiceRegisterAndLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
-	if registered.User.Email != "test@example.com" || registered.AccessToken == "" {
+	if registered.User.Email != "test@example.com" || registered.AccessToken == "" || registered.RefreshToken == "" {
 		t.Fatalf("Register() returned unexpected result: %+v", registered)
 	}
+	if registered.AccessTokenExpiresIn != 900 || registered.RefreshTokenExpiresIn != 86400 {
+		t.Fatalf("unexpected TTL metadata: %+v", registered)
+	}
 	if registered.User.PasswordHash != "" {
-		t.Fatal("password hash should not be exposed through JSON-facing user data")
+		t.Fatal("password hash should not be exposed")
 	}
 
 	loggedIn, err := service.Login(model.LoginRequest{
@@ -41,12 +47,31 @@ func TestAuthServiceRegisterAndLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
-	if loggedIn.AccessToken == "" {
-		t.Fatal("Login() access token is empty")
+	if loggedIn.AccessToken == "" || loggedIn.RefreshToken == "" {
+		t.Fatal("Login() tokens are empty")
+	}
+
+	refreshed, err := service.Refresh(model.RefreshRequest{RefreshToken: loggedIn.RefreshToken})
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if refreshed.RefreshToken == loggedIn.RefreshToken {
+		t.Fatal("Refresh() did not rotate refresh token")
+	}
+
+	if _, err := service.Refresh(model.RefreshRequest{RefreshToken: loggedIn.RefreshToken}); !errors.Is(err, ErrInvalidRefreshToken) {
+		t.Fatalf("replayed Refresh() error = %v, want ErrInvalidRefreshToken", err)
+	}
+
+	if err := service.Logout(model.LogoutRequest{RefreshToken: refreshed.RefreshToken}); err != nil {
+		t.Fatalf("Logout() error = %v", err)
+	}
+	if _, err := service.Refresh(model.RefreshRequest{RefreshToken: refreshed.RefreshToken}); !errors.Is(err, ErrInvalidRefreshToken) {
+		t.Fatalf("Refresh() after logout error = %v, want ErrInvalidRefreshToken", err)
 	}
 }
 
-func TestAuthServiceRejectsDuplicateEmailAndBadPassword(t *testing.T) {
+func TestAuthServiceRejectsDuplicateEmailBadPasswordAndInvalidRefresh(t *testing.T) {
 	service := newTestAuthService()
 	req := model.RegisterRequest{Name: "Test User", Email: "test@example.com", Password: "password123"}
 
@@ -58,5 +83,8 @@ func TestAuthServiceRejectsDuplicateEmailAndBadPassword(t *testing.T) {
 	}
 	if _, err := service.Login(model.LoginRequest{Email: req.Email, Password: "wrong-password"}); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("Login() error = %v, want ErrInvalidCredentials", err)
+	}
+	if _, err := service.Refresh(model.RefreshRequest{RefreshToken: "not-a-session"}); !errors.Is(err, ErrInvalidRefreshToken) {
+		t.Fatalf("Refresh() error = %v, want ErrInvalidRefreshToken", err)
 	}
 }

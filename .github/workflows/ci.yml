@@ -118,6 +118,24 @@ jobs:
           curl --fail --silent http://localhost:8080/openapi.yaml | grep "openapi: 3.1.0"
           curl --fail --silent http://localhost:8080/docs | grep "SwaggerUIBundle"
 
+      - name: Smoke test refresh token rotation
+        run: |
+          register_response="$(curl --fail --silent             -X POST http://localhost:8080/api/auth/register             -H 'Content-Type: application/json'             -d '{"name":"CI User","email":"ci@example.com","password":"password123"}')"
+          old_refresh="$(printf '%s' "$register_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
+
+          refresh_response="$(curl --fail --silent             -X POST http://localhost:8080/api/auth/refresh             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$old_refresh\"}")"
+          new_refresh="$(printf '%s' "$refresh_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
+
+          test "$old_refresh" != "$new_refresh"
+
+          replay_status="$(curl --silent --output /dev/null --write-out '%{http_code}'             -X POST http://localhost:8080/api/auth/refresh             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$old_refresh\"}")"
+          test "$replay_status" = "401"
+
+          curl --fail --silent             -X POST http://localhost:8080/api/auth/logout             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$new_refresh\"}" >/dev/null
+
+          after_logout_status="$(curl --silent --output /dev/null --write-out '%{http_code}'             -X POST http://localhost:8080/api/auth/refresh             -H 'Content-Type: application/json'             -d "{\"refresh_token\":\"$new_refresh\"}")"
+          test "$after_logout_status" = "401"
+
       - name: Show container status
         run: docker compose ps
 

@@ -15,6 +15,7 @@ var (
 
 type UserRepository interface {
 	Create(user model.User) (model.User, error)
+	FindByID(id int64) (model.User, error)
 	FindByEmail(email string) (model.User, error)
 }
 
@@ -47,6 +48,17 @@ func (r *InMemoryUserRepository) Create(user model.User) (model.User, error) {
 	r.nextID++
 	r.users[user.ID] = user
 	r.byEmail[email] = user.ID
+	return user, nil
+}
+
+func (r *InMemoryUserRepository) FindByID(id int64) (model.User, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	user, ok := r.users[id]
+	if !ok {
+		return model.User{}, ErrUserNotFound
+	}
 	return user, nil
 }
 

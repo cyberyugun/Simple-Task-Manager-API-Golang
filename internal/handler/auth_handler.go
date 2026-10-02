@@ -61,13 +61,54 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: result})
 }
 
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
+		return
+	}
+	defer r.Body.Close()
+
+	var req model.RefreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: "invalid JSON body"})
+		return
+	}
+
+	result, err := h.service.Refresh(req)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: result})
+}
+
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
+		return
+	}
+	defer r.Body.Close()
+
+	var req model.LogoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: "invalid JSON body"})
+		return
+	}
+
+	if err := h.service.Logout(req); err != nil {
+		h.handleError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "logged out"})
+}
+
 func (h *AuthHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalidUser):
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, repository.ErrEmailExists):
 		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: err.Error()})
-	case errors.Is(err, service.ErrInvalidCredentials):
+	case errors.Is(err, service.ErrInvalidCredentials), errors.Is(err, service.ErrInvalidRefreshToken):
 		response.JSON(w, http.StatusUnauthorized, response.Envelope{Success: false, Message: err.Error()})
 	default:
 		response.JSON(w, http.StatusInternalServerError, response.Envelope{Success: false, Message: "internal server error"})

@@ -75,6 +75,49 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Rotate a refresh token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Access and refresh tokens rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Revoke a refresh token
+      operationId: logout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Refresh token revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/tasks:
     get:
       tags: [Tasks]
@@ -298,6 +341,14 @@ components:
           type: string
           format: password
           example: password123
+    RefreshTokenRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          minLength: 1
+          example: qJqO4DBpO9dOJKmSZ9Xn0dD7eLw_LiFrZGmCwM0fS6o
     User:
       type: object
       required: [id, name, email, created_at, updated_at]
@@ -318,15 +369,28 @@ components:
           format: date-time
     AuthResult:
       type: object
-      required: [user, access_token, token_type]
+      required: [user, access_token, refresh_token, token_type, access_token_expires_in, refresh_token_expires_in]
       properties:
         user:
           $ref: '#/components/schemas/User'
         access_token:
           type: string
+        refresh_token:
+          type: string
+          description: Opaque refresh token. It is rotated on every successful refresh.
         token_type:
           type: string
           const: Bearer
+        access_token_expires_in:
+          type: integer
+          format: int64
+          description: Access token lifetime in seconds.
+          example: 900
+        refresh_token_expires_in:
+          type: integer
+          format: int64
+          description: Refresh token lifetime in seconds.
+          example: 2592000
     TaskWriteRequest:
       type: object
       required: [title]

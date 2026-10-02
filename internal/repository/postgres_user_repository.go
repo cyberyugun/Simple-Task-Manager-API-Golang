@@ -41,6 +41,20 @@ func (r *PostgresUserRepository) Create(user model.User) (model.User, error) {
 	return created, err
 }
 
+func (r *PostgresUserRepository) FindByID(id int64) (model.User, error) {
+	const query = `
+		SELECT id, name, email, password_hash, created_at, updated_at
+		FROM users
+		WHERE id = $1
+	`
+
+	user, err := scanUser(r.db.QueryRow(query, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.User{}, ErrUserNotFound
+	}
+	return user, err
+}
+
 func (r *PostgresUserRepository) FindByEmail(email string) (model.User, error) {
 	const query = `
 		SELECT id, name, email, password_hash, created_at, updated_at
