@@ -55,6 +55,15 @@ spec:
                 name: task-api-config
             - secretRef:
                 name: task-api-secrets
+          env:
+            - name: ACCESS_TOKEN_TTL
+              value: "15m"
+            - name: REFRESH_TOKEN_TTL
+              value: "720h"
+            - name: PASSWORD_RESET_TTL
+              value: "30m"
+            - name: EXPOSE_AUTH_TOKENS
+              value: "false"
           startupProbe:
             httpGet:
               path: /health
