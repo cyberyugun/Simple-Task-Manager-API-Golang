@@ -24,7 +24,7 @@ type AuthService struct {
 	refreshes   repository.RefreshTokenRepository
 	tokens      *auth.TokenManager
 	accessTTL   time.Duration
-	refreshTTL  time.Duration
+	refreshTTL time.Duration
 }
 
 func NewAuthService(
