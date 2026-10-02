@@ -9,28 +9,28 @@ import (
 )
 
 const (
-	defaultPort			= "8080"
-	defaultShutdownTimeout		= 10 * time.Second
-	defaultAccessTokenTTL		= 15 * time.Minute
-	defaultRefreshTokenTTL		= 30 * 24 * time.Hour
-	defaultPasswordResetTTL		= 30 * time.Minute
-	defaultEmailVerificationTTL	= 24 * time.Hour
-	defaultAuthRateLimitRequests	= 20
-	defaultAuthRateLimitWindow	= time.Minute
+	defaultPort                  = "8080"
+	defaultShutdownTimeout       = 10 * time.Second
+	defaultAccessTokenTTL        = 15 * time.Minute
+	defaultRefreshTokenTTL       = 30 * 24 * time.Hour
+	defaultPasswordResetTTL      = 30 * time.Minute
+	defaultEmailVerificationTTL  = 24 * time.Hour
+	defaultAuthRateLimitRequests = 20
+	defaultAuthRateLimitWindow   = time.Minute
 )
 
 type Config struct {
-	Port			string
-	DatabaseURL		string
-	JWTSecret		string
-	ShutdownTimeout		time.Duration
-	AccessTokenTTL		time.Duration
-	RefreshTokenTTL		time.Duration
-	PasswordResetTTL	time.Duration
-	EmailVerificationTTL	time.Duration
-	AuthRateLimitRequests	int
-	AuthRateLimitWindow	time.Duration
-	ExposeAuthTokens	bool
+	Port                  string
+	DatabaseURL           string
+	JWTSecret             string
+	ShutdownTimeout       time.Duration
+	AccessTokenTTL        time.Duration
+	RefreshTokenTTL       time.Duration
+	PasswordResetTTL      time.Duration
+	EmailVerificationTTL  time.Duration
+	AuthRateLimitRequests int
+	AuthRateLimitWindow   time.Duration
+	ExposeAuthTokens      bool
 }
 
 func Load() (Config, error) {
