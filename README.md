@@ -11,6 +11,9 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Pagination, search, completion filter, sorting, and ordering
 - In-memory and PostgreSQL repositories
 - SQL migrations and Docker Compose
+- OpenAPI 3.1 specification
+- Interactive Swagger UI
+- GitHub Actions CI for format, vet, tests, and build
 - Unit and HTTP handler tests
 
 ## Environment
@@ -34,7 +37,29 @@ export JWT_SECRET="replace-this-with-a-random-secret-at-least-32-characters"
 go run ./cmd/api
 ```
 
+PowerShell:
+
+```powershell
+$env:JWT_SECRET="replace-this-with-a-random-secret-at-least-32-characters"
+go run ./cmd/api
+```
+
+## API documentation
+
+After the API starts:
+
+```text
+Swagger UI: http://localhost:8080/docs
+OpenAPI:    http://localhost:8080/openapi.yaml
+```
+
+Swagger UI supports the Bearer JWT security scheme, so after register/login you can use the **Authorize** button and test protected endpoints directly from the browser.
+
+The UI assets are loaded from the pinned `swagger-ui-dist@5.33.0` CDN release. The OpenAPI YAML itself is embedded in the Go binary.
+
 ## PostgreSQL
+
+Start PostgreSQL:
 
 ```bash
 docker compose up -d
@@ -60,6 +85,8 @@ go run ./cmd/api
 | Method | Endpoint | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Health check |
+| `GET` | `/docs` | Swagger UI |
+| `GET` | `/openapi.yaml` | OpenAPI specification |
 | `POST` | `/api/auth/register` | Register and return access token |
 | `POST` | `/api/auth/login` | Login and return access token |
 
@@ -95,40 +122,10 @@ Another user's task returns `404`.
 | `sort` | `created_at` | `id`, `title`, `created_at`, `updated_at`, `completed` |
 | `order` | `desc` | `asc`, `desc` |
 
-Examples:
-
-```bash
-curl "http://localhost:8080/api/tasks?page=1&limit=10"   -H "Authorization: Bearer <access_token>"
-```
+Example:
 
 ```bash
 curl "http://localhost:8080/api/tasks?search=golang&completed=false&sort=title&order=asc"   -H "Authorization: Bearer <access_token>"
-```
-
-List response:
-
-```json
-{
-  "success": true,
-  "data": {
-    "items": [
-      {
-        "id": 1,
-        "title": "Learn Golang",
-        "description": "Build REST API",
-        "completed": false,
-        "created_at": "2026-10-02T10:00:00Z",
-        "updated_at": "2026-10-02T10:00:00Z"
-      }
-    ],
-    "pagination": {
-      "page": 1,
-      "limit": 10,
-      "total": 1,
-      "total_pages": 1
-    }
-  }
-}
 ```
 
 ## Register
@@ -142,6 +139,19 @@ curl -X POST http://localhost:8080/api/auth/register   -H "Content-Type: applica
 ```bash
 curl -X POST http://localhost:8080/api/auth/login   -H "Content-Type: application/json"   -d '{"email":"yudi@example.com","password":"password123"}'
 ```
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on pushes to `main` and pull requests. It performs:
+
+```text
+gofmt check
+go vet ./...
+go test -race -coverprofile=coverage.out ./...
+go build ./cmd/api
+```
+
+The workflow uses the Go version declared in `go.mod`.
 
 ## Run tests
 
