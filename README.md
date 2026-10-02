@@ -20,6 +20,10 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Correlation/request IDs via `X-Request-ID`
 - Liveness, dependency readiness, and Prometheus metrics endpoints
 - Versioned deployment migration runner with PostgreSQL advisory locking
+- Kubernetes base + production Kustomize manifests
+- Rolling deployment, startup/liveness/readiness probes, HPA, PDB, and NetworkPolicy
+- GHCR image publishing and production deployment workflow
+- Build/version endpoint with commit metadata
 - Per-user task ownership
 - Task CRUD and complete action
 - Pagination, search, filtering, sorting, and ordering
@@ -97,6 +101,7 @@ API:         http://localhost:8080
 Liveness:    http://localhost:8080/health
 Readiness:   http://localhost:8080/ready
 Metrics:     http://localhost:8080/metrics
+Version:     http://localhost:8080/version
 Swagger UI:  http://localhost:8080/docs
 OpenAPI:     http://localhost:8080/openapi.yaml
 PostgreSQL:  localhost:5432
@@ -134,7 +139,11 @@ The Compose file contains a development-only fallback JWT secret. Set `JWT_SECRE
 Build directly:
 
 ```bash
-docker build -t simple-task-manager-api .
+docker build \
+  --build-arg VERSION=dev \
+  --build-arg COMMIT="$(git rev-parse HEAD)" \
+  --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t simple-task-manager-api .
 ```
 
 The Dockerfile uses a multi-stage build, produces stripped API and migration binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs the migration job to completion, then starts the API.
@@ -168,6 +177,7 @@ Swagger UI supports the Bearer JWT security scheme. Register/login, copy the ret
 | `GET` | `/health` | Liveness health check |
 | `GET` | `/ready` | PostgreSQL/Redis readiness check |
 | `GET` | `/metrics` | Prometheus text metrics |
+| `GET` | `/version` | Build version, commit, build time, and Go runtime version |
 | `GET` | `/docs` | Swagger UI |
 | `GET` | `/openapi.yaml` | OpenAPI specification |
 | `POST` | `/api/auth/register` | Register |
@@ -305,6 +315,113 @@ The metrics endpoint currently exports aggregate request count/duration, in-flig
 
 Panic recovery is centralized in HTTP middleware. Recovered panics return HTTP 500, increment the panic metric, and emit a structured error log with the request ID and stack trace.
 
+## Kubernetes deployment
+
+Production manifests are organized with Kustomize:
+
+```text
+deploy/k8s/
+├── base/
+│   ├── namespace.yaml
+│   ├── serviceaccount.yaml
+│   ├── configmap.yaml
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── hpa.yaml
+│   ├── pdb.yaml
+│   ├── networkpolicy.yaml
+│   ├── migration-job.yaml
+│   ├── secret.example.yaml
+│   └── kustomization.yaml
+└── overlays/
+    └── production/
+        ├── ingress.yaml
+        └── kustomization.yaml
+```
+
+The application deployment starts with two replicas and uses a rolling update with `maxUnavailable: 0`. Startup and liveness probes call `/health`; readiness calls `/ready`. Resource requests are used by the HPA, which scales from 2 to 10 replicas using CPU and memory utilization.
+
+The cluster must have a Metrics Server (or another implementation of the resource metrics API) for CPU/memory HPA metrics. The production Ingress assumes an `nginx` IngressClass. The NetworkPolicy allows same-namespace traffic plus namespaces named `ingress-nginx` and `monitoring`; adjust these selectors when your cluster uses different namespace names.
+
+Create application secrets before deployment:
+
+```bash
+kubectl apply -f deploy/k8s/base/namespace.yaml
+
+kubectl -n task-manager create secret generic task-api-secrets \
+  --from-literal=DATABASE_URL='postgres://...' \
+  --from-literal=REDIS_URL='redis://...' \
+  --from-literal=JWT_SECRET='replace-with-a-random-secret-at-least-32-characters'
+```
+
+The production Ingress expects a TLS secret named `task-api-tls`:
+
+```bash
+kubectl -n task-manager create secret tls task-api-tls \
+  --cert=./tls.crt \
+  --key=./tls.key
+```
+
+The Kubernetes workloads reference `ghcr-pull-secret`. If the GHCR package is private, create a long-lived pull credential:
+
+```bash
+kubectl -n task-manager create secret docker-registry ghcr-pull-secret \
+  --docker-server=ghcr.io \
+  --docker-username='<github-user>' \
+  --docker-password='<github-pat-with-read-packages>'
+```
+
+If the GHCR image is public, Kubernetes can pull it anonymously; a missing pull secret may still produce a warning event, so removing the `imagePullSecrets` entry is cleaner for a fully public deployment.
+
+Render the production manifests without applying them:
+
+```bash
+kubectl kustomize deploy/k8s/overlays/production
+```
+
+The migration Job is intentionally separate from the base Kustomization so database migrations can complete before the application rollout. The deployment workflow deletes any previous migration Job, runs the migration image for the new commit, waits for completion, then applies the Kustomize overlay and waits for the Deployment rollout.
+
+### GitHub production deployment
+
+`.github/workflows/deploy.yml` builds and pushes:
+
+```text
+ghcr.io/cyberyugun/simple-task-manager-api-golang:<commit-sha>
+ghcr.io/cyberyugun/simple-task-manager-api-golang:latest
+```
+
+It runs on version tags matching `v*` and can also be started with `workflow_dispatch`.
+
+Configure a GitHub Environment named `production` with:
+
+```text
+Secret:
+  KUBE_CONFIG_B64     base64-encoded kubeconfig
+
+Variable:
+  KUBE_INGRESS_HOST   production DNS host, for example api.example.com
+```
+
+The workflow verifies the deployed revision by port-forwarding the Service and checking that `GET /version` returns the exact `GITHUB_SHA` embedded in the image.
+
+## Build metadata
+
+`GET /version` reports the image build identity:
+
+```json
+{
+  "success": true,
+  "data": {
+    "version": "v1.2.0",
+    "commit": "<git-sha>",
+    "build_time": "2026-10-03T00:00:00Z",
+    "go_version": "go1.23.x"
+  }
+}
+```
+
+The production image sets these values through Docker build arguments and Go linker flags, so a running pod can be tied back to an immutable source commit.
+
 ## Tests
 
 Unit tests:
@@ -321,19 +438,9 @@ TEST_DATABASE_URL="postgres://task_user:task_password@localhost:5432/task_manage
 
 ## CI pipeline
 
-The GitHub Actions workflow now has three stages:
+The main CI workflow validates unit/build quality, PostgreSQL behavior, Kubernetes manifests, and the full Docker Compose stack. Kubernetes validation renders the production Kustomize overlay and parses the rendered resources plus migration and Secret templates client-side.
 
-```text
-Unit Test and Build
-        |
-        v
-PostgreSQL Integration Test
-        |
-        v
-Docker Compose Smoke Test
-```
-
-It validates formatting, `go vet`, race-enabled unit tests, compilation, migration-runner idempotency, real PostgreSQL repository behavior, refresh-token rotation/replay protection, one-time reset/verification tokens, session revocation, Redis-backed rate limiting, readiness/metrics endpoints, structured request logs, Docker image construction, OpenAPI, and Swagger UI.
+It validates formatting, `go vet`, race-enabled unit tests, both binaries, migration-runner idempotency, real PostgreSQL repository behavior, refresh-token rotation/replay protection, one-time reset/verification tokens, session revocation, Redis-backed rate limiting, readiness/metrics/version endpoints, structured request logs, Kubernetes manifests, Docker image construction, OpenAPI, and Swagger UI.
 
 ## Graceful shutdown
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -57,6 +57,18 @@ paths:
             text/plain:
               schema:
                 type: string
+  /version:
+    get:
+      tags: [System]
+      summary: Build and runtime version information
+      operationId: version
+      responses:
+        '200':
+          description: Build metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionEnvelope'
   /api/auth/register:
     post:
       tags: [Authentication]
@@ -719,6 +731,22 @@ components:
             $ref: '#/components/schemas/Task'
         pagination:
           $ref: '#/components/schemas/Pagination'
+    BuildInfo:
+      type: object
+      required: [version, commit, build_time, go_version]
+      properties:
+        version:
+          type: string
+          example: v1.2.0
+        commit:
+          type: string
+          example: 937f4928c6154446e80ded956718eeda69d3e105
+        build_time:
+          type: string
+          example: 2026-10-03T00:00:00Z
+        go_version:
+          type: string
+          example: go1.23.0
     HealthEnvelope:
       type: object
       required: [success, message]
@@ -747,6 +775,15 @@ components:
           const: false
         message:
           type: string
+    VersionEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/BuildInfo'
     AuthEnvelope:
       type: object
       required: [success, data]

@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: task-api-migrate
+  namespace: task-manager
+  labels:
+    app.kubernetes.io/name: task-api
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: simple-task-manager
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: task-api
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: task-api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/app/migrate"]
+          env:
+            - name: MIGRATIONS_DIR
+              value: /app/migrations
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: task-api-config
+                  key: LOG_LEVEL
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: task-api-secrets
+                  key: DATABASE_URL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]

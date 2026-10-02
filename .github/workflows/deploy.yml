@@ -1,0 +1,151 @@
+name: Deploy
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/cyberyugun/simple-task-manager-api-golang
+  KUBE_NAMESPACE: task-manager
+
+jobs:
+  build:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build metadata
+        id: build_meta
+        run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
+            ${{ env.IMAGE_REPOSITORY }}:latest
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure cluster access
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG_B64 }}
+        run: |
+          if [ -z "$KUBE_CONFIG_B64" ]; then
+            echo "::error::Production environment secret KUBE_CONFIG_B64 is required."
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG_B64" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl cluster-info
+
+      - name: Prepare namespace and configuration
+        run: |
+          kubectl apply -f deploy/k8s/base/namespace.yaml
+          kubectl apply -f deploy/k8s/base/configmap.yaml
+          kubectl -n "$KUBE_NAMESPACE" get secret task-api-secrets >/dev/null
+          if ! kubectl -n "$KUBE_NAMESPACE" get secret ghcr-pull-secret >/dev/null 2>&1; then
+            echo "::warning::ghcr-pull-secret is missing. This is okay only when the GHCR package is public."
+          fi
+
+      - name: Run database migration
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" delete job task-api-migrate --ignore-not-found --wait=true
+          sed "s|image: task-api:latest|image: $IMAGE_REPOSITORY:$GITHUB_SHA|"             deploy/k8s/base/migration-job.yaml | kubectl apply -f -
+
+          if ! kubectl -n "$KUBE_NAMESPACE" wait             --for=condition=complete job/task-api-migrate             --timeout=5m; then
+            kubectl -n "$KUBE_NAMESPACE" logs job/task-api-migrate --all-containers=true || true
+            exit 1
+          fi
+
+      - name: Deploy application
+        env:
+          INGRESS_HOST: ${{ vars.KUBE_INGRESS_HOST }}
+        run: |
+          if [ -z "$INGRESS_HOST" ]; then
+            echo "::error::Production environment variable KUBE_INGRESS_HOST is required."
+            exit 1
+          fi
+
+          sed -i "s/task-api.example.com/$INGRESS_HOST/g"             deploy/k8s/overlays/production/ingress.yaml
+          sed -i "s/newTag: .*/newTag: $GITHUB_SHA/"             deploy/k8s/overlays/production/kustomization.yaml
+
+          kubectl apply -k deploy/k8s/overlays/production
+          kubectl -n "$KUBE_NAMESPACE" rollout status deployment/task-api --timeout=5m
+
+      - name: Verify deployed version
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" port-forward service/task-api 18080:80 >/tmp/task-api-port-forward.log 2>&1 &
+          port_forward_pid=$!
+          trap 'kill "$port_forward_pid" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:18080/version >/tmp/version.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          cat /tmp/version.json
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("/tmp/version.json", "r", encoding="utf-8") as file:
+              payload = json.load(file)
+
+          actual = payload["data"]["commit"]
+          expected = os.environ["GITHUB_SHA"]
+          if actual != expected:
+              raise SystemExit(f"deployed commit {actual!r} does not match {expected!r}")
+          PY
+
+      - name: Show rollout
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" get deployment,service,ingress,hpa,pdb
+          kubectl -n "$KUBE_NAMESPACE" get pods -l app.kubernetes.io/name=task-api -o wide

@@ -1,12 +1,16 @@
 FROM golang:1.23-alpine AS builder
 
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+
 WORKDIR /src
 
 COPY go.mod ./
 RUN go mod download
 
 COPY . .
-RUN go mod tidy &&     CGO_ENABLED=0 GOOS=linux go build       -trimpath       -ldflags="-s -w"       -o /out/task-api       ./cmd/api &&     CGO_ENABLED=0 GOOS=linux go build       -trimpath       -ldflags="-s -w"       -o /out/migrate       ./cmd/migrate
+RUN go mod tidy &&     CGO_ENABLED=0 GOOS=linux go build       -trimpath       -ldflags="-s -w -X go-simple-task-api/internal/buildinfo.Version=${VERSION} -X go-simple-task-api/internal/buildinfo.Commit=${COMMIT} -X go-simple-task-api/internal/buildinfo.BuildTime=${BUILD_TIME}"       -o /out/task-api       ./cmd/api &&     CGO_ENABLED=0 GOOS=linux go build       -trimpath       -ldflags="-s -w"       -o /out/migrate       ./cmd/migrate
 
 FROM alpine:3.21
 

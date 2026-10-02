@@ -15,6 +15,7 @@ import (
 
 	"go-simple-task-api/internal/apidocs"
 	"go-simple-task-api/internal/auth"
+	"go-simple-task-api/internal/buildinfo"
 	"go-simple-task-api/internal/cache"
 	"go-simple-task-api/internal/config"
 	appdb "go-simple-task-api/internal/database"
@@ -137,6 +138,13 @@ func main() {
 	})
 	mux.HandleFunc("/ready", ready.Handler)
 	mux.Handle("/metrics", metrics.Handler())
+	mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
+			return
+		}
+		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: buildinfo.Current()})
+	})
 	apidocs.Register(mux)
 
 	mux.Handle("/api/auth/register", rateLimited(authHandler.Register))
