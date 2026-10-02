@@ -347,6 +347,7 @@ deploy/k8s/
 └── overlays/
     └── production/
         ├── ingress.yaml
+        ├── clusterissuer.yaml
         └── kustomization.yaml
 ```
 
@@ -365,7 +366,7 @@ kubectl -n task-manager create secret generic task-api-secrets \
   --from-literal=JWT_SECRET='replace-with-a-random-secret-at-least-32-characters'
 ```
 
-The production Ingress is annotated for cert-manager with the `letsencrypt-prod` ClusterIssuer and expects the resulting TLS secret to be named `task-api-tls`. If cert-manager is not installed, create the TLS secret manually:
+The production overlay now includes the cert-manager `letsencrypt-prod` ClusterIssuer and an Ingress that requests the `task-api-tls` certificate. Install cert-manager before applying the production overlay and set `CERT_MANAGER_EMAIL` in the GitHub production Environment so the deployment workflow replaces the placeholder ACME email. If cert-manager is intentionally not used, remove `clusterissuer.yaml` and the cert-manager annotation from the overlay and create the TLS secret manually:
 
 ```bash
 kubectl -n task-manager create secret tls task-api-tls \
@@ -405,19 +406,34 @@ ghcr.io/cyberyugun/simple-task-manager-api-golang:latest
 
 It runs on version tags matching `v*` and can also be started with `workflow_dispatch`.
 
-Configure a GitHub Environment named `production` with:
+Configure a GitHub Environment named `production` with `KUBE_INGRESS_HOST`, `CERT_MANAGER_EMAIL`, and a cluster authentication mode.
 
 ```text
-Secret:
-  KUBE_CONFIG_B64     base64-encoded kubeconfig
-
-Variable:
+Variables:
+  KUBE_AUTH_MODE      aws-eks | azure-aks | gke | kubeconfig
   KUBE_INGRESS_HOST   production DNS host, for example api.example.com
+  CERT_MANAGER_EMAIL  ACME account email used by cert-manager
+
+AWS EKS OIDC:
+  Secret:   AWS_ROLE_ARN
+  Variables: AWS_REGION, EKS_CLUSTER_NAME
+
+Azure AKS OIDC:
+  Secrets:  AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+  Variables: AZURE_RESOURCE_GROUP, AKS_CLUSTER_NAME
+
+Google GKE OIDC:
+  Secrets:  GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT
+  Variables: GCP_PROJECT_ID, GKE_CLUSTER_NAME, GKE_LOCATION
+
+Provider-neutral fallback:
+  Secret:   KUBE_CONFIG_B64
+  Variable: KUBE_AUTH_MODE=kubeconfig
 ```
 
 The workflow builds the release, blocks HIGH/CRITICAL image vulnerabilities with available fixes, generates a CycloneDX SBOM, creates GitHub build-provenance and SBOM attestations, signs the image keylessly with Cosign using GitHub OIDC, verifies that signature, and deploys the immutable image digest. Before migration and rollout, the deploy job verifies the signature again. Finally, it port-forwards the Service and checks that `GET /version` returns the exact `GITHUB_SHA` embedded in the image.
 
-`KUBE_CONFIG_B64` remains the provider-neutral cluster credential fallback. For a managed Kubernetes provider, replace only the **Configure cluster access** step with that provider's GitHub OIDC login action so the production environment no longer needs a long-lived kubeconfig secret.
+The deployment workflow natively supports GitHub OIDC for AWS EKS, Azure AKS, and Google GKE. These modes exchange GitHub's short-lived OIDC token for provider credentials and avoid storing a long-lived kubeconfig in GitHub. `KUBE_CONFIG_B64` remains an explicit provider-neutral fallback for clusters that cannot use workload identity federation.
 
 ## Security and software supply chain
 

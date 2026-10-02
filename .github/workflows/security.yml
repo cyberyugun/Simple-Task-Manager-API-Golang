@@ -42,10 +42,29 @@ jobs:
           persist-credentials: false
 
       - name: Review dependency changes
+        id: dependency_review
+        continue-on-error: true
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
           show-patched-versions: true
+
+      - name: Explain dependency-review fallback
+        if: steps.dependency_review.outcome == 'failure'
+        run: |
+          echo "::warning::GitHub Dependency Review was unavailable or failed. Running a blocking Trivy dependency vulnerability review as fallback."
+
+      - name: Fallback dependency vulnerability review
+        if: steps.dependency_review.outcome == 'failure'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "1"
+          format: table
 
   filesystem-scan:
     name: Source and IaC Scan

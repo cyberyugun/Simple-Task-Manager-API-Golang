@@ -164,19 +164,84 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
 
-      - name: Configure cluster access
+      - name: Validate cluster authentication mode
+        env:
+          KUBE_AUTH_MODE: ${{ vars.KUBE_AUTH_MODE }}
+        run: |
+          case "${KUBE_AUTH_MODE:-kubeconfig}" in
+            aws-eks|azure-aks|gke|kubeconfig) ;;
+            *)
+              echo "::error::KUBE_AUTH_MODE must be one of: aws-eks, azure-aks, gke, kubeconfig."
+              exit 1
+              ;;
+          esac
+
+      - name: Authenticate to AWS with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+
+      - name: Configure EKS cluster
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+        run: |
+          test -n "$AWS_REGION" || { echo "::error::AWS_REGION is required."; exit 1; }
+          test -n "$EKS_CLUSTER_NAME" || { echo "::error::EKS_CLUSTER_NAME is required."; exit 1; }
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Authenticate to Azure with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure AKS cluster
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/aks-set-context@c7eb093e5a5d47caa333f64974d5fd1cd4bf069d # v4.0.3
+        with:
+          resource-group: ${{ vars.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
+          admin: false
+
+      - name: Authenticate to Google Cloud with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure GKE cluster
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
+          location: ${{ vars.GKE_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure cluster access from kubeconfig fallback
+        if: vars.KUBE_AUTH_MODE == '' || vars.KUBE_AUTH_MODE == 'kubeconfig'
         env:
           KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG_B64 }}
         run: |
           if [ -z "$KUBE_CONFIG_B64" ]; then
-            echo "::error::Production environment secret KUBE_CONFIG_B64 is required."
-            echo "::notice::For managed Kubernetes, replace this step with the provider's GitHub OIDC login action to remove long-lived kubeconfig credentials."
+            echo "::error::KUBE_CONFIG_B64 is required when KUBE_AUTH_MODE is kubeconfig."
             exit 1
           fi
+          echo "::warning::Using long-lived kubeconfig fallback. Prefer aws-eks, azure-aks, or gke OIDC mode for production."
           mkdir -p "$HOME/.kube"
           printf '%s' "$KUBE_CONFIG_B64" | base64 --decode > "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
-          kubectl cluster-info
+
+      - name: Verify cluster access
+        run: kubectl cluster-info
 
       - name: Prepare namespace and configuration
         run: |
@@ -203,14 +268,21 @@ jobs:
       - name: Deploy application by immutable digest
         env:
           INGRESS_HOST: ${{ vars.KUBE_INGRESS_HOST }}
+          CERT_MANAGER_EMAIL: ${{ vars.CERT_MANAGER_EMAIL }}
         run: |
           if [ -z "$INGRESS_HOST" ]; then
             echo "::error::Production environment variable KUBE_INGRESS_HOST is required."
             exit 1
           fi
+          if [ -z "$CERT_MANAGER_EMAIL" ]; then
+            echo "::error::Production environment variable CERT_MANAGER_EMAIL is required."
+            exit 1
+          fi
 
           sed -i "s/task-api.example.com/$INGRESS_HOST/g" \
             deploy/k8s/overlays/production/ingress.yaml
+          sed -i "s/platform@example.com/$CERT_MANAGER_EMAIL/g" \
+            deploy/k8s/overlays/production/clusterissuer.yaml
           sed -i "s/newTag: latest/digest: $IMAGE_DIGEST/" \
             deploy/k8s/overlays/production/kustomization.yaml
 
