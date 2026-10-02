@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	appdb "go-simple-task-api/internal/database"
 	"go-simple-task-api/internal/handler"
 	"go-simple-task-api/internal/repository"
 	"go-simple-task-api/internal/service"
@@ -12,8 +13,24 @@ import (
 )
 
 func main() {
-	repo := repository.NewInMemoryTaskRepository()
-	taskService := service.NewTaskService(repo)
+	var taskRepo repository.TaskRepository
+
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL != "" {
+		db, err := appdb.OpenPostgres(databaseURL)
+		if err != nil {
+			log.Fatalf("failed to connect to PostgreSQL: %v", err)
+		}
+		defer db.Close()
+
+		taskRepo = repository.NewPostgresTaskRepository(db)
+		log.Println("storage: PostgreSQL")
+	} else {
+		taskRepo = repository.NewInMemoryTaskRepository()
+		log.Println("storage: in-memory (set DATABASE_URL to use PostgreSQL)")
+	}
+
+	taskService := service.NewTaskService(taskRepo)
 	taskHandler := handler.NewTaskHandler(taskService)
 
 	mux := http.NewServeMux()
