@@ -23,14 +23,14 @@ var (
 )
 
 type AuthService struct {
-	users             repository.UserRepository
-	refreshes         repository.RefreshTokenRepository
-	actions           repository.AuthActionTokenRepository
-	tokens            *auth.TokenManager
-	accessTTL         time.Duration
-	refreshTTL        time.Duration
-	passwordResetTTL  time.Duration
-	emailVerifyTTL    time.Duration
+	users			 repository.UserRepository
+	refreshes		 repository.RefreshTokenRepository
+	actions			 repository.AuthActionTokenRepository
+	tokens			 *auth.TokenManager
+	accessTTL		 time.Duration
+	refreshTTL		 time.Duration
+	passwordResetTTL	 time.Duration
+	emailVerifyTTL		 time.Duration
 }
 
 func NewAuthService(
