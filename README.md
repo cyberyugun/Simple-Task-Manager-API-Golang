@@ -1,30 +1,35 @@
-# Go Simple Task API
+# Simple Task Manager API - Golang
 
-A simple Task Manager REST API written in Go with a Handler -> Service -> Repository architecture.
-
-The app supports two storage modes:
-
-- In-memory storage by default.
-- PostgreSQL when `DATABASE_URL` is configured.
+A simple REST API built with Go using a Handler -> Service -> Repository architecture.
 
 ## Features
 
-- Create task
-- List tasks
-- Get task by ID
-- Update task
-- Mark task as completed
-- Delete task
-- Health endpoint
-- In-memory repository
-- PostgreSQL repository
-- Unit and HTTP handler tests
+- User registration and login
+- Password hashing with bcrypt
+- HS256 JWT access tokens
+- JWT authentication middleware
+- Per-user task ownership
+- Create, list, read, update, complete, and delete tasks
+- In-memory storage for quick local development
+- PostgreSQL storage
+- SQL migrations
 - Docker Compose PostgreSQL setup
+- Unit and HTTP handler tests
 
 ## Requirements
 
 - Go 1.23+
 - Docker and Docker Compose, optional for PostgreSQL
+
+## Environment
+
+Copy `.env.example` or export the variables manually.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `PORT` | No | `8080` | HTTP server port |
+| `DATABASE_URL` | No | empty | PostgreSQL URL. Empty uses in-memory storage. |
+| `JWT_SECRET` | Yes | none | JWT signing secret, minimum 32 characters. |
 
 ## Install dependencies
 
@@ -34,16 +39,18 @@ go mod tidy
 
 ## Run with in-memory storage
 
-No database configuration is required:
+Linux/macOS:
 
 ```bash
+export JWT_SECRET="replace-this-with-a-random-secret-at-least-32-characters"
 go run ./cmd/api
 ```
 
-The API runs at:
+PowerShell:
 
-```text
-http://localhost:8080
+```powershell
+$env:JWT_SECRET="replace-this-with-a-random-secret-at-least-32-characters"
+go run ./cmd/api
 ```
 
 ## Run with PostgreSQL
@@ -54,83 +61,127 @@ Start PostgreSQL:
 docker compose up -d
 ```
 
-The compose setup automatically executes the SQL files in `migrations/` when the database volume is first created.
+For a new Docker volume, files in `migrations/` are executed automatically in filename order.
 
-Set the database connection string.
+If the database volume already existed before Phase 7, apply the new migration manually:
 
-Linux/macOS:
+```bash
+psql "$DATABASE_URL" -f migrations/002_add_users_and_task_ownership.sql
+```
+
+Then run the API:
 
 ```bash
 export DATABASE_URL="postgres://task_user:task_password@localhost:5432/task_manager?sslmode=disable"
+export JWT_SECRET="replace-this-with-a-random-secret-at-least-32-characters"
 go run ./cmd/api
 ```
 
-PowerShell:
+## Authentication flow
 
-```powershell
-$env:DATABASE_URL="postgres://task_user:task_password@localhost:5432/task_manager?sslmode=disable"
-go run ./cmd/api
+```text
+Register / Login
+      |
+      v
+Auth Handler
+      |
+      v
+Auth Service
+      |
+      +---- bcrypt password hash/verify
+      |
+      +---- User Repository
+      |
+      v
+JWT access token
+      |
+      v
+Authorization: Bearer <token>
+      |
+      v
+Auth Middleware
+      |
+      v
+Authenticated Task API
+      |
+      v
+Task queries scoped by user_id
 ```
 
-For an existing PostgreSQL server, run the migration manually:
-
-```bash
-psql "$DATABASE_URL" -f migrations/001_create_tasks.sql
-```
-
-## Environment variables
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `PORT` | No | `8080` | HTTP server port |
-| `DATABASE_URL` | No | empty | PostgreSQL connection URL; empty uses in-memory storage |
-
-Example values are available in `.env.example`.
-
-## Endpoints
+## Public endpoints
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Health check |
-| `GET` | `/api/tasks` | List tasks |
-| `POST` | `/api/tasks` | Create task |
-| `GET` | `/api/tasks/{id}` | Get task |
-| `PUT` | `/api/tasks/{id}` | Update task |
-| `PATCH` | `/api/tasks/{id}/complete` | Mark task completed |
-| `DELETE` | `/api/tasks/{id}` | Delete task |
+| `POST` | `/api/auth/register` | Create user and return access token |
+| `POST` | `/api/auth/login` | Login and return access token |
 
-## Create task
+## Protected task endpoints
+
+All task endpoints require:
+
+```text
+Authorization: Bearer <access_token>
+```
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/tasks` | List current user's tasks |
+| `POST` | `/api/tasks` | Create task for current user |
+| `GET` | `/api/tasks/{id}` | Get current user's task |
+| `PUT` | `/api/tasks/{id}` | Update current user's task |
+| `PATCH` | `/api/tasks/{id}/complete` | Mark current user's task completed |
+| `DELETE` | `/api/tasks/{id}` | Delete current user's task |
+
+Requests for another user's task return `404` rather than exposing whether that task exists.
+
+## Register
+
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Yudi","email":"yudi@example.com","password":"password123"}'
+```
+
+Example response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 1,
+      "name": "Yudi",
+      "email": "yudi@example.com"
+    },
+    "access_token": "<jwt>",
+    "token_type": "Bearer"
+  }
+}
+```
+
+## Login
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"yudi@example.com","password":"password123"}'
+```
+
+## Create an authenticated task
 
 ```bash
 curl -X POST http://localhost:8080/api/tasks \
+  -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Learn Golang","description":"Build REST API"}'
+  -d '{"title":"Learn Golang","description":"Build authenticated REST API"}'
 ```
 
-## Get tasks
+## Get current user's tasks
 
 ```bash
-curl http://localhost:8080/api/tasks
-```
-
-## Update task
-
-```bash
-curl -X PUT http://localhost:8080/api/tasks/1 \
-  -H "Content-Type: application/json" \
-  -d '{"title":"Learn PostgreSQL","description":"Persist tasks in PostgreSQL"}'
-```
-
-## Complete task
-
-```bash
-curl -X PATCH http://localhost:8080/api/tasks/1/complete
-```
-
-## Delete task
-
-```bash
-curl -X DELETE http://localhost:8080/api/tasks/1
+curl http://localhost:8080/api/tasks \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 ## Run tests
@@ -145,16 +196,27 @@ go test ./...
 go-simple-task-api/
 ├── cmd/api/main.go
 ├── internal/
+│   ├── auth/token.go
 │   ├── database/postgres.go
 │   ├── handler/
+│   │   ├── auth_handler.go
+│   │   └── task_handler.go
+│   ├── middleware/auth.go
 │   ├── model/
+│   │   ├── task.go
+│   │   └── user.go
 │   ├── repository/
 │   │   ├── task_repository.go
-│   │   └── postgres_task_repository.go
+│   │   ├── user_repository.go
+│   │   ├── postgres_task_repository.go
+│   │   └── postgres_user_repository.go
 │   └── service/
+│       ├── auth_service.go
+│       └── task_service.go
 ├── migrations/
-│   └── 001_create_tasks.sql
-├── pkg/response/
+│   ├── 001_create_tasks.sql
+│   └── 002_add_users_and_task_ownership.sql
+├── pkg/response/response.go
 ├── .env.example
 ├── docker-compose.yml
 ├── go.mod

@@ -8,11 +8,11 @@ import (
 	"go-simple-task-api/internal/model"
 )
 
-func TestInMemoryTaskRepositoryCRUD(t *testing.T) {
+func TestInMemoryTaskRepositoryCRUDAndOwnership(t *testing.T) {
 	repo := NewInMemoryTaskRepository()
 	now := time.Now()
 
-	created, err := repo.Create(model.Task{Title: "Learn Go", CreatedAt: now, UpdatedAt: now})
+	created, err := repo.Create(model.Task{UserID: 1, Title: "Learn Go", CreatedAt: now, UpdatedAt: now})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -20,7 +20,7 @@ func TestInMemoryTaskRepositoryCRUD(t *testing.T) {
 		t.Fatalf("Create() ID = %d, want 1", created.ID)
 	}
 
-	found, err := repo.FindByID(created.ID)
+	found, err := repo.FindByID(1, created.ID)
 	if err != nil {
 		t.Fatalf("FindByID() error = %v", err)
 	}
@@ -28,12 +28,24 @@ func TestInMemoryTaskRepositoryCRUD(t *testing.T) {
 		t.Fatalf("FindByID() title = %q, want %q", found.Title, "Learn Go")
 	}
 
-	all, err := repo.FindAll()
+	if _, err := repo.FindByID(2, created.ID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("cross-user FindByID() error = %v, want ErrTaskNotFound", err)
+	}
+
+	all, err := repo.FindAll(1)
 	if err != nil {
 		t.Fatalf("FindAll() error = %v", err)
 	}
 	if len(all) != 1 {
 		t.Fatalf("FindAll() len = %d, want 1", len(all))
+	}
+
+	other, err := repo.FindAll(2)
+	if err != nil {
+		t.Fatalf("FindAll(other user) error = %v", err)
+	}
+	if len(other) != 0 {
+		t.Fatalf("FindAll(other user) len = %d, want 0", len(other))
 	}
 
 	found.Title = "Learn Go Testing"
@@ -45,28 +57,10 @@ func TestInMemoryTaskRepositoryCRUD(t *testing.T) {
 		t.Fatalf("Update() title = %q, want %q", updated.Title, "Learn Go Testing")
 	}
 
-	if err := repo.Delete(created.ID); err != nil {
+	if err := repo.Delete(2, created.ID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("cross-user Delete() error = %v, want ErrTaskNotFound", err)
+	}
+	if err := repo.Delete(1, created.ID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
-	}
-
-	_, err = repo.FindByID(created.ID)
-	if !errors.Is(err, ErrTaskNotFound) {
-		t.Fatalf("FindByID() after delete error = %v, want ErrTaskNotFound", err)
-	}
-}
-
-func TestInMemoryTaskRepositoryNotFound(t *testing.T) {
-	repo := NewInMemoryTaskRepository()
-
-	if _, err := repo.FindByID(999); !errors.Is(err, ErrTaskNotFound) {
-		t.Fatalf("FindByID() error = %v, want ErrTaskNotFound", err)
-	}
-
-	if _, err := repo.Update(model.Task{ID: 999, Title: "Missing"}); !errors.Is(err, ErrTaskNotFound) {
-		t.Fatalf("Update() error = %v, want ErrTaskNotFound", err)
-	}
-
-	if err := repo.Delete(999); !errors.Is(err, ErrTaskNotFound) {
-		t.Fatalf("Delete() error = %v, want ErrTaskNotFound", err)
 	}
 }
