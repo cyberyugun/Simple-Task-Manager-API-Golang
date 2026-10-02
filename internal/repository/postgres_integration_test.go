@@ -5,6 +5,7 @@ package repository_test
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,13 +27,22 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenPostgres() error = %v", err)
 	}
-	defer db.Close()
 
-	resetDatabase(t, db)
-	applyMigrations(t, db)
+	if err := resetDatabase(db); err != nil {
+		_ = db.Close()
+		t.Fatalf("reset database: %v", err)
+	}
+
 	t.Cleanup(func() {
-		resetDatabase(t, db)
+		if err := resetDatabase(db); err != nil {
+			t.Errorf("cleanup database: %v", err)
+		}
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
 	})
+
+	applyMigrations(t, db)
 
 	userRepo := repository.NewPostgresUserRepository(db)
 	taskRepo := repository.NewPostgresTaskRepository(db)
@@ -144,16 +154,16 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	}
 }
 
-func resetDatabase(t *testing.T, db *sql.DB) {
-	t.Helper()
+func resetDatabase(db *sql.DB) error {
 	for _, statement := range []string{
 		"DROP TABLE IF EXISTS tasks CASCADE",
 		"DROP TABLE IF EXISTS users CASCADE",
 	} {
 		if _, err := db.Exec(statement); err != nil {
-			t.Fatalf("reset database: %v", err)
+			return fmt.Errorf("%s: %w", statement, err)
 		}
 	}
+	return nil
 }
 
 func applyMigrations(t *testing.T, db *sql.DB) {
