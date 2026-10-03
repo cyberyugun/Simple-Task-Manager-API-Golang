@@ -6,4 +6,5 @@ const (
 	userIDKey          contextKey = "user_id"
 	workspaceAccessKey contextKey = "workspace_access"
 	requestIDKey       contextKey = "request_id"
+	authClaimsKey      contextKey = "auth_claims"
 )
