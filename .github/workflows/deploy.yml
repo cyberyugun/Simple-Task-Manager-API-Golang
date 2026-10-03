@@ -298,6 +298,7 @@ jobs:
           sed -i "s/newTag: latest/digest: $IMAGE_DIGEST/" deploy/k8s/overlays/staging/kustomization.yaml
           kubectl apply -k deploy/k8s/overlays/staging
           kubectl -n "$KUBE_NAMESPACE" rollout status deployment/task-api --timeout=5m
+          kubectl -n "$KUBE_NAMESPACE" rollout status deployment/task-worker --timeout=5m
 
       - name: Validate staging system endpoints
         env:
@@ -578,7 +579,20 @@ jobs:
           grep -q 'task_api_trace_export_errors_total' /tmp/metrics.txt
           grep -q 'task_api_db_max_open_connections' /tmp/metrics.txt
 
+          kubectl -n "$KUBE_NAMESPACE" port-forward service/task-worker-metrics 19091:9091 >/tmp/task-worker-port-forward.log 2>&1 &
+          worker_port_forward_pid=$!
+          trap 'kill "$port_forward_pid" "$worker_port_forward_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:19091/metrics >/tmp/worker-metrics.txt; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q 'task_worker_fanout_total' /tmp/worker-metrics.txt
+          grep -q 'task_worker_dead_letter_total' /tmp/worker-metrics.txt
+
           kubectl -n "$KUBE_NAMESPACE" get servicemonitor task-api
+          kubectl -n "$KUBE_NAMESPACE" get servicemonitor task-worker
           kubectl -n "$KUBE_NAMESPACE" get prometheusrule task-api-slo
           kubectl -n monitoring get configmap task-api-grafana-dashboard
 
@@ -595,3 +609,4 @@ jobs:
         run: |
           kubectl -n "$KUBE_NAMESPACE" get deployment,service,ingress,hpa,pdb
           kubectl -n "$KUBE_NAMESPACE" get pods -l app.kubernetes.io/name=task-api -o wide
+          kubectl -n "$KUBE_NAMESPACE" get pods -l app.kubernetes.io/name=task-worker -o wide
