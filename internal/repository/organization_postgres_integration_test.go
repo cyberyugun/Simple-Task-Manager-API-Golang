@@ -59,7 +59,7 @@ func TestIntegrationPostgresOrganizationAdministration(t *testing.T) {
 	org, err := orgs.CreateOrganization(model.Organization{
 		Name: "Integration Org", Status: model.OrganizationStatusActive,
 		OwnerUserID: owner.ID, MaxWorkspaces: 2, MaxMembers: 10,
-		CreatedByUserID:  owner.ID, CreatedAt: now, UpdatedAt: now,
+		CreatedByUserID: owner.ID, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestIntegrationPostgresOrganizationAdministration(t *testing.T) {
 	domain, err := orgs.CreateDomain(model.OrganizationDomain{
 		OrganizationID: org.ID, Domain: "example.com",
 		VerificationHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		CreatedByUserID: owner.ID, CreatedAt: now,
+		CreatedByUserID:  owner.ID, CreatedAt: now,
 	})
 	if err != nil {
 		t.Fatal(err)
