@@ -36,3 +36,13 @@
 /internal/service/workspace_service.go @cyberyugun
 /internal/handler/workspace_handler.go @cyberyugun
 /docs/authorization-multitenancy.md @cyberyugun
+/internal/model/event.go @cyberyugun
+/internal/repository/event_repository.go @cyberyugun
+/internal/service/event_service.go @cyberyugun
+/internal/handler/event_handler.go @cyberyugun
+/internal/worker/ @cyberyugun
+/cmd/worker/ @cyberyugun
+/cmd/eventctl/ @cyberyugun
+/deploy/k8s/base/worker-deployment.yaml @cyberyugun
+/deploy/k8s/base/worker-pdb.yaml @cyberyugun
+/docs/event-driven-processing.md @cyberyugun
