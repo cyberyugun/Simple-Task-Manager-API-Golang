@@ -377,6 +377,36 @@ jobs:
           dashboard="$(curl --fail --silent             "http://localhost:8080/api/organizations/$organization_id/billing/dashboard"             -H "Authorization: Bearer $token")"
           printf '%s' "$dashboard" | python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert data["plan"]["code"] == "pro"; assert data["limits"]["max_members"] == 1000; assert any(u["metric"] == "api_operations" and u["quantity"] == 25 for u in data["usage"]); assert len(data["recent_invoices"]) == 1'
 
+      - name: Smoke test enterprise operations control plane
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          organization_response="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Operations","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          curl --fail --silent -X PUT "http://localhost:8080/api/organizations/$organization_id/operations/policy" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"monthly_budget_cents":10000,"budget_alert_threshold_percent":80,"slo_target_basis_points":9990,"incident_escalation_minutes":1,"support_tier":"priority","support_contact":"ops@example.com"}' >/dev/null
+
+          cost_start="$(python3 -c 'import datetime; now=datetime.datetime.now(datetime.timezone.utc); print((now-datetime.timedelta(hours=1)).isoformat().replace("+00:00","Z"))')"
+          cost_end="$(python3 -c 'import datetime; print(datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00","Z"))')"
+          incident_start="$(python3 -c 'import datetime; now=datetime.datetime.now(datetime.timezone.utc); print((now-datetime.timedelta(hours=1)).isoformat().replace("+00:00","Z"))')"
+          maint_start="$(python3 -c 'import datetime; now=datetime.datetime.now(datetime.timezone.utc); print((now+datetime.timedelta(hours=1)).isoformat().replace("+00:00","Z"))')"
+          maint_end="$(python3 -c 'import datetime; now=datetime.datetime.now(datetime.timezone.utc); print((now+datetime.timedelta(hours=2)).isoformat().replace("+00:00","Z"))')"
+
+          cost_payload="$(python3 -c 'import json,sys; print(json.dumps({"category":"compute","source":"ci","amount_cents":9000,"period_start":sys.argv[1],"period_end":sys.argv[2]}))' "$cost_start" "$cost_end")"
+          incident_payload="$(python3 -c 'import json,sys; print(json.dumps({"title":"CI incident","severity":"sev1","summary":"runtime smoke","started_at":sys.argv[1]}))' "$incident_start")"
+          maintenance_payload="$(python3 -c 'import json,sys; print(json.dumps({"title":"CI maintenance","starts_at":sys.argv[1],"ends_at":sys.argv[2]}))' "$maint_start" "$maint_end")"
+
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/operations/costs" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$cost_payload" >/dev/null
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/operations/incidents" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$incident_payload" >/dev/null
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/operations/maintenance" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$maintenance_payload" >/dev/null
+
+          evaluated="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/operations/evaluate" -H "Authorization: Bearer $token")"
+          printf '%s' "$evaluated" | python3 -c 'import json,sys; alerts=json.load(sys.stdin)["data"]; types={a["type"] for a in alerts}; assert "budget_threshold" in types; assert "incident_escalation" in types; assert "slo_breach" in types'
+
+          dashboard="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/operations/dashboard" -H "Authorization: Bearer $token")"
+          printf '%s' "$dashboard" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["policy"]["support_tier"] == "priority"; assert d["current_spend_cents"] >= 8990; assert len(d["open_incidents"]) == 1; assert len(d["upcoming_maintenance"]) == 1; assert len(d["capacity_forecasts"]) == 1'
+
       - name: Smoke test idempotent task and outbox worker
         run: |
           login_response="$(curl --fail --silent \
@@ -420,7 +450,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "14"
+          test "$migration_count" = "15"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
