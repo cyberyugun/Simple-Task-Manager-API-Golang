@@ -412,7 +412,7 @@ func (r *PostgresTaskCollaborationRepository) ListComments(workspaceID, taskID i
 	return items, rows.Err()
 }
 
-func (r *PostgresTaskCollaborationRepository) CreateDependency(dependency model.TaskDependency) (model.TaskDependency, error) {
+func (r *PostgresTaskCollaborationRepository) CreateDependency(workspaceID int64, dependency model.TaskDependency) (model.TaskDependency, error) {
 	var item model.TaskDependency
 	err := r.db.QueryRow(`
 		INSERT INTO task_dependencies (task_id, depends_on_task_id, created_by_user_id, created_at)
@@ -421,7 +421,7 @@ func (r *PostgresTaskCollaborationRepository) CreateDependency(dependency model.
 		JOIN tasks d ON d.id = $3 AND d.workspace_id = $1
 		WHERE t.id = $2 AND t.workspace_id = $1
 		RETURNING task_id, depends_on_task_id, created_by_user_id, created_at
-	`, dependency.TaskID, dependency.TaskID, dependency.DependsOnTaskID,
+	`, workspaceID, dependency.TaskID, dependency.DependsOnTaskID,
 		dependency.CreatedByUserID, dependency.CreatedAt,
 	).Scan(&item.TaskID, &item.DependsOnTaskID, &item.CreatedByUserID, &item.CreatedAt)
 	if err != nil && isUniqueViolation(err) {
