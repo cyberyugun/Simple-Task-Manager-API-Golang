@@ -37,8 +37,8 @@ type NotificationPreference struct {
 	Digest          string     `json:"digest"`
 	Timezone        string     `json:"timezone"`
 	Locale          string     `json:"locale"`
-	QuietHoursStart *time.Time `json:"quiet_hours_start,omitempty"`
-	QuietHoursEnd   *time.Time `json:"quiet_hours_end,omitempty"`
+	QuietHoursStart string     `json:"quiet_hours_start,omitempty"`
+	QuietHoursEnd   string     `json:"quiet_hours_end,omitempty"`
 	MutedEventTypes []string   `json:"muted_event_types"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
