@@ -49,6 +49,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	taskRepo := repository.NewPostgresTaskRepository(db)
 	refreshRepo := repository.NewPostgresRefreshTokenRepository(db)
 	actionRepo := repository.NewPostgresAuthActionTokenRepository(db)
+	workspaceRepo := repository.NewPostgresWorkspaceRepository(db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	user1, err := userRepo.Create(model.User{
@@ -71,6 +72,32 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("create user2: %v", err)
+	}
+
+	workspace1, err := workspaceRepo.ResolveDefault(user1.ID, now)
+	if err != nil {
+		t.Fatalf("resolve user1 personal workspace: %v", err)
+	}
+	workspace2, err := workspaceRepo.ResolveDefault(user2.ID, now)
+	if err != nil {
+		t.Fatalf("resolve user2 personal workspace: %v", err)
+	}
+	if workspace1.ID == workspace2.ID || !workspace1.IsPersonal || !workspace2.IsPersonal {
+		t.Fatalf("unexpected personal workspaces: user1=%+v user2=%+v", workspace1, workspace2)
+	}
+
+	shared, err := workspaceRepo.Create(user1.ID, "Shared Team", now)
+	if err != nil {
+		t.Fatalf("create shared workspace: %v", err)
+	}
+	if _, err := workspaceRepo.AddMember(shared.ID, user2.ID, model.WorkspaceRoleMember, now); err != nil {
+		t.Fatalf("add shared member: %v", err)
+	}
+	if _, err := workspaceRepo.ResolveAccess(user2.ID, shared.ID, now); err != nil {
+		t.Fatalf("user2 shared access: %v", err)
+	}
+	if _, err := workspaceRepo.ResolveAccess(user2.ID, workspace1.ID, now); !errors.Is(err, repository.ErrWorkspaceNotFound) {
+		t.Fatalf("cross-tenant workspace access error = %v, want ErrWorkspaceNotFound", err)
 	}
 
 	if _, err := userRepo.Create(model.User{
@@ -184,6 +211,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	}
 
 	first, err := taskRepo.Create(model.Task{
+		WorkspaceID: workspace1.ID,
 		UserID:      user1.ID,
 		Title:       "Learn Go",
 		Description: "Integration API test",
@@ -196,6 +224,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	}
 
 	_, err = taskRepo.Create(model.Task{
+		WorkspaceID: workspace1.ID,
 		UserID:      user1.ID,
 		Title:       "Completed task",
 		Description: "Already done",
@@ -208,8 +237,9 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	}
 
 	_, err = taskRepo.Create(model.Task{
+		WorkspaceID: workspace2.ID,
 		UserID:      user2.ID,
-		Title:       "Other user task",
+		Title:       "Other workspace task",
 		Description: "Must stay private",
 		Completed:   false,
 		CreatedAt:   now,
@@ -220,7 +250,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	}
 
 	completed := false
-	page, err := taskRepo.FindAll(user1.ID, model.TaskQuery{
+	page, err := taskRepo.FindAll(workspace1.ID, model.TaskQuery{
 		Page:      1,
 		Limit:     10,
 		Search:    "go",
@@ -235,8 +265,8 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 		t.Fatalf("unexpected page: %+v", page)
 	}
 
-	if _, err := taskRepo.FindByID(user2.ID, first.ID); !errors.Is(err, repository.ErrTaskNotFound) {
-		t.Fatalf("cross-user FindByID() error = %v, want ErrTaskNotFound", err)
+	if _, err := taskRepo.FindByID(workspace2.ID, first.ID); !errors.Is(err, repository.ErrTaskNotFound) {
+		t.Fatalf("cross-workspace FindByID() error = %v, want ErrTaskNotFound", err)
 	}
 
 	first.Title = "Updated Go Task"
@@ -249,19 +279,22 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 		t.Fatalf("updated title = %q", updated.Title)
 	}
 
-	if err := taskRepo.Delete(user1.ID, first.ID); err != nil {
+	if err := taskRepo.Delete(workspace1.ID, first.ID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	if _, err := taskRepo.FindByID(user1.ID, first.ID); !errors.Is(err, repository.ErrTaskNotFound) {
+	if _, err := taskRepo.FindByID(workspace1.ID, first.ID); !errors.Is(err, repository.ErrTaskNotFound) {
 		t.Fatalf("FindByID() after delete error = %v, want ErrTaskNotFound", err)
 	}
 }
 
 func resetDatabase(db *sql.DB) error {
 	for _, statement := range []string{
+		"DROP TABLE IF EXISTS audit_events CASCADE",
+		"DROP TABLE IF EXISTS workspace_members CASCADE",
 		"DROP TABLE IF EXISTS auth_action_tokens CASCADE",
 		"DROP TABLE IF EXISTS refresh_tokens CASCADE",
 		"DROP TABLE IF EXISTS tasks CASCADE",
+		"DROP TABLE IF EXISTS workspaces CASCADE",
 		"DROP TABLE IF EXISTS users CASCADE",
 	} {
 		if _, err := db.Exec(statement); err != nil {
@@ -281,6 +314,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"004_refresh_tokens.sql",
 		"005_account_security.sql",
 		"006_performance_indexes.sql",
+		"007_workspaces_rbac_audit.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {
@@ -315,6 +349,7 @@ func assertPerformanceIndexes(t *testing.T, db *sql.DB) {
 		"idx_tasks_user_description_trgm",
 		"idx_tasks_user_completed_created_at",
 		"idx_refresh_tokens_user_active_last_used",
+		"idx_tasks_workspace_completed_created_at",
 	}
 	foundIndexes := make(map[string]bool, len(expectedNames))
 
@@ -326,7 +361,8 @@ func assertPerformanceIndexes(t *testing.T, db *sql.DB) {
 		    'idx_tasks_user_title_trgm',
 		    'idx_tasks_user_description_trgm',
 		    'idx_tasks_user_completed_created_at',
-		    'idx_refresh_tokens_user_active_last_used'
+		    'idx_refresh_tokens_user_active_last_used',
+		    'idx_tasks_workspace_completed_created_at'
 		  )
 	`)
 	if err != nil {
