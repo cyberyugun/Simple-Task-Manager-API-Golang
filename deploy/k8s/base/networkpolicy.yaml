@@ -8,7 +8,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: task-api
+      app.kubernetes.io/part-of: simple-task-manager
   policyTypes:
     - Ingress
   ingress:
