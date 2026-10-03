@@ -42,6 +42,11 @@ fi
 grep -q 'name: Enforce deployment freeze' .github/workflows/deploy.yml
 grep -q 'name: Progressive canary release' .github/workflows/deploy.yml
 grep -q 'name: Move latest tag only after successful promotion' .github/workflows/deploy.yml
+grep -q 'name: Deploy and Validate Staging' .github/workflows/deploy.yml
+grep -q 'needs: \[build, staging\]' .github/workflows/deploy.yml
+grep -q 'name: Verify staging promotion gate' .github/workflows/deploy.yml
+grep -q 'environment: staging' .github/workflows/deploy.yml
+grep -q 'staging-promotion-evidence' .github/workflows/deploy.yml
 
 python3 scripts/check-migration-compatibility.py migrations
 
