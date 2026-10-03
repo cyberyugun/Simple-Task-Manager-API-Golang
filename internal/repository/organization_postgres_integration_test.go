@@ -59,7 +59,7 @@ func TestIntegrationPostgresOrganizationAdministration(t *testing.T) {
 	org, err := orgs.CreateOrganization(model.Organization{
 		Name: "Integration Org", Status: model.OrganizationStatusActive,
 		OwnerUserID: owner.ID, MaxWorkspaces: 2, MaxMembers: 10,
-		CreatedByUserID: owner.ID, CreatedAt: now, UpdatedAt: now,
+		CreatedByUserID:  owner.ID, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestIntegrationPostgresOrganizationAdministration(t *testing.T) {
 	invitation, err := orgs.CreateInvitation(model.OrganizationInvitation{
 		OrganizationID: org.ID, Email: member.Email, Role: model.OrganizationRoleMember,
 		TokenHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Status: model.InvitationStatusPending, InvitedByUserID: owner.ID,
+		Status:    model.InvitationStatusPending, InvitedByUserID: owner.ID,
 		ExpiresAt: now.Add(time.Hour), CreatedAt: now,
 	})
 	if err != nil {
