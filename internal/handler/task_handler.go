@@ -167,10 +167,10 @@ func parseTaskQuery(r *http.Request) (model.TaskQuery, error) {
 	query.Status = values.Get("status")
 	query.Priority = values.Get("priority")
 	for key, target := range map[string]**int64{
-		"project_id": &query.ProjectID,
-		"list_id": &query.ListID,
+		"project_id":  &query.ProjectID,
+		"list_id":     &query.ListID,
 		"assignee_id": &query.AssigneeID,
-		"label_id": &query.LabelID,
+		"label_id":    &query.LabelID,
 	} {
 		if value := values.Get(key); value != "" {
 			id, err := strconv.ParseInt(value, 10, 64)
@@ -182,7 +182,7 @@ func parseTaskQuery(r *http.Request) (model.TaskQuery, error) {
 	}
 	for key, target := range map[string]**bool{
 		"archived": &query.Archived,
-		"deleted": &query.Deleted,
+		"deleted":  &query.Deleted,
 	} {
 		if value := values.Get(key); value != "" {
 			if value != "true" && value != "false" {
