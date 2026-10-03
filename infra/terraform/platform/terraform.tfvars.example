@@ -8,3 +8,22 @@ metrics_server_chart_version  = "REPLACE_WITH_APPROVED_VERSION"
 external_secrets_chart_version = "REPLACE_WITH_APPROVED_VERSION"
 
 enable_external_secrets = true
+
+# Observability stack. Keep disabled until durable Loki/Tempo storage values are reviewed.
+enable_observability = false
+kube_prometheus_stack_chart_version = "REPLACE_WITH_APPROVED_VERSION"
+tempo_chart_version                 = "REPLACE_WITH_APPROVED_VERSION"
+loki_chart_version                  = "REPLACE_WITH_APPROVED_VERSION"
+alloy_chart_version                 = "REPLACE_WITH_APPROVED_VERSION"
+opentelemetry_collector_chart_version = "REPLACE_WITH_APPROVED_VERSION"
+
+# Use heredocs or files in your secret/config delivery system for production values.
+# tempo_values_yaml = <<-YAML
+# ...
+# YAML
+# loki_values_yaml = <<-YAML
+# ...
+# YAML
+# alloy_values_yaml = <<-YAML
+# ...
+# YAML

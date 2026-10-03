@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-api-grafana-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: task-api
+data:
+  task-api.json: |
+    {
+      "title": "Task API - Production",
+      "uid": "task-api-production",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Request rate",
+          "gridPos": {"x": 0, "y": 0, "w": 6, "h": 5},
+          "targets": [{"expr": "sum(rate(task_api_http_requests_total[5m]))", "legendFormat": "req/s"}]
+        },
+        {
+          "type": "stat",
+          "title": "5xx rate",
+          "gridPos": {"x": 6, "y": 0, "w": 6, "h": 5},
+          "targets": [{"expr": "sum(rate(task_api_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum(rate(task_api_http_requests_total[5m])), 0.001)", "legendFormat": "error ratio"}]
+        },
+        {
+          "type": "stat",
+          "title": "P95 latency",
+          "gridPos": {"x": 12, "y": 0, "w": 6, "h": 5},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(task_api_http_request_duration_seconds_bucket[5m])))", "legendFormat": "seconds"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Requests by route and status",
+          "gridPos": {"x": 0, "y": 5, "w": 12, "h": 8},
+          "targets": [{"expr": "sum by (route, status_class) (rate(task_api_http_requests_total[5m]))", "legendFormat": "{{route}} {{status_class}}"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Dependency readiness",
+          "gridPos": {"x": 12, "y": 5, "w": 12, "h": 8},
+          "targets": [{"expr": "task_api_dependency_ready", "legendFormat": "{{dependency}}"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "PostgreSQL connections",
+          "gridPos": {"x": 0, "y": 13, "w": 12, "h": 8},
+          "targets": [
+            {"expr": "task_api_db_open_connections", "legendFormat": "open"},
+            {"expr": "task_api_db_in_use_connections", "legendFormat": "in use"},
+            {"expr": "task_api_db_idle_connections", "legendFormat": "idle"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Redis pool",
+          "gridPos": {"x": 12, "y": 13, "w": 12, "h": 8},
+          "targets": [
+            {"expr": "task_api_redis_pool_total_connections", "legendFormat": "total"},
+            {"expr": "task_api_redis_pool_idle_connections", "legendFormat": "idle"},
+            {"expr": "rate(task_api_redis_pool_timeouts_total[5m])", "legendFormat": "timeouts/s"}
+          ]
+        }
+      ]
+    }

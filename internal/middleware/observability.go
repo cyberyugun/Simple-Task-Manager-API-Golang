@@ -63,12 +63,11 @@ func AccessLog(logger *slog.Logger, metrics *observability.Metrics, next http.Ha
 		next.ServeHTTP(recorder, r)
 
 		duration := time.Since(start)
-		metrics.ObserveRequest(duration)
-
 		status := recorder.status
 		if status == 0 {
 			status = http.StatusOK
 		}
+		metrics.ObserveHTTPRequest(r.Method, routeTemplate(r.URL.Path), status, duration)
 		logger.InfoContext(
 			r.Context(),
 			"http_request",
@@ -79,6 +78,8 @@ func AccessLog(logger *slog.Logger, metrics *observability.Metrics, next http.Ha
 			"bytes", recorder.bytes,
 			"duration_ms", float64(duration.Microseconds())/1000,
 			"remote_ip", clientIP(r),
+			"trace_id", observability.TraceIDFromContext(r.Context()),
+			"span_id", observability.SpanIDFromContext(r.Context()),
 		)
 	})
 }
@@ -94,6 +95,8 @@ func Recover(logger *slog.Logger, metrics *observability.Metrics, next http.Hand
 					"request_id", RequestIDFromContext(r.Context()),
 					"panic", recovered,
 					"stack", string(debug.Stack()),
+					"trace_id", observability.TraceIDFromContext(r.Context()),
+					"span_id", observability.SpanIDFromContext(r.Context()),
 				)
 				response.JSON(w, http.StatusInternalServerError, response.Envelope{
 					Success: false,
@@ -133,4 +136,48 @@ func newRequestID() string {
 		return "request-" + time.Now().UTC().Format("20060102150405.000000000")
 	}
 	return hex.EncodeToString(raw[:])
+}
+
+func Trace(tracer *observability.Tracer, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		route := routeTemplate(r.URL.Path)
+		recorder := &statusRecorder{ResponseWriter: w}
+		ctx, traceparent, finish := tracer.StartServerSpan(
+			r.Context(),
+			r.Method,
+			route,
+			r.Header.Get("traceparent"),
+			RequestIDFromContext(r.Context()),
+		)
+		if traceparent != "" {
+			recorder.Header().Set("traceparent", traceparent)
+		}
+		next.ServeHTTP(recorder, r.WithContext(ctx))
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		finish(status)
+	})
+}
+
+func routeTemplate(path string) string {
+	switch {
+	case path == "/health", path == "/ready", path == "/metrics", path == "/version":
+		return path
+	case path == "/api/tasks":
+		return "/api/tasks"
+	case strings.HasPrefix(path, "/api/tasks/"):
+		return "/api/tasks/{id}"
+	case path == "/api/auth/sessions":
+		return "/api/auth/sessions"
+	case strings.HasPrefix(path, "/api/auth/sessions/"):
+		return "/api/auth/sessions/{id}"
+	case strings.HasPrefix(path, "/api/auth/"):
+		return path
+	case strings.HasPrefix(path, "/docs"), strings.HasPrefix(path, "/openapi"):
+		return "/docs"
+	default:
+		return "/unmatched"
+	}
 }

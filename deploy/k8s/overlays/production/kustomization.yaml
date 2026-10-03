@@ -4,6 +4,7 @@ resources:
   - ../../base
   - ingress.yaml
   - clusterissuer.yaml
+  - ../../observability
 images:
   - name: task-api
     newName: ghcr.io/cyberyugun/simple-task-manager-api-golang

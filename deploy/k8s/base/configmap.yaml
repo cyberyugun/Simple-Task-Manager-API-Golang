@@ -8,6 +8,9 @@ metadata:
 data:
   PORT: "8080"
   LOG_LEVEL: "info"
+  APP_ENV: "production"
+  OTEL_SERVICE_NAME: "task-api"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4318"
   READINESS_TIMEOUT: "2s"
   EMAIL_VERIFICATION_TTL: "24h"
   AUTH_RATE_LIMIT_REQUESTS: "20"

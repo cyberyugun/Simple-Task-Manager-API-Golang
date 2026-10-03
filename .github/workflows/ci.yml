@@ -19,7 +19,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate production preflight script
-        run: bash -n scripts/production-preflight.sh
+        run: |
+          bash -n scripts/production-preflight.sh
+          bash -n scripts/postgres-backup-restore-check.sh
 
       - name: Validate Terraform delivery helpers
         run: |
@@ -143,6 +145,8 @@ jobs:
           grep -q '^kind: NetworkPolicy$' /tmp/kubernetes.yaml
           grep -q '^kind: Ingress$' /tmp/kubernetes.yaml
           grep -q '^kind: ClusterIssuer$' /tmp/kubernetes.yaml
+          grep -q '^kind: ServiceMonitor$' /tmp/kubernetes.yaml
+          grep -q '^kind: PrometheusRule$' /tmp/kubernetes.yaml
 
       - name: Validate manifest YAML structure
         run: |
@@ -209,6 +213,7 @@ jobs:
           curl --fail --silent http://localhost:8080/openapi.yaml | grep "openapi: 3.1.0"
           curl --fail --silent http://localhost:8080/docs | grep "SwaggerUIBundle"
           curl --fail --silent http://localhost:8080/metrics | grep "task_api_http_requests_total"
+          curl --fail --silent http://localhost:8080/metrics | grep "task_api_http_request_duration_seconds_bucket"
           curl --fail --silent http://localhost:8080/version | \
             python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert data["version"]; assert data["commit"]; assert data["go_version"]'
 
@@ -292,6 +297,7 @@ jobs:
 
           docker compose logs api | grep '"msg":"http_request"'
           docker compose logs api | grep '"request_id"'
+          docker compose logs api | grep '"trace_id"'
 
       - name: Show container status
         run: docker compose ps

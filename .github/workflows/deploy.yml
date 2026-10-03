@@ -250,6 +250,7 @@ jobs:
         env:
           REQUIRE_GHCR_PULL_SECRET: ${{ vars.REQUIRE_GHCR_PULL_SECRET }}
           REQUIRE_METRICS_SERVER: ${{ vars.REQUIRE_METRICS_SERVER }}
+          REQUIRE_OBSERVABILITY: ${{ vars.REQUIRE_OBSERVABILITY }}
         run: bash scripts/production-preflight.sh
 
       - name: Apply runtime configuration
@@ -305,6 +306,12 @@ jobs:
             sleep 1
           done
 
+          curl --fail --silent http://127.0.0.1:18080/health >/tmp/health.json
+          curl --fail --silent http://127.0.0.1:18080/ready >/tmp/ready.json
+          curl --fail --silent http://127.0.0.1:18080/metrics >/tmp/metrics.txt
+          grep -q 'task_api_http_request_duration_seconds_bucket' /tmp/metrics.txt
+          grep -q 'task_api_trace_export_errors_total' /tmp/metrics.txt
+
           cat /tmp/version.json
           python3 - <<'PY'
           import json
@@ -318,6 +325,12 @@ jobs:
           if actual != expected:
               raise SystemExit(f"deployed commit {actual!r} does not match {expected!r}")
           PY
+
+      - name: Verify observability resources
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" get servicemonitor task-api
+          kubectl -n "$KUBE_NAMESPACE" get prometheusrule task-api-slo
+          kubectl -n monitoring get configmap task-api-grafana-dashboard
 
       - name: Show rollout
         run: |

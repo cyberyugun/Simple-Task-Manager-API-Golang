@@ -41,6 +41,20 @@ func main() {
 	logger := observability.NewJSONLogger(cfg.LogLevel)
 	slog.SetDefault(logger)
 	metrics := observability.NewMetrics()
+	tracer, err := observability.NewTracer(
+		cfg.OTELExporterEndpoint,
+		cfg.OTELServiceName,
+		cfg.AppEnv,
+		logger,
+		metrics,
+	)
+	if err != nil {
+		logger.Error("tracing_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if tracer.Enabled() {
+		logger.Info("tracing_configured", "protocol", "otlp_http_json", "endpoint", cfg.OTELExporterEndpoint)
+	}
 
 	var db *sql.DB
 	var redisClient *redis.Client
@@ -137,7 +151,7 @@ func main() {
 		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "API is healthy"})
 	})
 	mux.HandleFunc("/ready", ready.Handler)
-	mux.Handle("/metrics", metrics.Handler())
+	mux.Handle("/metrics", metrics.HandlerWithDependencies(db, redisClient))
 	mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
@@ -167,6 +181,7 @@ func main() {
 	var root http.Handler = mux
 	root = middleware.Recover(logger, metrics, root)
 	root = middleware.AccessLog(logger, metrics, root)
+	root = middleware.Trace(tracer, root)
 	root = middleware.RequestID(root)
 
 	server := &http.Server{
@@ -207,6 +222,12 @@ func main() {
 		if err := <-serverErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("server_stop_error", "error", err)
 		}
+	}
+
+	traceShutdownCtx, traceCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer traceCancel()
+	if err := tracer.Shutdown(traceShutdownCtx); err != nil {
+		logger.Warn("trace_shutdown_failed", "error", err)
 	}
 
 	logger.Info("server_stopped")
