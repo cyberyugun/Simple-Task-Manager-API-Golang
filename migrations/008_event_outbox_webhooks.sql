@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS webhook_subscriptions (
     workspace_id BIGINT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     url TEXT NOT NULL CHECK (url ~ '^https?://'),
     signing_secret TEXT NOT NULL CHECK (length(signing_secret) >= 32),
-    event_types TEXT[] NOT NULL DEFAULT ARRAY['task.*']::TEXT[],
+    event_types JSONB NOT NULL DEFAULT '["task.*"]'::jsonb,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     created_by_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
