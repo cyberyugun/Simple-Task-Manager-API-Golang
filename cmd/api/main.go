@@ -64,7 +64,12 @@ func main() {
 	var actionRepo repository.AuthActionTokenRepository
 
 	if cfg.DatabaseURL != "" {
-		db, err = appdb.OpenPostgres(cfg.DatabaseURL)
+		db, err = appdb.OpenPostgres(cfg.DatabaseURL, appdb.Options{
+			MaxOpenConns:    cfg.DBMaxOpenConns,
+			MaxIdleConns:    cfg.DBMaxIdleConns,
+			ConnMaxIdleTime: cfg.DBConnMaxIdleTime,
+			ConnMaxLifetime: cfg.DBConnMaxLifetime,
+		})
 		if err != nil {
 			logger.Error("postgres_connection_failed", "error", err)
 			os.Exit(1)
@@ -75,7 +80,12 @@ func main() {
 		userRepo = repository.NewPostgresUserRepository(db)
 		refreshRepo = repository.NewPostgresRefreshTokenRepository(db)
 		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
-		logger.Info("storage_configured", "backend", "postgresql")
+		logger.Info(
+			"storage_configured",
+			"backend", "postgresql",
+			"max_open_connections", cfg.DBMaxOpenConns,
+			"max_idle_connections", cfg.DBMaxIdleConns,
+		)
 	} else {
 		taskRepo = repository.NewInMemoryTaskRepository()
 		userRepo = repository.NewInMemoryUserRepository()
@@ -85,13 +95,24 @@ func main() {
 	}
 
 	if cfg.RedisURL != "" {
-		redisClient, err = cache.OpenRedis(cfg.RedisURL)
+		redisClient, err = cache.OpenRedis(cfg.RedisURL, cache.Options{
+			PoolSize:     cfg.RedisPoolSize,
+			MinIdleConns: cfg.RedisMinIdleConns,
+			PoolTimeout:  cfg.RedisPoolTimeout,
+			DialTimeout:  cfg.RedisDialTimeout,
+			ReadTimeout:  cfg.RedisReadTimeout,
+			WriteTimeout: cfg.RedisWriteTimeout,
+		})
 		if err != nil {
 			logger.Error("redis_connection_failed", "error", err)
 			os.Exit(1)
 		}
 		defer redisClient.Close()
-		logger.Info("redis_configured")
+		logger.Info(
+			"redis_configured",
+			"pool_size", cfg.RedisPoolSize,
+			"min_idle_connections", cfg.RedisMinIdleConns,
+		)
 	}
 
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
