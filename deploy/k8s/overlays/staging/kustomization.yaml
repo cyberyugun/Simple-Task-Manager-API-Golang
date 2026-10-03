@@ -2,17 +2,13 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: task-manager-staging
 resources:
+  - ../../base
   - namespace.yaml
-  - ../../base/serviceaccount.yaml
-  - configmap.yaml
-  - ../../base/deployment.yaml
-  - ../../base/service.yaml
-  - ../../base/hpa.yaml
-  - ../../base/pdb.yaml
-  - ../../base/networkpolicy.yaml
   - ingress.yaml
   - servicemonitor.yaml
 patches:
+  - path: namespace-delete.yaml
+  - path: configmap.yaml
   - path: deployment-patch.yaml
   - path: hpa-patch.yaml
 images:
