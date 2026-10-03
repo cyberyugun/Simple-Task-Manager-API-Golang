@@ -32,6 +32,7 @@ type Claims struct {
 	TokenUse    string   `json:"token_use,omitempty"`
 	ClientID    string   `json:"client_id,omitempty"`
 	WorkspaceID int64    `json:"workspace_id,omitempty"`
+	ActorUserID int64    `json:"actor_user_id,omitempty"`
 	Issued      int64    `json:"iat"`
 	Expires     int64    `json:"exp"`
 }
@@ -63,12 +64,13 @@ func (m *TokenManager) GenerateUser(userID int64, email string, scopes []string,
 		Scopes:      append([]string(nil), scopes...),
 		TokenUse:    "user",
 		WorkspaceID: workspaceID,
+		ActorUserID: userID,
 	})
 }
 
-func (m *TokenManager) GenerateService(clientID string, workspaceID int64, scopes []string) (string, error) {
+func (m *TokenManager) GenerateService(clientID string, workspaceID int64, scopes []string, actorUserID int64) (string, error) {
 	clientID = strings.TrimSpace(clientID)
-	if clientID == "" || workspaceID <= 0 {
+	if clientID == "" || workspaceID <= 0 || actorUserID <= 0 {
 		return "", ErrInvalidToken
 	}
 	return m.generate(Claims{
@@ -77,6 +79,7 @@ func (m *TokenManager) GenerateService(clientID string, workspaceID int64, scope
 		Scopes:      append([]string(nil), scopes...),
 		TokenUse:    "service",
 		WorkspaceID: workspaceID,
+		ActorUserID: actorUserID,
 	})
 }
 
@@ -141,11 +144,11 @@ func (m *TokenManager) ParseClaims(token string) (Claims, error) {
 	if err := decodeJSON(parts[1], &payload); err != nil {
 		return Claims{}, ErrInvalidToken
 	}
-	if payload.Subject == "" || payload.Expires <= time.Now().Unix() {
-		if payload.Expires <= time.Now().Unix() {
-			return Claims{}, ErrExpiredToken
-		}
+	if payload.Subject == "" {
 		return Claims{}, ErrInvalidToken
+	}
+	if payload.Expires <= time.Now().Unix() {
+		return Claims{}, ErrExpiredToken
 	}
 	if payload.JTI == "" {
 		return Claims{}, ErrInvalidToken
