@@ -84,22 +84,22 @@ resource "azurerm_kubernetes_cluster" "main" {
   dns_prefix          = "aks-${local.name}"
   kubernetes_version  = var.aks_kubernetes_version
 
-  private_cluster_enabled             = var.private_cluster
-  private_dns_zone_id                 = var.private_cluster ? "System" : null
-  role_based_access_control_enabled   = true
-  local_account_disabled              = true
-  oidc_issuer_enabled                 = true
-  workload_identity_enabled           = true
-  azure_policy_enabled                = true
-  automatic_upgrade_channel           = "patch"
-  node_os_upgrade_channel             = "NodeImage"
-  sku_tier                            = "Standard"
+  private_cluster_enabled           = var.private_cluster
+  private_dns_zone_id               = var.private_cluster ? "System" : null
+  role_based_access_control_enabled = true
+  local_account_disabled            = true
+  oidc_issuer_enabled               = true
+  workload_identity_enabled         = true
+  azure_policy_enabled              = true
+  automatic_upgrade_channel         = "patch"
+  node_os_upgrade_channel           = "NodeImage"
+  sku_tier                          = "Standard"
 
   default_node_pool {
-    name                 = "system"
-    vm_size              = var.aks_node_vm_size
-    node_count           = var.aks_node_count
-    vnet_subnet_id       = azurerm_subnet.aks.id
+    name                         = "system"
+    vm_size                      = var.aks_node_vm_size
+    node_count                   = var.aks_node_count
+    vnet_subnet_id               = azurerm_subnet.aks.id
     only_critical_addons_enabled = true
 
     upgrade_settings {
@@ -117,12 +117,12 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 
   network_profile {
-    network_plugin      = "azure"
-    network_policy      = "azure"
-    load_balancer_sku   = "standard"
-    outbound_type       = "loadBalancer"
-    service_cidr        = "10.21.0.0/16"
-    dns_service_ip      = "10.21.0.10"
+    network_plugin    = "azure"
+    network_policy    = "azure"
+    load_balancer_sku = "standard"
+    outbound_type     = "loadBalancer"
+    service_cidr      = "10.21.0.0/16"
+    dns_service_ip    = "10.21.0.10"
   }
 
   oms_agent {
@@ -156,10 +156,10 @@ resource "azurerm_postgresql_flexible_server" "main" {
   administrator_password = random_password.postgres.result
   zone                   = "1"
 
-  storage_mb            = 32768
-  sku_name              = var.postgres_sku_name
-  backup_retention_days = 14
-  geo_redundant_backup_enabled = true
+  storage_mb                    = 32768
+  sku_name                      = var.postgres_sku_name
+  backup_retention_days         = 14
+  geo_redundant_backup_enabled  = true
   public_network_access_enabled = false
 
   high_availability {
