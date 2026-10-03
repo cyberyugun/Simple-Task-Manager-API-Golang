@@ -57,7 +57,9 @@ func (h *TaskCollaborationHandler) ProjectByID(w http.ResponseWriter, r *http.Re
 		return
 	}
 	defer r.Body.Close()
-	var req struct{ Archived bool `json:"archived"` }
+	var req struct {
+		Archived bool `json:"archived"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		badJSON(w)
 		return
@@ -112,7 +114,9 @@ func (h *TaskCollaborationHandler) ListByID(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer r.Body.Close()
-	var req struct{ Archived bool `json:"archived"` }
+	var req struct {
+		Archived bool `json:"archived"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		badJSON(w)
 		return
@@ -178,7 +182,9 @@ func (h *TaskCollaborationHandler) TaskLabels(w http.ResponseWriter, r *http.Req
 		h.write(w, items, err, http.StatusOK)
 	case http.MethodPost:
 		defer r.Body.Close()
-		var req struct{ LabelID int64 `json:"label_id"` }
+		var req struct {
+			LabelID int64 `json:"label_id"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.LabelID <= 0 {
 			response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: "invalid label id"})
 			return
