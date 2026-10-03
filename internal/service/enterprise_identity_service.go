@@ -252,6 +252,7 @@ func (s *EnterpriseIdentityService) CreateAPIKey(actorUserID, workspaceID int64,
 		return model.APIKeySecretResult{}, err
 	}
 	s.audit(workspaceID, actorUserID, "service_api_key.created", "service_api_key", strconv.FormatInt(key.ID, 10), map[string]any{"name": name, "scopes": scopes})
+	key.KeyHash = ""
 	return model.APIKeySecretResult{APIKey: key, Secret: secret}, nil
 }
 
