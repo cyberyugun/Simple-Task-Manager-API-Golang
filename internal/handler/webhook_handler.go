@@ -28,6 +28,9 @@ func (h *WebhookHandler) Subscriptions(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if !requireScope(w, r, model.ScopeWorkspaceRead) {
+			return
+		}
 		items, err := h.service.List(userID, workspaceID)
 		if err != nil {
 			h.handleError(w, err)
@@ -35,6 +38,9 @@ func (h *WebhookHandler) Subscriptions(w http.ResponseWriter, r *http.Request) {
 		}
 		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: items})
 	case http.MethodPost:
+		if !requireScope(w, r, model.ScopeWorkspaceAdmin) {
+			return
+		}
 		defer r.Body.Close()
 		var req model.CreateWebhookSubscriptionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -59,6 +65,9 @@ func (h *WebhookHandler) SubscriptionByID(w http.ResponseWriter, r *http.Request
 	}
 	userID, workspaceID, ok := webhookScope(w, r)
 	if !ok {
+		return
+	}
+	if !requireScope(w, r, model.ScopeWorkspaceAdmin) {
 		return
 	}
 	subscriptionID, err := strconv.ParseInt(r.PathValue("subscription_id"), 10, 64)
