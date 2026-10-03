@@ -20,7 +20,7 @@ func (e workflowTestExecutor) Name() string { return e.name }
 
 func (e workflowTestExecutor) Execute(_ context.Context, ctx WorkflowActionContext) (map[string]any, error) {
 	if e.count != nil && !ctx.DryRun {
-		*e.count++
+		*e.count = *e.count + 1
 	}
 	if e.fail {
 		return nil, errors.New("expected workflow test failure")
