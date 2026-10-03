@@ -199,7 +199,7 @@ func (s *EnterpriseIdentityService) exchangeClientCredentials(req model.OAuthTok
 	if err != nil {
 		return model.OAuthTokenResult{}, err
 	}
-	token, err := s.tokens.GenerateService(client.ClientID, client.WorkspaceID, scopes)
+	token, err := s.tokens.GenerateService(client.ClientID, client.WorkspaceID, scopes, client.CreatedByUserID)
 	if err != nil {
 		return model.OAuthTokenResult{}, err
 	}
@@ -268,7 +268,7 @@ func (s *EnterpriseIdentityService) ExchangeAPIKey(raw string) (model.OAuthToken
 		return model.OAuthTokenResult{}, ErrServiceAccountsBlocked
 	}
 	clientID := fmt.Sprintf("apikey:%d", key.ID)
-	token, err := s.tokens.GenerateService(clientID, key.WorkspaceID, key.Scopes)
+	token, err := s.tokens.GenerateService(clientID, key.WorkspaceID, key.Scopes, key.CreatedByUserID)
 	if err != nil {
 		return model.OAuthTokenResult{}, err
 	}
