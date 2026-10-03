@@ -351,7 +351,7 @@ deploy/k8s/
         └── kustomization.yaml
 ```
 
-The application deployment starts with two replicas and uses a rolling update with `maxUnavailable: 0`. Startup and liveness probes call `/health`; readiness calls `/ready`. Resource requests are used by the HPA, which scales from 2 to 10 replicas using CPU and memory utilization.
+The application deployment starts with three replicas and uses a rolling update with `maxUnavailable: 0`. Startup and liveness probes call `/health`; readiness calls `/ready`. Resource requests are used by the HPA, which scales from 3 to 10 replicas using CPU and memory utilization. Production pods are spread across availability zones so a single-zone failure does not concentrate all API replicas in one failure domain.
 
 The cluster must have a Metrics Server (or another implementation of the resource metrics API) for CPU/memory HPA metrics. The production Ingress assumes an `nginx` IngressClass. The NetworkPolicy allows same-namespace traffic plus namespaces named `ingress-nginx` and `monitoring`; adjust these selectors when your cluster uses different namespace names.
 
@@ -442,6 +442,8 @@ Production infrastructure can be provisioned from the Terraform stacks under `in
 Terraform plan/apply promotion, encrypted plan artifacts, remote-state bootstrap, OIDC-only infrastructure auth, and drift detection are documented in [`docs/terraform-delivery.md`](docs/terraform-delivery.md).
 
 Production metrics, traces, logs, SLOs, synthetic probes, restore drills, and incident response are documented in [`docs/observability-sre.md`](docs/observability-sre.md) and [`docs/sre-incident-runbook.md`](docs/sre-incident-runbook.md).
+
+High availability, RPO/RTO targets, regional rebuild/restore procedures, automated dependency-failure exercises, and DR game-day acceptance criteria are documented in [`docs/disaster-recovery.md`](docs/disaster-recovery.md) and [`docs/dr-game-day-checklist.md`](docs/dr-game-day-checklist.md).
 
 ## Security and software supply chain
 

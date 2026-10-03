@@ -1,0 +1,55 @@
+name: Disaster Recovery Exercise
+
+on:
+  schedule:
+    - cron: "30 18 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resilience:
+    name: Dependency failure and recovery exercise
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate DR policy
+        run: bash scripts/dr-readiness-check.sh
+
+      - name: Build and start recovery exercise stack
+        env:
+          JWT_SECRET: dr-exercise-secret-123456789012345678901234
+          AUTH_RATE_LIMIT_REQUESTS: "100"
+        run: docker compose up -d --build
+
+      - name: Wait for API
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8080/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs
+          exit 1
+
+      - name: Exercise Redis and PostgreSQL failures
+        run: bash scripts/resilience-smoke.sh
+
+      - name: Show final state
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs --tail=100 api
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v

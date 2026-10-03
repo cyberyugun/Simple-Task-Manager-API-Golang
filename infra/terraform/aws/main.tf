@@ -4,7 +4,7 @@ data "aws_availability_zones" "available" {
 
 locals {
   name = "${var.project_name}-${var.environment}"
-  azs  = slice(data.aws_availability_zones.available.names, 0, 2)
+  azs  = slice(data.aws_availability_zones.available.names, 0, var.availability_zone_count)
 
   tags = {
     Project     = var.project_name
@@ -24,7 +24,7 @@ resource "aws_internet_gateway" "main" {
 }
 
 resource "aws_subnet" "public" {
-  count = 2
+  count = var.availability_zone_count
 
   vpc_id                  = aws_vpc.main.id
   availability_zone       = local.azs[count.index]
@@ -38,11 +38,11 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_subnet" "private" {
-  count = 2
+  count = var.availability_zone_count
 
   vpc_id            = aws_vpc.main.id
   availability_zone = local.azs[count.index]
-  cidr_block        = cidrsubnet(var.vpc_cidr, 4, count.index + 2)
+  cidr_block        = cidrsubnet(var.vpc_cidr, 4, count.index + var.availability_zone_count)
 
   tags = {
     Name                              = "${local.name}-private-${count.index + 1}"
@@ -61,40 +61,51 @@ resource "aws_route" "public_internet" {
 }
 
 resource "aws_route_table_association" "public" {
-  count = 2
+  count = var.availability_zone_count
 
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
 
 resource "aws_eip" "nat" {
+  count  = var.availability_zone_count
   domain = "vpc"
 
   depends_on = [aws_internet_gateway.main]
 }
 
 resource "aws_nat_gateway" "main" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public[0].id
+  count = var.availability_zone_count
+
+  allocation_id = aws_eip.nat[count.index].id
+  subnet_id     = aws_subnet.public[count.index].id
 
   depends_on = [aws_internet_gateway.main]
 }
 
 resource "aws_route_table" "private" {
+  count = var.availability_zone_count
+
   vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "${local.name}-private-${count.index + 1}"
+  }
 }
 
 resource "aws_route" "private_egress" {
-  route_table_id         = aws_route_table.private.id
+  count = var.availability_zone_count
+
+  route_table_id         = aws_route_table.private[count.index].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.main.id
+  nat_gateway_id         = aws_nat_gateway.main[count.index].id
 }
 
 resource "aws_route_table_association" "private" {
-  count = 2
+  count = var.availability_zone_count
 
   subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private.id
+  route_table_id = aws_route_table.private[count.index].id
 }
 
 resource "aws_kms_key" "platform" {
@@ -381,7 +392,7 @@ resource "aws_db_instance" "postgres" {
   publicly_accessible    = false
   multi_az               = var.postgres_multi_az
 
-  backup_retention_period         = 7
+  backup_retention_period         = var.postgres_backup_retention_days
   backup_window                   = "18:00-19:00"
   maintenance_window              = "sun:19:00-sun:20:00"
   auto_minor_version_upgrade      = true
@@ -417,5 +428,5 @@ resource "aws_elasticache_replication_group" "redis" {
   subnet_group_name  = aws_elasticache_subnet_group.redis.name
   security_group_ids = [aws_security_group.redis.id]
 
-  snapshot_retention_limit = 7
+  snapshot_retention_limit = var.redis_snapshot_retention_days
 }

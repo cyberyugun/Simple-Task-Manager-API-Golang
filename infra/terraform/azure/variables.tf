@@ -32,7 +32,18 @@ variable "aks_node_vm_size" {
 
 variable "aks_node_count" {
   type    = number
-  default = 2
+  default = 3
+}
+
+variable "aks_node_zones" {
+  description = "Availability zones used by the AKS system node pool."
+  type        = list(string)
+  default     = ["1", "2", "3"]
+
+  validation {
+    condition     = length(var.aks_node_zones) >= 2
+    error_message = "aks_node_zones must contain at least two zones for production HA."
+  }
 }
 
 variable "private_cluster" {
@@ -54,6 +65,17 @@ variable "postgres_sku_name" {
 variable "postgres_version" {
   type    = string
   default = "16"
+}
+
+variable "postgres_backup_retention_days" {
+  description = "PostgreSQL Flexible Server backup retention for PITR."
+  type        = number
+  default     = 35
+
+  validation {
+    condition     = var.postgres_backup_retention_days >= 7 && var.postgres_backup_retention_days <= 35
+    error_message = "postgres_backup_retention_days must be between 7 and 35."
+  }
 }
 
 variable "redis_capacity" {

@@ -211,3 +211,18 @@ kubectl -n task-manager get certificate
 ```
 
 The workflow also verifies that `GET /version` reports the exact Git commit that was deployed.
+
+## Disaster recovery readiness
+
+Before declaring production business-continuity ready:
+
+- run `bash scripts/dr-readiness-check.sh`
+- confirm at least two Kubernetes failure domains are available
+- confirm three API replicas can become Ready
+- run the dependency failure/recovery exercise
+- enable the weekly isolated PostgreSQL restore drill
+- complete a provider PITR/snapshot restore exercise
+- record measured RPO/RTO against `docs/disaster-recovery.md`
+- use `docs/dr-game-day-checklist.md` for regional recovery exercises
+
+Repository-level HA does not by itself prove regional DR. Regional recovery must be exercised in the actual selected cloud account.

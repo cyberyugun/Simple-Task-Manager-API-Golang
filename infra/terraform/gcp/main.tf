@@ -222,6 +222,11 @@ resource "google_sql_database_instance" "postgres" {
       point_in_time_recovery_enabled = true
       start_time                     = "18:00"
       transaction_log_retention_days = 7
+
+      backup_retention_settings {
+        retained_backups = var.postgres_retained_backups
+        retention_unit   = "COUNT"
+      }
     }
 
     ip_configuration {
