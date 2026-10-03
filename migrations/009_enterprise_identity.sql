@@ -73,11 +73,26 @@ CREATE TABLE IF NOT EXISTS oidc_connections (
     issuer_url TEXT NOT NULL,
     client_id TEXT NOT NULL,
     client_secret_ref TEXT NOT NULL DEFAULT '',
+    redirect_uri TEXT NOT NULL,
     scopes JSONB NOT NULL DEFAULT '["openid","profile","email"]'::jsonb,
     enabled BOOLEAN NOT NULL DEFAULT FALSE,
     updated_by_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS oidc_login_sessions (
+    state_hash CHAR(64) PRIMARY KEY,
+    workspace_id BIGINT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    nonce TEXT NOT NULL,
+    code_verifier_ciphertext TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_oidc_login_sessions_active
+    ON oidc_login_sessions (workspace_id, expires_at)
+    WHERE consumed_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS scim_users (
     id BIGSERIAL PRIMARY KEY,
