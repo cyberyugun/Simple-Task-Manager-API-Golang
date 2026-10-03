@@ -393,14 +393,14 @@ func (s *AuthService) issueSession(user model.User, meta model.SessionMetadata, 
 
 	now := time.Now()
 	if err := s.refreshes.Create(model.RefreshSession{
-		UserID:     user.ID,
-		TokenHash:  hash,
-		UserAgent:  strings.TrimSpace(meta.UserAgent),
+		UserID:           user.ID,
+		TokenHash:        hash,
+		UserAgent:        strings.TrimSpace(meta.UserAgent),
 		IPAddress:        strings.TrimSpace(meta.IPAddress),
 		MFAAuthenticated: mfaAuthenticated,
-		ExpiresAt:  now.Add(s.refreshTTL),
-		LastUsedAt: now,
-		CreatedAt:  now,
+		ExpiresAt:        now.Add(s.refreshTTL),
+		LastUsedAt:       now,
+		CreatedAt:        now,
 	}); err != nil {
 		return model.AuthResult{}, err
 	}
