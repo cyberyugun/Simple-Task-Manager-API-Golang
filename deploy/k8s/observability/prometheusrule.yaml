@@ -76,3 +76,35 @@ spec:
           annotations:
             summary: Task API readiness checks are repeatedly failing
             runbook_url: docs/sre-incident-runbook.md
+        - alert: TaskAPIDatabasePoolSaturation
+          expr: |
+            (
+              task_api_db_in_use_connections
+              /
+              clamp_min(task_api_db_max_open_connections, 1)
+            ) > 0.80
+          for: 10m
+          labels:
+            severity: ticket
+            service: task-api
+          annotations:
+            summary: PostgreSQL connection pool is above 80% utilization
+            runbook_url: docs/performance-scalability.md
+        - alert: TaskAPIDatabasePoolWaits
+          expr: increase(task_api_db_wait_count_total[10m]) > 20
+          for: 5m
+          labels:
+            severity: ticket
+            service: task-api
+          annotations:
+            summary: PostgreSQL connection pool is causing request waits
+            runbook_url: docs/performance-scalability.md
+        - alert: TaskAPIRedisPoolTimeouts
+          expr: increase(task_api_redis_pool_timeouts_total[10m]) > 5
+          for: 5m
+          labels:
+            severity: ticket
+            service: task-api
+          annotations:
+            summary: Redis client pool is timing out
+            runbook_url: docs/performance-scalability.md

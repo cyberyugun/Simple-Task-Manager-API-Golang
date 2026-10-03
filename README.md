@@ -64,6 +64,16 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 | `RATE_LIMIT_FAIL_OPEN` | No | `true` | Allow auth requests if Redis fails after startup |
 | `EXPOSE_AUTH_TOKENS` | No | `false` | Show reset/verification tokens for local/testing only |
 | `SHUTDOWN_TIMEOUT` | No | `10s` | Graceful shutdown timeout |
+| `DB_MAX_OPEN_CONNS` | No | `10` | Maximum PostgreSQL connections per API process |
+| `DB_MAX_IDLE_CONNS` | No | `5` | Maximum idle PostgreSQL connections |
+| `DB_CONN_MAX_IDLE_TIME` | No | `5m` | Maximum PostgreSQL connection idle time |
+| `DB_CONN_MAX_LIFETIME` | No | `30m` | Maximum PostgreSQL connection lifetime |
+| `REDIS_POOL_SIZE` | No | `20` | Redis client pool size |
+| `REDIS_MIN_IDLE_CONNS` | No | `5` | Redis minimum idle connections |
+| `REDIS_POOL_TIMEOUT` | No | `4s` | Redis wait timeout for a pooled connection |
+| `REDIS_DIAL_TIMEOUT` | No | `5s` | Redis connection dial timeout |
+| `REDIS_READ_TIMEOUT` | No | `3s` | Redis read timeout |
+| `REDIS_WRITE_TIMEOUT` | No | `3s` | Redis write timeout |
 
 ## Run locally
 
@@ -444,6 +454,8 @@ Terraform plan/apply promotion, encrypted plan artifacts, remote-state bootstrap
 Production metrics, traces, logs, SLOs, synthetic probes, restore drills, and incident response are documented in [`docs/observability-sre.md`](docs/observability-sre.md) and [`docs/sre-incident-runbook.md`](docs/sre-incident-runbook.md).
 
 High availability, RPO/RTO targets, regional rebuild/restore procedures, automated dependency-failure exercises, and DR game-day acceptance criteria are documented in [`docs/disaster-recovery.md`](docs/disaster-recovery.md) and [`docs/dr-game-day-checklist.md`](docs/dr-game-day-checklist.md).
+
+Load/spike/soak testing, connection-pool tuning, query-plan validation, HPA capacity guidance, and performance regression policy are documented in [`docs/performance-scalability.md`](docs/performance-scalability.md).
 
 ## Security and software supply chain
 

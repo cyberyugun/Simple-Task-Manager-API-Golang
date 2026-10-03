@@ -53,7 +53,8 @@ data:
           "targets": [
             {"expr": "task_api_db_open_connections", "legendFormat": "open"},
             {"expr": "task_api_db_in_use_connections", "legendFormat": "in use"},
-            {"expr": "task_api_db_idle_connections", "legendFormat": "idle"}
+            {"expr": "task_api_db_idle_connections", "legendFormat": "idle"},
+            {"expr": "task_api_db_max_open_connections", "legendFormat": "max configured"}
           ]
         },
         {
