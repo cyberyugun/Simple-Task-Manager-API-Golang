@@ -334,7 +334,7 @@ func (s *NotificationService) ProcessReminders(limit int) (int, error) {
 		if err := s.EmitNotificationSignal(model.NotificationSignal{
 			UserIDs: []int64{item.UserID}, WorkspaceID: &workspaceID, EventType: eventType,
 			Title: title, Body: body, DedupKey: dedup,
-			Data: map[string]any{"task_id": item.TaskID, "due_at": item.DueAt, "kind": item.Kind},
+			Data: map[string]any{"task_id": item.TaskID, "task_title": item.Title, "due_at": item.DueAt, "kind": item.Kind},
 		}); err != nil {
 			return count, err
 		}
