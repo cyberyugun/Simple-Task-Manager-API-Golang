@@ -111,6 +111,10 @@ resource "azurerm_kubernetes_cluster" "main" {
     type = "SystemAssigned"
   }
 
+  node_provisioning_profile {
+    mode = "Manual"
+  }
+
   azure_active_directory_role_based_access_control {
     azure_rbac_enabled = true
     tenant_id          = data.azurerm_client_config.current.tenant_id
@@ -139,10 +143,9 @@ resource "azurerm_private_dns_zone" "postgres" {
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "postgres" {
-  name                  = "postgres-vnet-link"
-  private_dns_zone_name = azurerm_private_dns_zone.postgres.name
-  virtual_network_id    = azurerm_virtual_network.main.id
-  resource_group_name   = azurerm_resource_group.main.name
+  name                = "postgres-vnet-link"
+  private_dns_zone_id = azurerm_private_dns_zone.postgres.id
+  virtual_network_id  = azurerm_virtual_network.main.id
 }
 
 resource "azurerm_postgresql_flexible_server" "main" {
@@ -215,12 +218,11 @@ resource "azurerm_user_assigned_identity" "github_deploy" {
 }
 
 resource "azurerm_federated_identity_credential" "github_deploy" {
-  name                = "github-production"
-  resource_group_name = azurerm_resource_group.main.name
-  parent_id           = azurerm_user_assigned_identity.github_deploy.id
-  audience            = ["api://AzureADTokenExchange"]
-  issuer              = "https://token.actions.githubusercontent.com"
-  subject             = "repo:${var.github_repository}:environment:production"
+  name                      = "github-production"
+  user_assigned_identity_id = azurerm_user_assigned_identity.github_deploy.id
+  audience                  = ["api://AzureADTokenExchange"]
+  issuer                    = "https://token.actions.githubusercontent.com"
+  subject                   = "repo:${var.github_repository}:environment:production"
 }
 
 resource "azurerm_role_assignment" "github_cluster_user" {
