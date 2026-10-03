@@ -25,16 +25,16 @@ const (
 )
 
 type OperationsPolicy struct {
-	OrganizationID               int64     `json:"organization_id"`
-	MonthlyBudgetCents           int64     `json:"monthly_budget_cents"`
-	BudgetAlertThresholdPercent  int       `json:"budget_alert_threshold_percent"`
-	SLOTargetBasisPoints         int       `json:"slo_target_basis_points"`
-	IncidentEscalationMinutes    int       `json:"incident_escalation_minutes"`
-	SupportTier                  string    `json:"support_tier"`
-	SupportContact               string    `json:"support_contact,omitempty"`
-	UpdatedByUserID              int64     `json:"updated_by_user_id"`
-	CreatedAt                    time.Time `json:"created_at"`
-	UpdatedAt                    time.Time `json:"updated_at"`
+	OrganizationID              int64     `json:"organization_id"`
+	MonthlyBudgetCents          int64     `json:"monthly_budget_cents"`
+	BudgetAlertThresholdPercent int       `json:"budget_alert_threshold_percent"`
+	SLOTargetBasisPoints        int       `json:"slo_target_basis_points"`
+	IncidentEscalationMinutes   int       `json:"incident_escalation_minutes"`
+	SupportTier                 string    `json:"support_tier"`
+	SupportContact              string    `json:"support_contact,omitempty"`
+	UpdatedByUserID             int64     `json:"updated_by_user_id"`
+	CreatedAt                   time.Time `json:"created_at"`
+	UpdatedAt                   time.Time `json:"updated_at"`
 }
 
 type CostAllocation struct {
@@ -104,24 +104,24 @@ type SLOStatus struct {
 }
 
 type CapacityForecast struct {
-	Metric                string `json:"metric"`
-	CurrentValue          int64  `json:"current_value"`
-	ProjectedPeriodValue  int64  `json:"projected_period_value"`
-	Limit                 int64  `json:"limit"`
-	ProjectedUtilization  int    `json:"projected_utilization_percent"`
+	Metric               string `json:"metric"`
+	CurrentValue         int64  `json:"current_value"`
+	ProjectedPeriodValue int64  `json:"projected_period_value"`
+	Limit                int64  `json:"limit"`
+	ProjectedUtilization int    `json:"projected_utilization_percent"`
 }
 
 type OperationsDashboard struct {
-	Policy                 OperationsPolicy      `json:"policy"`
-	CurrentSpendCents      int64                 `json:"current_spend_cents"`
-	ProjectedSpendCents    int64                 `json:"projected_spend_cents"`
-	BudgetUtilization      int                   `json:"budget_utilization_percent"`
-	OpenAlerts             []OperationalAlert    `json:"open_alerts"`
-	OpenIncidents          []OperationalIncident `json:"open_incidents"`
-	UpcomingMaintenance    []MaintenanceWindow   `json:"upcoming_maintenance"`
-	SLO                    SLOStatus              `json:"slo"`
-	CapacityForecasts      []CapacityForecast     `json:"capacity_forecasts"`
-	GeneratedAt            time.Time              `json:"generated_at"`
+	Policy              OperationsPolicy      `json:"policy"`
+	CurrentSpendCents   int64                 `json:"current_spend_cents"`
+	ProjectedSpendCents int64                 `json:"projected_spend_cents"`
+	BudgetUtilization   int                   `json:"budget_utilization_percent"`
+	OpenAlerts          []OperationalAlert    `json:"open_alerts"`
+	OpenIncidents       []OperationalIncident `json:"open_incidents"`
+	UpcomingMaintenance []MaintenanceWindow   `json:"upcoming_maintenance"`
+	SLO                 SLOStatus             `json:"slo"`
+	CapacityForecasts   []CapacityForecast    `json:"capacity_forecasts"`
+	GeneratedAt         time.Time             `json:"generated_at"`
 }
 
 type UpdateOperationsPolicyRequest struct {
