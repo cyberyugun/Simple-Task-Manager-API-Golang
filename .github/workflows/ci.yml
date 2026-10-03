@@ -407,6 +407,31 @@ jobs:
           dashboard="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/operations/dashboard" -H "Authorization: Bearer $token")"
           printf '%s' "$dashboard" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["policy"]["support_tier"] == "priority"; assert d["current_spend_cents"] >= 8990; assert len(d["open_incidents"]) == 1; assert len(d["upcoming_maintenance"]) == 1; assert len(d["capacity_forecasts"]) == 1'
 
+      - name: Smoke test enterprise automation and approvals
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          organization_response="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Automation","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/billing/usage" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"metric":"api_operations","quantity":6000}' >/dev/null
+
+          policy="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/automation/policies" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"Approve high API usage incident","trigger_type":"billing_usage_percent","trigger_key":"api_operations","comparator":"gte","threshold":50,"action_type":"operations.open_incident","action_config":{"severity":"sev1","title":"API usage requires attention","summary":"Created after explicit approval"},"approval_mode":"required","cooldown_minutes":60}')"
+          printf '%s' "$policy" | python3 -c 'import json,sys; p=json.load(sys.stdin)["data"]; assert p["trigger_type"] == "billing_usage_percent"; assert p["approval_mode"] == "required"'
+
+          evaluation="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/automation/evaluate" -H "Authorization: Bearer $token")"
+          execution_id="$(printf '%s' "$evaluation" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; assert len(items)==1; assert items[0]["status"]=="pending_approval"; print(items[0]["id"])')"
+
+          approved="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/automation/executions/$execution_id/decision" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"approve":true}')"
+          printf '%s' "$approved" | python3 -c 'import json,sys; e=json.load(sys.stdin)["data"]; assert e["status"]=="succeeded"; assert e["action_result"]["severity"]=="sev1"'
+
+          incidents="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/operations/incidents" -H "Authorization: Bearer $token")"
+          printf '%s' "$incidents" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; assert any(i["title"]=="API usage requires attention" and i["severity"]=="sev1" for i in items)'
+
+          executions="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/automation/executions" -H "Authorization: Bearer $token")"
+          printf '%s' "$executions" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; assert len(items)==1; assert items[0]["status"]=="succeeded"'
+
       - name: Smoke test idempotent task and outbox worker
         run: |
           login_response="$(curl --fail --silent \
@@ -450,7 +475,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "15"
+          test "$migration_count" = "16"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
