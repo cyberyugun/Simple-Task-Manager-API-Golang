@@ -19,6 +19,7 @@ type NotificationRepository interface {
 	GetPreference(userID int64, organizationID *int64) (model.NotificationPreference, error)
 	UpsertPreference(model.NotificationPreference) (model.NotificationPreference, error)
 	CreateNotification(model.Notification) (model.Notification, bool, error)
+	GetNotification(notificationID int64) (model.Notification, error)
 	ListNotifications(userID int64, limit int) ([]model.Notification, error)
 	MarkNotificationRead(userID, notificationID int64, at time.Time) (model.Notification, error)
 
@@ -92,6 +93,9 @@ func (r *InMemoryNotificationRepository) CreateNotification(item model.Notificat
 		}
 	}
 	item.ID=r.nextNotificationID;r.nextNotificationID++;r.notifications[item.ID]=item;return item,true,nil
+}
+func (r *InMemoryNotificationRepository) GetNotification(notificationID int64) (model.Notification,error) {
+	r.mu.Lock();defer r.mu.Unlock();v,ok:=r.notifications[notificationID];if !ok{return model.Notification{},ErrNotificationNotFound};return v,nil
 }
 func (r *InMemoryNotificationRepository) ListNotifications(userID int64, limit int) ([]model.Notification,error) {
 	r.mu.Lock();defer r.mu.Unlock();out:=[]model.Notification{}
