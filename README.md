@@ -653,3 +653,8 @@ Phase 29 adds a provider-neutral billing control plane for organizations. The bu
 ## Enterprise platform operations and FinOps
 
 Phase 30 adds an organization-level operational control plane: configurable monthly budgets, spend thresholds, SLO targets, escalation policy, support tiers, cost allocations, budget/capacity/SLO anomaly alerts, planned maintenance, incident lifecycle, entitlement-aware capacity forecasts, and a consolidated operations dashboard. Planned maintenance is excluded from incident downtime when calculating availability. See [docs/enterprise-platform-operations-finops.md](docs/enterprise-platform-operations-finops.md).
+
+
+## Enterprise automation and policy orchestration
+
+Phase 31 adds structured policy-as-code automation across billing and operations. Policies can evaluate operational alerts or billing API-capacity utilization, apply comparator/threshold conditions, require approval or use guarded automatic execution, enforce cooldown/deduplication, and execute only whitelisted runbooks. The initial runbook opens operational incidents; SEV1/SEV2 actions always require explicit approval. The worker evaluates enabled rules every five minutes by default; set `AUTOMATION_POLL_INTERVAL` to change the cadence. See [docs/enterprise-automation-policy-orchestration.md](docs/enterprise-automation-policy-orchestration.md).

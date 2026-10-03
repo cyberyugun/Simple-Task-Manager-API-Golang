@@ -24,6 +24,7 @@ tags:
   - name: Enterprise Administration
   - name: Enterprise Billing
   - name: Enterprise Operations
+  - name: Enterprise Automation
 
 paths:
   /health:
@@ -2225,6 +2226,89 @@ paths:
       responses:
         '200':
           description: Enterprise operations dashboard
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+
+  /api/organizations/{id}/automation/policies:
+    get:
+      tags: [Enterprise Automation]
+      summary: List structured policy-as-code automation rules
+      operationId: listAutomationPolicies
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Automation policy list
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Automation]
+      summary: Create a guarded automation policy
+      operationId: createAutomationPolicy
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Automation policy created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Organization policy limit reached
+  /api/organizations/{id}/automation/policies/{policy_id}:
+    put:
+      tags: [Enterprise Automation]
+      summary: Update, enable, or disable an automation policy
+      operationId: updateAutomationPolicy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Automation policy updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/automation/executions:
+    get:
+      tags: [Enterprise Automation]
+      summary: List automation approval and execution history
+      operationId: listAutomationExecutions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Automation execution history
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/automation/executions/{execution_id}/decision:
+    post:
+      tags: [Enterprise Automation]
+      summary: Approve or reject a pending guarded runbook execution
+      operationId: decideAutomationExecution
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Approval decision applied and approved action executed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/automation/evaluate:
+    post:
+      tags: [Enterprise Automation]
+      summary: Evaluate enabled automation policies immediately
+      operationId: evaluateAutomationPolicies
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Newly requested or completed executions
         '403':
           $ref: '#/components/responses/Forbidden'
 
