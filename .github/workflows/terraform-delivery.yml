@@ -164,7 +164,6 @@ jobs:
 
           echo "PLAN_EXIT_CODE=$plan_exit" >> "$GITHUB_ENV"
           terraform -chdir="$TF_DIR" show -json /tmp/production.tfplan > /tmp/plan.json
-          terraform -chdir="$TF_DIR" show -no-color /tmp/production.tfplan > /tmp/plan.txt
 
           guard_args=()
           if [ "$ALLOW_DESTROY" = "true" ]; then
@@ -182,27 +181,33 @@ jobs:
             --output /tmp/metadata.json \
             "${guard_args[@]}"
 
-          {
-            echo "### Terraform plan"
-            echo
-            echo "Provider: $SELECTED_PROVIDER"
-            echo "Operation: $REQUESTED_OPERATION"
-            echo "Commit: $GITHUB_SHA"
-            echo
-            sed -n '1,220p' /tmp/plan.txt
-          } >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
 
-      - name: Encrypt reviewed plan
+          with open("/tmp/metadata.json", "r", encoding="utf-8") as handle:
+              metadata = json.load(handle)
+
+          print("### Terraform plan")
+          print()
+          print(f"Provider: {metadata['provider']}")
+          print(f"Commit: {metadata['commit']}")
+          print(f"Actions: {json.dumps(metadata['counts'], sort_keys=True)}")
+          print(f"Destructive changes: {metadata['destructive_change_count']}")
+          PY
+
+      - name: Encrypt reviewed plan bundle
         run: |
-          mkdir -p /tmp/terraform-plan-artifact
-          openssl enc -aes-256-cbc -pbkdf2 -salt \
-            -in /tmp/production.tfplan \
-            -out /tmp/terraform-plan-artifact/production.tfplan.enc \
-            -pass env:TF_PLAN_ENCRYPTION_KEY
-
-          cp /tmp/metadata.json /tmp/terraform-plan-artifact/metadata.json
+          mkdir -p /tmp/terraform-plan-content /tmp/terraform-plan-artifact
+          cp /tmp/production.tfplan /tmp/terraform-plan-content/production.tfplan
+          cp /tmp/metadata.json /tmp/terraform-plan-content/metadata.json
           cp "infra/terraform/$SELECTED_PROVIDER/.terraform.lock.hcl" \
-            /tmp/terraform-plan-artifact/.terraform.lock.hcl
+            /tmp/terraform-plan-content/.terraform.lock.hcl
+
+          tar -C /tmp/terraform-plan-content -czf /tmp/terraform-plan.tgz .
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in /tmp/terraform-plan.tgz \
+            -out /tmp/terraform-plan-artifact/terraform-plan.tgz.enc \
+            -pass env:TF_PLAN_ENCRYPTION_KEY
 
       - name: Upload encrypted plan artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -339,9 +344,16 @@ jobs:
           CONFIRM_DESTROY: ${{ inputs.confirm_destroy }}
         run: |
           openssl enc -d -aes-256-cbc -pbkdf2 \
-            -in /tmp/terraform-plan-artifact/production.tfplan.enc \
-            -out /tmp/production.tfplan \
+            -in /tmp/terraform-plan-artifact/terraform-plan.tgz.enc \
+            -out /tmp/terraform-plan.tgz \
             -pass env:TF_PLAN_ENCRYPTION_KEY
+
+          mkdir -p /tmp/terraform-plan-content
+          tar -C /tmp/terraform-plan-content -xzf /tmp/terraform-plan.tgz
+
+          test -f /tmp/terraform-plan-content/production.tfplan
+          test -f /tmp/terraform-plan-content/metadata.json
+          test -f /tmp/terraform-plan-content/.terraform.lock.hcl
 
           verify_args=()
           if [ "$CONFIRM_DESTROY" = "true" ]; then
@@ -349,9 +361,9 @@ jobs:
           fi
 
           python3 scripts/terraform-verify-plan.py \
-            --metadata /tmp/terraform-plan-artifact/metadata.json \
-            --plan-bin /tmp/production.tfplan \
-            --lock-file /tmp/terraform-plan-artifact/.terraform.lock.hcl \
+            --metadata /tmp/terraform-plan-content/metadata.json \
+            --plan-bin /tmp/terraform-plan-content/production.tfplan \
+            --lock-file /tmp/terraform-plan-content/.terraform.lock.hcl \
             --expected-provider "$SELECTED_PROVIDER" \
             --expected-commit "$GITHUB_SHA" \
             --expected-run-id "$PLAN_RUN_ID" \
@@ -363,7 +375,7 @@ jobs:
       - name: Initialize exact provider lock
         run: |
           TF_DIR="infra/terraform/$SELECTED_PROVIDER"
-          cp /tmp/terraform-plan-artifact/.terraform.lock.hcl "$TF_DIR/.terraform.lock.hcl"
+          cp /tmp/terraform-plan-content/.terraform.lock.hcl "$TF_DIR/.terraform.lock.hcl"
           terraform -chdir="$TF_DIR" init \
             -input=false \
             -lockfile=readonly \
@@ -374,7 +386,7 @@ jobs:
           TF_DIR="infra/terraform/$SELECTED_PROVIDER"
           terraform -chdir="$TF_DIR" apply \
             -input=false \
-            /tmp/production.tfplan
+            /tmp/terraform-plan-content/production.tfplan
 
       - name: Record apply summary
         run: |
