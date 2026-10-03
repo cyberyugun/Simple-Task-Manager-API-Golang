@@ -203,6 +203,7 @@ jobs:
             "deploy/k8s/progressive/canary-service.yaml",
             "deploy/k8s/progressive/canary-ingress.yaml",
             "deploy/k8s/overlays/staging/namespace.yaml",
+            "deploy/k8s/overlays/staging/namespace-delete.yaml",
             "deploy/k8s/overlays/staging/configmap.yaml",
             "deploy/k8s/overlays/staging/ingress.yaml",
             "deploy/k8s/overlays/staging/deployment-patch.yaml",
