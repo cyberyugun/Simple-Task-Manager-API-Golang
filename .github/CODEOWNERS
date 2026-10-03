@@ -9,3 +9,5 @@
 /docs/production-readiness.md @cyberyugun
 /infra/terraform/ @cyberyugun
 /docs/terraform-delivery.md @cyberyugun
+/docs/observability-sre.md @cyberyugun
+/docs/sre-incident-runbook.md @cyberyugun
