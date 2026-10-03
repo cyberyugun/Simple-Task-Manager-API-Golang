@@ -401,7 +401,7 @@ func main() {
 	mux.Handle("/api/notifications/preferences", protectedFirstParty(notificationHandler.Preferences))
 	mux.Handle("/api/notifications/endpoints", protectedFirstParty(notificationHandler.Endpoints))
 	mux.Handle("/api/notifications/endpoints/{endpoint_id}", protectedFirstParty(notificationHandler.EndpointByID))
-	mux.Handle("/api/notifications/{notification_id}/read", protectedFirstParty(notificationHandler.MarkRead))
+	mux.Handle("/api/notifications/items/{notification_id}/read", protectedFirstParty(notificationHandler.MarkRead))
 	mux.Handle("/api/notifications/read-all", protectedFirstParty(notificationHandler.MarkAllRead))
 	mux.Handle("/api/notifications/deliveries", protectedFirstParty(notificationHandler.Deliveries))
 	mux.Handle("/api/notifications/deliveries/{delivery_id}/retry", protectedFirstParty(notificationHandler.RetryDelivery))
