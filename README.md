@@ -439,6 +439,8 @@ Before the first production rollout, follow the full readiness runbook in [`docs
 
 Production infrastructure can be provisioned from the Terraform stacks under `infra/terraform/`. See [`docs/infrastructure-as-code.md`](docs/infrastructure-as-code.md) for AWS, Azure, GCP, remote-state, private-runner, and platform bootstrap guidance.
 
+Terraform plan/apply promotion, encrypted plan artifacts, remote-state bootstrap, OIDC-only infrastructure auth, and drift detection are documented in [`docs/terraform-delivery.md`](docs/terraform-delivery.md).
+
 ## Security and software supply chain
 
 Security automation lives in `.github/workflows/security.yml` and runs on pushes to `main`, pull requests, manual dispatches, and a weekly schedule.
