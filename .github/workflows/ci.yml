@@ -393,9 +393,9 @@ jobs:
           maint_start="$(python3 -c 'import datetime; now=datetime.datetime.now(datetime.timezone.utc); print((now+datetime.timedelta(hours=1)).isoformat().replace("+00:00","Z"))')"
           maint_end="$(python3 -c 'import datetime; now=datetime.datetime.now(datetime.timezone.utc); print((now+datetime.timedelta(hours=2)).isoformat().replace("+00:00","Z"))')"
 
-          cost_payload="$(python3 -c 'import json,os; print(json.dumps({"category":"compute","source":"ci","amount_cents":9000,"period_start":os.environ["COST_START"],"period_end":os.environ["COST_END"]}))' COST_START="$cost_start" COST_END="$cost_end")"
-          incident_payload="$(python3 -c 'import json,os; print(json.dumps({"title":"CI incident","severity":"sev1","summary":"runtime smoke","started_at":os.environ["INCIDENT_START"]}))' INCIDENT_START="$incident_start")"
-          maintenance_payload="$(python3 -c 'import json,os; print(json.dumps({"title":"CI maintenance","starts_at":os.environ["MAINT_START"],"ends_at":os.environ["MAINT_END"]}))' MAINT_START="$maint_start" MAINT_END="$maint_end")"
+          cost_payload="$(python3 -c 'import json,sys; print(json.dumps({"category":"compute","source":"ci","amount_cents":9000,"period_start":sys.argv[1],"period_end":sys.argv[2]}))' "$cost_start" "$cost_end")"
+          incident_payload="$(python3 -c 'import json,sys; print(json.dumps({"title":"CI incident","severity":"sev1","summary":"runtime smoke","started_at":sys.argv[1]}))' "$incident_start")"
+          maintenance_payload="$(python3 -c 'import json,sys; print(json.dumps({"title":"CI maintenance","starts_at":sys.argv[1],"ends_at":sys.argv[2]}))' "$maint_start" "$maint_end")"
 
           curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/operations/costs" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$cost_payload" >/dev/null
           curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/operations/incidents" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$incident_payload" >/dev/null
