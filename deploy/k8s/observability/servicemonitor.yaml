@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: task-api
+  namespace: task-manager
+  labels:
+    app.kubernetes.io/name: task-api
+    app.kubernetes.io/part-of: simple-task-manager
+spec:
+  namespaceSelector:
+    matchNames:
+      - task-manager
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: task-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      scheme: http

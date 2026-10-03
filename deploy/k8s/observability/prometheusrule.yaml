@@ -1,0 +1,78 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: task-api-slo
+  namespace: task-manager
+  labels:
+    app.kubernetes.io/name: task-api
+    app.kubernetes.io/part-of: simple-task-manager
+spec:
+  groups:
+    - name: task-api.slo
+      interval: 30s
+      rules:
+        - alert: TaskAPIHighErrorRate
+          expr: |
+            (
+              sum(rate(task_api_http_requests_total{route!~"/health|/ready|/metrics",status_class="5xx"}[5m]))
+              /
+              clamp_min(sum(rate(task_api_http_requests_total{route!~"/health|/ready|/metrics"}[5m])), 0.001)
+            ) > 0.01
+          for: 10m
+          labels:
+            severity: page
+            service: task-api
+          annotations:
+            summary: Task API 5xx error rate is above 1%
+            runbook_url: docs/sre-incident-runbook.md
+        - alert: TaskAPIHighP95Latency
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(task_api_http_request_duration_seconds_bucket{route!~"/health|/ready|/metrics"}[5m])
+              )
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: ticket
+            service: task-api
+          annotations:
+            summary: Task API p95 latency is above 500ms
+            runbook_url: docs/sre-incident-runbook.md
+        - alert: TaskAPIDependencyNotReady
+          expr: task_api_dependency_ready == 0
+          for: 5m
+          labels:
+            severity: page
+            service: task-api
+          annotations:
+            summary: Task API dependency is not ready
+            runbook_url: docs/sre-incident-runbook.md
+        - alert: TaskAPIPanicsDetected
+          expr: increase(task_api_panics_total[10m]) > 0
+          for: 0m
+          labels:
+            severity: page
+            service: task-api
+          annotations:
+            summary: Task API recovered one or more panics
+            runbook_url: docs/sre-incident-runbook.md
+        - alert: TaskAPITraceExportFailures
+          expr: increase(task_api_trace_export_errors_total[15m]) > 5
+          for: 5m
+          labels:
+            severity: ticket
+            service: task-api
+          annotations:
+            summary: Task API is dropping or failing to export traces
+            runbook_url: docs/sre-incident-runbook.md
+        - alert: TaskAPIReadinessFailures
+          expr: increase(task_api_readiness_failures_total[10m]) > 3
+          for: 5m
+          labels:
+            severity: page
+            service: task-api
+          annotations:
+            summary: Task API readiness checks are repeatedly failing
+            runbook_url: docs/sre-incident-runbook.md
