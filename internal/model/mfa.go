@@ -23,3 +23,13 @@ type MFAStatus struct {
 	TOTPEnabled       bool `json:"totp_enabled"`
 	WebAuthnAvailable bool `json:"webauthn_available"`
 }
+
+type WebAuthnCeremonyResult struct {
+	SessionID string `json:"session_id"`
+	Options   any    `json:"options"`
+}
+
+type WebAuthnPasswordRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
