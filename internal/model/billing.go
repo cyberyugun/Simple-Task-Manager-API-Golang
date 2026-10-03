@@ -62,21 +62,21 @@ type BillingUsage struct {
 }
 
 type BillingInvoice struct {
-	ID               int64      `json:"id"`
-	OrganizationID   int64      `json:"organization_id"`
-	SubscriptionID   *int64     `json:"subscription_id,omitempty"`
-	Provider         string     `json:"provider"`
-	ExternalID       string     `json:"external_id"`
-	Status           string     `json:"status"`
-	Currency         string     `json:"currency"`
-	AmountDueCents   int64      `json:"amount_due_cents"`
-	AmountPaidCents  int64      `json:"amount_paid_cents"`
-	PeriodStart      time.Time  `json:"period_start"`
-	PeriodEnd        time.Time  `json:"period_end"`
-	DueAt            *time.Time `json:"due_at,omitempty"`
-	PaidAt           *time.Time `json:"paid_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID              int64      `json:"id"`
+	OrganizationID  int64      `json:"organization_id"`
+	SubscriptionID  *int64     `json:"subscription_id,omitempty"`
+	Provider        string     `json:"provider"`
+	ExternalID      string     `json:"external_id"`
+	Status          string     `json:"status"`
+	Currency        string     `json:"currency"`
+	AmountDueCents  int64      `json:"amount_due_cents"`
+	AmountPaidCents int64      `json:"amount_paid_cents"`
+	PeriodStart     time.Time  `json:"period_start"`
+	PeriodEnd       time.Time  `json:"period_end"`
+	DueAt           *time.Time `json:"due_at,omitempty"`
+	PaidAt          *time.Time `json:"paid_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type BillingWebhookEvent struct {
@@ -119,9 +119,9 @@ type BillingDashboard struct {
 }
 
 type ChangeBillingSubscriptionRequest struct {
-	PlanCode          string `json:"plan_code"`
-	Provider          string `json:"provider,omitempty"`
-	ProviderCustomerID string `json:"provider_customer_id,omitempty"`
+	PlanCode               string `json:"plan_code"`
+	Provider               string `json:"provider,omitempty"`
+	ProviderCustomerID     string `json:"provider_customer_id,omitempty"`
 	ProviderSubscriptionID string `json:"provider_subscription_id,omitempty"`
 }
 
