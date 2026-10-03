@@ -13,6 +13,7 @@ import (
 
 	appdb "go-simple-task-api/internal/database"
 	"go-simple-task-api/internal/events"
+	"go-simple-task-api/internal/model"
 	"go-simple-task-api/internal/observability"
 	"go-simple-task-api/internal/repository"
 	"go-simple-task-api/internal/service"
@@ -64,6 +65,16 @@ func main() {
 		logger.Error("workflow_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	notificationPoll, err := durationEnv("NOTIFICATION_POLL_INTERVAL", 2*time.Second)
+	if err != nil {
+		logger.Error("notification_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	reminderPoll, err := durationEnv("NOTIFICATION_REMINDER_POLL_INTERVAL", time.Minute)
+	if err != nil {
+		logger.Error("notification_reminder_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	integrationPoll, err := durationEnv("INTEGRATION_POLL_INTERVAL", 2*time.Second)
 	if err != nil {
 		logger.Error("integration_worker_configuration_failed", "error", err)
@@ -112,6 +123,21 @@ func main() {
 		service.NewWorkflowExecutorRegistry(repository.NewPostgresTaskRepository(db), repository.NewPostgresOperationsRepository(db)),
 	)
 	go runWorkflowExecutions(ctx, workflowService, workflowPoll, logger)
+
+	notificationService := service.NewNotificationService(
+		repository.NewPostgresNotificationRepository(db),
+		repository.NewPostgresUserRepository(db),
+		organizationRepo,
+		service.NewLogNotificationSender(model.NotificationChannelInApp, logger),
+		service.NewLogNotificationSender(model.NotificationChannelEmail, logger),
+		service.NewLogNotificationSender(model.NotificationChannelPush, logger),
+		service.NewLogNotificationSender(model.NotificationChannelWebhook, logger),
+	)
+	workflowService.SetNotificationEmitter(notificationService)
+	billingService.SetNotificationEmitter(notificationService)
+	automationService.SetNotificationEmitter(notificationService)
+	go runNotificationDeliveries(ctx, notificationService, notificationPoll, logger)
+	go runNotificationReminders(ctx, notificationService, reminderPoll, logger)
 
 	integrationCipher, err := service.NewIntegrationCredentialCipher(os.Getenv("JWT_SECRET"))
 	if err != nil {
@@ -249,6 +275,58 @@ func runWorkflowExecutions(ctx context.Context, workflows *service.WorkflowServi
 		select {
 		case <-ctx.Done():
 			logger.Info("workflow_worker_stopped")
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
+func runNotificationDeliveries(ctx context.Context, notifications *service.NotificationService, poll time.Duration, logger *slog.Logger) {
+	run := func() {
+		count, err := notifications.ProcessDeliveries(ctx, 100)
+		if err != nil {
+			logger.Error("notification_delivery_batch_failed", "error", err)
+			return
+		}
+		if count > 0 {
+			logger.Info("notification_delivery_batch_completed", "count", count)
+		}
+	}
+	logger.Info("notification_worker_started", "poll_interval", poll)
+	run()
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("notification_worker_stopped")
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
+func runNotificationReminders(ctx context.Context, notifications *service.NotificationService, poll time.Duration, logger *slog.Logger) {
+	run := func() {
+		count, err := notifications.ProcessReminders(500)
+		if err != nil {
+			logger.Error("notification_reminder_batch_failed", "error", err)
+			return
+		}
+		if count > 0 {
+			logger.Info("notification_reminder_batch_completed", "count", count)
+		}
+	}
+	logger.Info("notification_reminder_worker_started", "poll_interval", poll)
+	run()
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("notification_reminder_worker_stopped")
 			return
 		case <-ticker.C:
 			run()
