@@ -113,3 +113,20 @@ CREATE TABLE IF NOT EXISTS notification_audit_events (
 
 CREATE INDEX IF NOT EXISTS idx_notification_audit_recent
     ON notification_audit_events (organization_id, created_at DESC, id DESC);
+
+
+INSERT INTO notification_templates (template_key,channel,locale,version,subject,body,active)
+VALUES
+('task.assigned','in_app','en',1,'Task assigned','You were assigned to {{task_title}}',TRUE),
+('task.assigned','email','en',1,'Task assigned','You were assigned to {{task_title}}',TRUE),
+('task.mentioned','in_app','en',1,'Mentioned in a comment','{{comment_body}}',TRUE),
+('task.due_soon','in_app','en',1,'Task due soon','{{task_title}} is due at {{due_at}}',TRUE),
+('task.overdue','in_app','en',1,'Task overdue','{{task_title}} was due at {{due_at}}',TRUE),
+('workflow.approval.requested','in_app','en',1,'Workflow approval required','Execution {{execution_id}} is waiting for approval',TRUE),
+('operations.incident.created','in_app','en',1,'Operational incident','{{title}} ({{severity}})',TRUE),
+('billing.event','in_app','en',1,'Billing update','{{message}}',TRUE),
+('task.assigned','in_app','id',1,'Tugas diberikan','Anda ditugaskan ke {{task_title}}',TRUE),
+('task.mentioned','in_app','id',1,'Anda disebut di komentar','{{comment_body}}',TRUE),
+('task.due_soon','in_app','id',1,'Tugas segera jatuh tempo','{{task_title}} jatuh tempo pada {{due_at}}',TRUE),
+('task.overdue','in_app','id',1,'Tugas melewati jatuh tempo','{{task_title}} jatuh tempo pada {{due_at}}',TRUE)
+ON CONFLICT (template_key,channel,locale,version) DO NOTHING;
