@@ -19,3 +19,9 @@ type RefreshSession struct {
 	RevokedAt        *time.Time `json:"-"`
 	CreatedAt        time.Time  `json:"created_at"`
 }
+
+type SessionRiskAssessment struct {
+	Session    RefreshSession `json:"session"`
+	Risk       string         `json:"risk"`
+	Indicators []string       `json:"indicators"`
+}
