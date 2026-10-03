@@ -74,13 +74,55 @@ func main() {
 		logger.Error("integration_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	notificationPoll, err := durationEnv("NOTIFICATION_POLL_INTERVAL", 2*time.Second)
+	if err != nil {
+		logger.Error("notification_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	notificationSchedulePoll, err := durationEnv("NOTIFICATION_SCHEDULE_POLL_INTERVAL", time.Minute)
+	if err != nil {
+		logger.Error("notification_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	notificationHTTPTimeout, err := durationEnv("NOTIFICATION_HTTP_TIMEOUT", 10*time.Second)
+	if err != nil {
+		logger.Error("notification_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	reminderHorizon, err := durationEnv("NOTIFICATION_REMINDER_HORIZON", 24*time.Hour)
+	if err != nil {
+		logger.Error("notification_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	notificationBatch, err := intEnv("NOTIFICATION_BATCH_SIZE", 50)
+	if err != nil {
+		logger.Error("notification_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	allowInsecure, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("WEBHOOK_ALLOW_INSECURE_HTTP")))
 	host, _ := os.Hostname()
 	workerID := fmt.Sprintf("%s-%d", host, os.Getpid())
 
+	notificationService := service.NewNotificationService(
+		repository.NewPostgresNotificationRepository(db),
+		repository.NewPostgresUserRepository(db),
+		repository.NewPostgresTaskRepository(db),
+		repository.NewPostgresTaskCollaborationRepository(db),
+		repository.NewPostgresWorkspaceRepository(db),
+		repository.NewPostgresOrganizationRepository(db),
+		service.NotificationConfig{
+			EmailProviderURL: strings.TrimSpace(os.Getenv("NOTIFICATION_EMAIL_PROVIDER_URL")),
+			PushProviderURL:  strings.TrimSpace(os.Getenv("NOTIFICATION_PUSH_PROVIDER_URL")),
+			ProviderToken:    strings.TrimSpace(os.Getenv("NOTIFICATION_PROVIDER_TOKEN")),
+			HTTPTimeout:      notificationHTTPTimeout,
+			AllowInsecure:    allowInsecure,
+			ReminderHorizon:  reminderHorizon,
+		},
+	)
 	worker := events.NewWorker(repository.NewPostgresEventRepository(db), events.WorkerOptions{
 		WorkerID: workerID, BatchSize: batch, PollInterval: poll,
 		HTTPTimeout: timeout, AllowInsecure: allowInsecure, Logger: logger,
+		Consumers: []events.EventConsumer{notificationService},
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -112,6 +154,15 @@ func main() {
 		service.NewWorkflowExecutorRegistry(repository.NewPostgresTaskRepository(db), repository.NewPostgresOperationsRepository(db)),
 	)
 	go runWorkflowExecutions(ctx, workflowService, workflowPoll, logger)
+	go runNotificationPlatform(
+		ctx,
+		notificationService,
+		workerID+"-notification",
+		notificationPoll,
+		notificationSchedulePoll,
+		notificationBatch,
+		logger,
+	)
 
 	integrationCipher, err := service.NewIntegrationCredentialCipher(os.Getenv("JWT_SECRET"))
 	if err != nil {
@@ -252,6 +303,72 @@ func runWorkflowExecutions(ctx context.Context, workflows *service.WorkflowServi
 			return
 		case <-ticker.C:
 			run()
+		}
+	}
+}
+
+func runNotificationPlatform(
+	ctx context.Context,
+	notifications *service.NotificationService,
+	workerID string,
+	deliveryPoll time.Duration,
+	schedulePoll time.Duration,
+	batch int,
+	logger *slog.Logger,
+) {
+	deliveryTicker := time.NewTicker(deliveryPoll)
+	defer deliveryTicker.Stop()
+	scheduleTicker := time.NewTicker(schedulePoll)
+	defer scheduleTicker.Stop()
+
+	processDeliveries := func() {
+		items, err := notifications.ProcessDeliveries(ctx, workerID, batch)
+		if err != nil {
+			logger.Error("notification_delivery_batch_failed", "error", err)
+			return
+		}
+		for _, delivery := range items {
+			logger.Info(
+				"notification_delivery_processed",
+				"delivery_id", delivery.ID,
+				"notification_id", delivery.NotificationID,
+				"user_id", delivery.UserID,
+				"channel", delivery.Channel,
+				"status", delivery.Status,
+			)
+		}
+	}
+	processScheduled := func() {
+		counts, err := notifications.ProcessScheduled(time.Now().UTC())
+		if err != nil {
+			logger.Error("notification_schedule_failed", "error", err)
+			return
+		}
+		logger.Info(
+			"notification_schedule_completed",
+			"reminders", counts["reminders"],
+			"approvals", counts["approvals"],
+			"digests", counts["digests"],
+		)
+	}
+
+	logger.Info(
+		"notification_worker_started",
+		"delivery_poll_interval", deliveryPoll,
+		"schedule_poll_interval", schedulePoll,
+		"batch_size", batch,
+	)
+	processDeliveries()
+	processScheduled()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("notification_worker_stopped")
+			return
+		case <-deliveryTicker.C:
+			processDeliveries()
+		case <-scheduleTicker.C:
+			processScheduled()
 		}
 	}
 }

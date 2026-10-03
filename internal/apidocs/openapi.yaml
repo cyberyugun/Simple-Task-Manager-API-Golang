@@ -27,6 +27,7 @@ tags:
   - name: Enterprise Operations
   - name: Enterprise Automation
   - name: Enterprise Workflows
+  - name: Enterprise Notifications
   - name: Enterprise Integrations
 
 paths:
@@ -2469,6 +2470,121 @@ paths:
       responses:
         '200': { description: Approval decision applied and execution resumed or failed }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/notifications:
+    get:
+      tags: [Enterprise Notifications]
+      summary: List current user's in-app notifications and unread count
+      operationId: listNotifications
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notifications and unread count }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/notifications/preferences:
+    get:
+      tags: [Enterprise Notifications]
+      summary: Get notification channel, event, timezone, quiet-hours and digest preferences
+      operationId: getNotificationPreferences
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification preferences }
+    put:
+      tags: [Enterprise Notifications]
+      summary: Update notification preferences
+      operationId: updateNotificationPreferences
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification preferences updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/notifications/endpoints:
+    get:
+      tags: [Enterprise Notifications]
+      summary: List email, push, and webhook notification endpoints
+      operationId: listNotificationEndpoints
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification endpoints }
+    post:
+      tags: [Enterprise Notifications]
+      summary: Register an email, push, or signed webhook endpoint
+      operationId: createNotificationEndpoint
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Notification endpoint created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Endpoint already exists }
+  /api/notifications/endpoints/{endpoint_id}:
+    delete:
+      tags: [Enterprise Notifications]
+      summary: Delete a notification endpoint
+      operationId: deleteNotificationEndpoint
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification endpoint deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/notifications/items/{notification_id}/read:
+    post:
+      tags: [Enterprise Notifications]
+      summary: Mark one notification as read
+      operationId: markNotificationRead
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification marked read }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/notifications/read-all:
+    post:
+      tags: [Enterprise Notifications]
+      summary: Mark all notifications as read
+      operationId: markAllNotificationsRead
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Unread notifications marked read }
+  /api/notifications/deliveries:
+    get:
+      tags: [Enterprise Notifications]
+      summary: List email, push and webhook delivery history including dead-letter state
+      operationId: listNotificationDeliveries
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification delivery history }
+  /api/notifications/deliveries/{delivery_id}/retry:
+    post:
+      tags: [Enterprise Notifications]
+      summary: Replay a dead-lettered notification delivery
+      operationId: retryNotificationDelivery
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification delivery queued for retry }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/organizations/{id}/notification-templates:
+    get:
+      tags: [Enterprise Notifications]
+      summary: List organization notification template versions
+      operationId: listNotificationTemplates
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Organization notification templates }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Enterprise Notifications]
+      summary: Create a draft localized notification template version
+      operationId: createNotificationTemplate
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Draft notification template version created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/organizations/{id}/notification-templates/{template_id}/publish:
+    post:
+      tags: [Enterprise Notifications]
+      summary: Publish a notification template version and archive the previous published version
+      operationId: publishNotificationTemplate
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification template published }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /api/integrations/connectors:
