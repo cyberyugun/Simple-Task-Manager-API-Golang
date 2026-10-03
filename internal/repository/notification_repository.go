@@ -470,7 +470,7 @@ func (r *InMemoryNotificationRepository) RetryDelivery(userID, deliveryID int64,
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	item, ok := r.deliveries[deliveryID]
-	if !ok || item.UserID != userID {
+	if !ok || item.UserID != userID || item.Status != model.NotificationDeliveryDeadLetter {
 		return model.NotificationDelivery{}, ErrNotificationDeliveryNotFound
 	}
 	item.Status = model.NotificationDeliveryPending
