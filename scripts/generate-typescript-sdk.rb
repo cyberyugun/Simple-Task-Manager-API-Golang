@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 require "yaml"
 
-spec = YAML.load_file(ARGV.fetch(0, "internal/apidocs/openapi.yaml"))
+spec = YAML.unsafe_load_file(ARGV.fetch(0, "internal/apidocs/openapi.yaml"))
 output = ARGV.fetch(1, "/tmp/task-manager-api.ts")
 
 def ts_type(schema)
