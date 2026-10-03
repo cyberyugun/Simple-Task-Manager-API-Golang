@@ -219,9 +219,6 @@ resource "helm_release" "otel_collector" {
         exporters = {
           "otlphttp/tempo" = {
             endpoint = "http://tempo:4318"
-            tls = {
-              insecure = true
-            }
           }
         }
         service = {
