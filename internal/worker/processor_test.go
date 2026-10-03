@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -87,8 +88,7 @@ func TestProcessorDeliversSignedWebhook(t *testing.T) {
 	var receivedIdempotency string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		receivedBody = make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(receivedBody)
+		receivedBody, _ = io.ReadAll(r.Body)
 		receivedTimestamp = r.Header.Get("X-Webhook-Timestamp")
 		receivedSignature = r.Header.Get("X-Webhook-Signature")
 		receivedIdempotency = r.Header.Get("Idempotency-Key")
