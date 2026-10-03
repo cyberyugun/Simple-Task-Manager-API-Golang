@@ -19,6 +19,7 @@ tags:
   - name: Tasks
   - name: Workspaces
   - name: Webhooks
+  - name: Enterprise Identity
 
 paths:
   /health:
@@ -839,6 +840,234 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+
+
+  /api/oauth/token:
+    post:
+      tags: [Enterprise Identity]
+      summary: Exchange an OAuth2 authorization code or client credentials for an access token
+      operationId: oauthToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [grant_type, client_id, client_secret]
+              additionalProperties: true
+      responses:
+        '200':
+          description: OAuth2 access token issued
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/oauth/api-key:
+    post:
+      tags: [Enterprise Identity]
+      summary: Exchange a workspace API key for a scoped service access token
+      operationId: exchangeServiceApiKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [api_key]
+              properties:
+                api_key:
+                  type: string
+      responses:
+        '200':
+          description: Scoped service access token issued
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/token/introspect:
+    post:
+      tags: [Enterprise Identity]
+      summary: Introspect a locally issued access token
+      operationId: introspectAccessToken
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token activity and claims
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/token/revoke:
+    post:
+      tags: [Enterprise Identity]
+      summary: Revoke a locally issued access token by jti
+      operationId: revokeAccessToken
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/workspaces/{id}/identity/oauth-clients:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    post:
+      tags: [Enterprise Identity]
+      summary: Register a workspace OAuth client
+      operationId: createWorkspaceOAuthClient
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: OAuth client and one-time client secret
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Workspace identity administration denied
+  /api/workspaces/{id}/identity/oauth/authorize:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    post:
+      tags: [Enterprise Identity]
+      summary: Issue a short-lived OAuth authorization code with PKCE
+      operationId: authorizeWorkspaceOAuthClient
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Authorization code issued
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/workspaces/{id}/identity/api-keys:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Identity]
+      summary: List workspace service API keys
+      operationId: listWorkspaceApiKeys
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: API key metadata
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Enterprise Identity]
+      summary: Create a workspace service API key
+      operationId: createWorkspaceApiKey
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: API key and one-time plaintext secret
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/workspaces/{id}/identity/api-keys/{key_id}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - in: path
+        name: key_id
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    delete:
+      tags: [Enterprise Identity]
+      summary: Revoke a workspace service API key
+      operationId: revokeWorkspaceApiKey
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: API key revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/workspaces/{id}/identity/policy:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Identity]
+      summary: Read the workspace enterprise security policy
+      operationId: getEnterpriseSecurityPolicy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Enterprise security policy
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Enterprise Identity]
+      summary: Update the workspace enterprise security policy
+      operationId: updateEnterpriseSecurityPolicy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Enterprise security policy updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/workspaces/{id}/identity/oidc:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Identity]
+      summary: Read organization OIDC connection configuration
+      operationId: getWorkspaceOIDCConnection
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OIDC connection
+    put:
+      tags: [Enterprise Identity]
+      summary: Configure organization OIDC connection
+      operationId: configureWorkspaceOIDCConnection
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OIDC connection updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/workspaces/{id}/identity/scim/users:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Identity]
+      summary: List SCIM-style provisioned workspace users
+      operationId: listWorkspaceSCIMUsers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Provisioned users
+    post:
+      tags: [Enterprise Identity]
+      summary: Provision or update a SCIM-style workspace user
+      operationId: upsertWorkspaceSCIMUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Provisioned user
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      tags: [Enterprise Identity]
+      summary: Reconcile a SCIM-style workspace user
+      operationId: reconcileWorkspaceSCIMUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Provisioned user reconciled
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
 components:
   securitySchemes:
