@@ -17,7 +17,19 @@ type Options struct {
 	WriteTimeout time.Duration
 }
 
-func OpenRedis(redisURL string, tuning Options) (*redis.Client, error) {
+func OpenRedis(redisURL string, tunings ...Options) (*redis.Client, error) {
+	tuning := Options{
+		PoolSize:     20,
+		MinIdleConns: 5,
+		PoolTimeout:  4 * time.Second,
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 3 * time.Second,
+	}
+	if len(tunings) > 0 {
+		tuning = tunings[0]
+	}
+
 	options, err := redis.ParseURL(redisURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse redis url: %w", err)
