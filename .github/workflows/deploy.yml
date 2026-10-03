@@ -243,14 +243,17 @@ jobs:
       - name: Verify cluster access
         run: kubectl cluster-info
 
-      - name: Prepare namespace and configuration
-        run: |
-          kubectl apply -f deploy/k8s/base/namespace.yaml
-          kubectl apply -f deploy/k8s/base/configmap.yaml
-          kubectl -n "$KUBE_NAMESPACE" get secret task-api-secrets >/dev/null
-          if ! kubectl -n "$KUBE_NAMESPACE" get secret ghcr-pull-secret >/dev/null 2>&1; then
-            echo "::warning::ghcr-pull-secret is missing. This is okay only when the GHCR package is public."
-          fi
+      - name: Prepare namespace
+        run: kubectl apply -f deploy/k8s/base/namespace.yaml
+
+      - name: Production readiness preflight
+        env:
+          REQUIRE_GHCR_PULL_SECRET: ${{ vars.REQUIRE_GHCR_PULL_SECRET }}
+          REQUIRE_METRICS_SERVER: ${{ vars.REQUIRE_METRICS_SERVER }}
+        run: bash scripts/production-preflight.sh
+
+      - name: Apply runtime configuration
+        run: kubectl apply -f deploy/k8s/base/configmap.yaml
 
       - name: Run database migration from signed digest
         run: |
