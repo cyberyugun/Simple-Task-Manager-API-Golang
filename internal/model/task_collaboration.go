@@ -54,15 +54,15 @@ type TaskLabel struct {
 }
 
 type TaskComment struct {
-	ID        int64      `json:"id"`
-	TaskID    int64      `json:"task_id"`
-	WorkspaceID int64    `json:"workspace_id"`
-	UserID    int64      `json:"user_id"`
-	Body      string     `json:"body"`
-	EditedAt  *time.Time `json:"edited_at,omitempty"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	ID          int64      `json:"id"`
+	TaskID      int64      `json:"task_id"`
+	WorkspaceID int64      `json:"workspace_id"`
+	UserID      int64      `json:"user_id"`
+	Body        string     `json:"body"`
+	EditedAt    *time.Time `json:"edited_at,omitempty"`
+	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type TaskActivity struct {
@@ -104,10 +104,10 @@ type TaskCustomFieldDefinition struct {
 }
 
 type TaskCustomFieldValue struct {
-	TaskID      int64     `json:"task_id"`
-	FieldID     int64     `json:"field_id"`
-	Value       any       `json:"value"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	TaskID    int64     `json:"task_id"`
+	FieldID   int64     `json:"field_id"`
+	Value     any       `json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type CreateTaskProjectRequest struct {
