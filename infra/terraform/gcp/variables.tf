@@ -73,6 +73,17 @@ variable "postgres_tier" {
   default = "db-custom-1-3840"
 }
 
+variable "postgres_retained_backups" {
+  description = "Number of successful Cloud SQL backups retained in addition to PITR logs."
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = var.postgres_retained_backups >= 7 && var.postgres_retained_backups <= 365
+    error_message = "postgres_retained_backups must be between 7 and 365."
+  }
+}
+
 variable "redis_memory_size_gb" {
   type    = number
   default = 1
