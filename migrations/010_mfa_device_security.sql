@@ -1,3 +1,6 @@
+ALTER TABLE refresh_tokens
+    ADD COLUMN IF NOT EXISTS mfa_authenticated BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE TABLE IF NOT EXISTS user_totp_credentials (
     user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     secret_ciphertext TEXT NOT NULL,
