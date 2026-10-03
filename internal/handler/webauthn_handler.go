@@ -58,7 +58,7 @@ func (h *WebAuthnHandler) RegistrationFinish(w http.ResponseWriter, r *http.Requ
 	}
 	response.JSON(w, http.StatusCreated, response.Envelope{
 		Success: true,
-		Data: map[string]string{"credential_id": credentialID},
+		Data:    map[string]string{"credential_id": credentialID},
 	})
 }
 
