@@ -188,9 +188,19 @@ func (s *NotificationService) EmitNotificationSignal(signal model.NotificationSi
 }
 
 func (s *NotificationService) EmitOrganizationAdminsSignal(organizationID int64, eventType, title, body, dedupKey string, data map[string]any) error {
-	users, err := s.repo.ListOrganizationAdmins(organizationID)
+	if s.orgs == nil {
+		return ErrNotificationForbidden
+	}
+	members, err := s.orgs.ListMembers(organizationID)
 	if err != nil {
 		return err
+	}
+	users := make([]int64, 0)
+	for _, member := range members {
+		switch member.Role {
+		case model.OrganizationRoleOwner, model.OrganizationRoleAdmin, model.OrganizationRoleDelegatedAdmin:
+			users = append(users, member.UserID)
+		}
 	}
 	org := organizationID
 	return s.EmitNotificationSignal(model.NotificationSignal{
@@ -219,11 +229,21 @@ func (s *NotificationService) emitForUser(userID int64, signal model.Notificatio
 	now := time.Now().UTC()
 	templateVersion := 0
 	title, body := strings.TrimSpace(signal.Title), strings.TrimSpace(signal.Body)
-	if signal.TemplateKey != "" {
-		if template, templateErr := s.repo.ActiveTemplate(signal.TemplateKey, model.NotificationChannelInApp, pref.Locale); templateErr == nil {
+	templateKey := strings.TrimSpace(signal.TemplateKey)
+	if templateKey == "" {
+		templateKey = signal.EventType
+	}
+	if templateKey != "" {
+		if template, templateErr := s.repo.ActiveTemplate(templateKey, model.NotificationChannelInApp, pref.Locale); templateErr == nil {
 			title = renderNotificationTemplate(template.Subject, signal.Data)
 			body = renderNotificationTemplate(template.Body, signal.Data)
 			templateVersion = template.Version
+		} else if pref.Locale != "en" {
+			if template, fallbackErr := s.repo.ActiveTemplate(templateKey, model.NotificationChannelInApp, "en"); fallbackErr == nil {
+				title = renderNotificationTemplate(template.Subject, signal.Data)
+				body = renderNotificationTemplate(template.Body, signal.Data)
+				templateVersion = template.Version
+			}
 		}
 	}
 	if title == "" {
@@ -233,7 +253,7 @@ func (s *NotificationService) emitForUser(userID int64, signal model.Notificatio
 		UserID: userID, OrganizationID: signal.OrganizationID, WorkspaceID: signal.WorkspaceID,
 		EventType: signal.EventType, Title: title, Body: body,
 		Data: cloneNotificationMap(signal.Data), DedupKey: notificationDedupKey(signal.DedupKey, userID),
-		TemplateKey: signal.TemplateKey, TemplateVersion: templateVersion, CreatedAt: now,
+		TemplateKey: templateKey, TemplateVersion: templateVersion, CreatedAt: now,
 	})
 	if err != nil || !created {
 		return err
