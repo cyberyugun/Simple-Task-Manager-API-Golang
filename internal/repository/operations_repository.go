@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	ErrOperationsPolicyNotFound = errors.New("operations policy not found")
-	ErrOperationalAlertNotFound = errors.New("operational alert not found")
-	ErrMaintenanceWindowNotFound = errors.New("maintenance window not found")
+	ErrOperationsPolicyNotFound    = errors.New("operations policy not found")
+	ErrOperationalAlertNotFound    = errors.New("operational alert not found")
+	ErrMaintenanceWindowNotFound   = errors.New("maintenance window not found")
 	ErrOperationalIncidentNotFound = errors.New("operational incident not found")
 )
 
@@ -39,30 +39,30 @@ type OperationsRepository interface {
 }
 
 type InMemoryOperationsRepository struct {
-	mu            sync.Mutex
-	policies      map[int64]model.OperationsPolicy
-	costs         map[int64]model.CostAllocation
-	alerts        map[int64]model.OperationalAlert
-	alertByKey    map[string]int64
-	maintenance   map[int64]model.MaintenanceWindow
-	incidents     map[int64]model.OperationalIncident
-	nextCostID    int64
-	nextAlertID   int64
-	nextWindowID  int64
+	mu             sync.Mutex
+	policies       map[int64]model.OperationsPolicy
+	costs          map[int64]model.CostAllocation
+	alerts         map[int64]model.OperationalAlert
+	alertByKey     map[string]int64
+	maintenance    map[int64]model.MaintenanceWindow
+	incidents      map[int64]model.OperationalIncident
+	nextCostID     int64
+	nextAlertID    int64
+	nextWindowID   int64
 	nextIncidentID int64
 }
 
 func NewInMemoryOperationsRepository() *InMemoryOperationsRepository {
 	return &InMemoryOperationsRepository{
-		policies:      make(map[int64]model.OperationsPolicy),
-		costs:         make(map[int64]model.CostAllocation),
-		alerts:        make(map[int64]model.OperationalAlert),
-		alertByKey:    make(map[string]int64),
-		maintenance:   make(map[int64]model.MaintenanceWindow),
-		incidents:     make(map[int64]model.OperationalIncident),
-		nextCostID:    1,
-		nextAlertID:   1,
-		nextWindowID:  1,
+		policies:       make(map[int64]model.OperationsPolicy),
+		costs:          make(map[int64]model.CostAllocation),
+		alerts:         make(map[int64]model.OperationalAlert),
+		alertByKey:     make(map[string]int64),
+		maintenance:    make(map[int64]model.MaintenanceWindow),
+		incidents:      make(map[int64]model.OperationalIncident),
+		nextCostID:     1,
+		nextAlertID:    1,
+		nextWindowID:   1,
 		nextIncidentID: 1,
 	}
 }
