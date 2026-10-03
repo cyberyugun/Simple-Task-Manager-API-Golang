@@ -52,6 +52,7 @@ services:
       DATABASE_URL: postgres://task_user:task_password@postgres:5432/task_manager?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-me-1234567890}
+      WEBHOOK_SIGNING_KEY: ${WEBHOOK_SIGNING_KEY:-local-webhook-signing-secret-change-me-123456}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       READINESS_TIMEOUT: ${READINESS_TIMEOUT:-2s}
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
@@ -84,6 +85,36 @@ services:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/app/worker"]
+    environment:
+      DATABASE_URL: postgres://task_user:task_password@postgres:5432/task_manager?sslmode=disable
+      WEBHOOK_SIGNING_KEY: ${WEBHOOK_SIGNING_KEY:-local-webhook-signing-secret-change-me-123456}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-1s}
+      WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-50}
+      WORKER_LOCK_TTL: ${WORKER_LOCK_TTL:-2m}
+      WEBHOOK_HTTP_TIMEOUT: ${WEBHOOK_HTTP_TIMEOUT:-10s}
+      WEBHOOK_ALLOW_PRIVATE_NETWORKS: ${WEBHOOK_ALLOW_PRIVATE_NETWORKS:-true}
+      WORKER_METRICS_ADDR: ":9091"
+    ports:
+      - "9091:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9091/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       start_period: 5s
