@@ -70,6 +70,7 @@ func main() {
 	var lifecycleRepo repository.LifecycleRepository
 	var organizationRepo repository.OrganizationRepository
 	var billingRepo repository.BillingRepository
+	var operationsRepo repository.OperationsRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
 
@@ -97,6 +98,7 @@ func main() {
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
 		organizationRepo = repository.NewPostgresOrganizationRepository(db)
 		billingRepo = repository.NewPostgresBillingRepository(db)
+		operationsRepo = repository.NewPostgresOperationsRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
 		logger.Info(
@@ -117,6 +119,7 @@ func main() {
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
 		organizationRepo = repository.NewInMemoryOrganizationRepository()
 		billingRepo = repository.NewInMemoryBillingRepository()
+		operationsRepo = repository.NewInMemoryOperationsRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
@@ -181,6 +184,7 @@ func main() {
 	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)
 	organizationService := service.NewOrganizationService(organizationRepo, userRepo, workspaceRepo)
 	billingService := service.NewBillingService(billingRepo, organizationRepo)
+	operationsService := service.NewOperationsService(operationsRepo, organizationRepo, billingRepo, billingService)
 	organizationService.SetEntitlementProvider(billingService)
 	workspaceService.SetDeletionGuard(governanceService)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
@@ -192,6 +196,7 @@ func main() {
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
 	organizationHandler := handler.NewOrganizationHandler(organizationService)
 	billingHandler := handler.NewBillingHandler(billingService, cfg.BillingWebhookSecret)
+	operationsHandler := handler.NewOperationsHandler(operationsService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
 	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
@@ -318,6 +323,16 @@ func main() {
 	mux.Handle("/api/organizations/{id}/billing/usage", protectedFirstParty(billingHandler.Usage))
 	mux.Handle("/api/organizations/{id}/billing/invoices", protectedFirstParty(billingHandler.Invoices))
 	mux.Handle("/api/organizations/{id}/billing/dashboard", protectedFirstParty(billingHandler.Dashboard))
+	mux.Handle("/api/organizations/{id}/operations/policy", protectedFirstParty(operationsHandler.Policy))
+	mux.Handle("/api/organizations/{id}/operations/costs", protectedFirstParty(operationsHandler.Costs))
+	mux.Handle("/api/organizations/{id}/operations/alerts", protectedFirstParty(operationsHandler.Alerts))
+	mux.Handle("/api/organizations/{id}/operations/alerts/{alert_id}/ack", protectedFirstParty(operationsHandler.AcknowledgeAlert))
+	mux.Handle("/api/organizations/{id}/operations/maintenance", protectedFirstParty(operationsHandler.Maintenance))
+	mux.Handle("/api/organizations/{id}/operations/maintenance/{window_id}", protectedFirstParty(operationsHandler.MaintenanceByID))
+	mux.Handle("/api/organizations/{id}/operations/incidents", protectedFirstParty(operationsHandler.Incidents))
+	mux.Handle("/api/organizations/{id}/operations/incidents/{incident_id}", protectedFirstParty(operationsHandler.IncidentByID))
+	mux.Handle("/api/organizations/{id}/operations/evaluate", protectedFirstParty(operationsHandler.Evaluate))
+	mux.Handle("/api/organizations/{id}/operations/dashboard", protectedFirstParty(operationsHandler.Dashboard))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))

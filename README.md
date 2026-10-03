@@ -52,6 +52,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Unit, handler, PostgreSQL integration, and container smoke tests
 - GitHub Actions CI
 - Enterprise billing, subscription, entitlement, usage-metering, invoice, and signed provider-webhook foundations
+- Enterprise platform operations, FinOps budgets, SLOs, incidents, maintenance, capacity forecasts, and operational alerts
 
 ## Environment
 
@@ -647,3 +648,8 @@ Phase 28 adds hierarchical organizations, organization lifecycle controls, owner
 ## Enterprise billing and entitlements
 
 Phase 29 adds a provider-neutral billing control plane for organizations. The built-in plan catalog exposes free, pro, and enterprise capacity/feature entitlements; subscriptions support upgrade/downgrade safety, period-boundary or immediate cancellation, grace handling, usage meters, invoice records, signed idempotent provider webhooks, and billing dashboards. Organization member/workspace quotas now use the stricter of the organization quota and active-plan entitlement. See [docs/enterprise-billing-entitlements-usage.md](docs/enterprise-billing-entitlements-usage.md).
+
+
+## Enterprise platform operations and FinOps
+
+Phase 30 adds an organization-level operational control plane: configurable monthly budgets, spend thresholds, SLO targets, escalation policy, support tiers, cost allocations, budget/capacity/SLO anomaly alerts, planned maintenance, incident lifecycle, entitlement-aware capacity forecasts, and a consolidated operations dashboard. Planned maintenance is excluded from incident downtime when calculating availability. See [docs/enterprise-platform-operations-finops.md](docs/enterprise-platform-operations-finops.md).

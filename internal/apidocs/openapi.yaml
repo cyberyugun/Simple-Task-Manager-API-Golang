@@ -23,6 +23,7 @@ tags:
   - name: Enterprise Governance
   - name: Enterprise Administration
   - name: Enterprise Billing
+  - name: Enterprise Operations
 
 paths:
   /health:
@@ -2044,6 +2045,186 @@ paths:
       responses:
         '200':
           description: Billing dashboard
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+
+  /api/organizations/{id}/operations/policy:
+    get:
+      tags: [Enterprise Operations]
+      summary: Get organization FinOps, SLO, escalation, and support policy
+      operationId: getOperationsPolicy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operations policy
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags: [Enterprise Operations]
+      summary: Update organization FinOps, SLO, escalation, and support policy
+      operationId: updateOperationsPolicy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operations policy updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/operations/costs:
+    get:
+      tags: [Enterprise Operations]
+      summary: List current-month cost allocations
+      operationId: listOperationsCosts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cost allocation list
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Operations]
+      summary: Record an organization cost allocation
+      operationId: createOperationsCost
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Cost allocation recorded
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/operations/alerts:
+    get:
+      tags: [Enterprise Operations]
+      summary: List operational budget, capacity, SLO, and escalation alerts
+      operationId: listOperationalAlerts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operational alerts
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/operations/alerts/{alert_id}/ack:
+    post:
+      tags: [Enterprise Operations]
+      summary: Acknowledge an operational alert
+      operationId: acknowledgeOperationalAlert
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Alert acknowledged
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/operations/maintenance:
+    get:
+      tags: [Enterprise Operations]
+      summary: List recent and upcoming maintenance windows
+      operationId: listMaintenanceWindows
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Maintenance windows
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Operations]
+      summary: Schedule a maintenance window
+      operationId: createMaintenanceWindow
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Maintenance window scheduled
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/operations/maintenance/{window_id}:
+    put:
+      tags: [Enterprise Operations]
+      summary: Update maintenance status
+      operationId: updateMaintenanceWindow
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Maintenance window updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/operations/incidents:
+    get:
+      tags: [Enterprise Operations]
+      summary: List organization operational incidents
+      operationId: listOperationalIncidents
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operational incidents
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Operations]
+      summary: Open an operational incident
+      operationId: createOperationalIncident
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Incident opened
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/operations/incidents/{incident_id}:
+    put:
+      tags: [Enterprise Operations]
+      summary: Move an incident through open, monitoring, or resolved state
+      operationId: updateOperationalIncident
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Incident updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/operations/evaluate:
+    post:
+      tags: [Enterprise Operations]
+      summary: Evaluate budget, capacity, SLO, and incident escalation conditions
+      operationId: evaluateOperationalAlerts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current open alerts after evaluation
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/operations/dashboard:
+    get:
+      tags: [Enterprise Operations]
+      summary: Get FinOps, SLO, capacity, incident, maintenance, and alert dashboard
+      operationId: getOperationsDashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Enterprise operations dashboard
         '403':
           $ref: '#/components/responses/Forbidden'
 
