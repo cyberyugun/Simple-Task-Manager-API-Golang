@@ -22,6 +22,17 @@ variable "vpc_cidr" {
   default     = "10.10.0.0/16"
 }
 
+variable "availability_zone_count" {
+  description = "Number of availability zones used by production subnets and NAT gateways."
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.availability_zone_count >= 2 && var.availability_zone_count <= 3
+    error_message = "availability_zone_count must be 2 or 3."
+  }
+}
+
 variable "eks_kubernetes_version" {
   description = "EKS Kubernetes version. Keep this aligned with an AWS-supported version."
   type        = string
@@ -36,12 +47,12 @@ variable "eks_node_instance_types" {
 
 variable "eks_node_min_size" {
   type    = number
-  default = 2
+  default = 3
 }
 
 variable "eks_node_desired_size" {
   type    = number
-  default = 2
+  default = 3
 }
 
 variable "eks_node_max_size" {
@@ -87,9 +98,31 @@ variable "postgres_multi_az" {
   default = true
 }
 
+variable "postgres_backup_retention_days" {
+  description = "Automated RDS backup retention used for point-in-time recovery."
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = var.postgres_backup_retention_days >= 7 && var.postgres_backup_retention_days <= 35
+    error_message = "postgres_backup_retention_days must be between 7 and 35."
+  }
+}
+
 variable "redis_node_type" {
   type    = string
   default = "cache.t4g.micro"
+}
+
+variable "redis_snapshot_retention_days" {
+  description = "ElastiCache snapshot retention for recovery."
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = var.redis_snapshot_retention_days >= 1 && var.redis_snapshot_retention_days <= 35
+    error_message = "redis_snapshot_retention_days must be between 1 and 35."
+  }
 }
 
 variable "redis_auth_token" {
