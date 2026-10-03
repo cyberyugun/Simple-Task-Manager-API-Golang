@@ -194,8 +194,8 @@ func main() {
 	protectedIdentityAdmin := func(h http.HandlerFunc) http.Handler {
 		return authMiddleware(middleware.RequireScope(model.ScopeIdentityAdmin)(http.HandlerFunc(h)))
 	}
-	protectedRateLimited := func(h http.HandlerFunc) http.Handler {
-		return authMiddleware(authRateLimiter.Handler(http.HandlerFunc(h)))
+	protectedFirstPartyRateLimited := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(middleware.RequireFirstPartyUser(authRateLimiter.Handler(http.HandlerFunc(h))))
 	}
 	protectedWorkspace := func(h http.HandlerFunc) http.Handler {
 		return serviceAuthMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(http.HandlerFunc(h))))
@@ -235,18 +235,18 @@ func main() {
 	mux.Handle("/api/oauth/token", rateLimited(enterpriseHandler.OAuthToken))
 	mux.Handle("/api/oauth/api-key", rateLimited(enterpriseHandler.APIKeyExchange))
 
-	mux.Handle("/api/auth/change-password", protectedFirstParty(authHandler.ChangePassword))
+	mux.Handle("/api/auth/change-password", protectedFirstPartyRateLimited(authHandler.ChangePassword))
 	mux.Handle("/api/auth/logout-all", protectedFirstParty(authHandler.LogoutAll))
 	mux.Handle("/api/auth/sessions", protectedFirstParty(authHandler.Sessions))
 	mux.Handle("/api/auth/sessions/risk", protectedFirstParty(authHandler.SessionRisks))
 	mux.Handle("/api/auth/sessions/", protectedFirstParty(authHandler.SessionByID))
-	mux.Handle("/api/auth/email-verification/request", protectedFirstParty(authHandler.RequestEmailVerification))
+	mux.Handle("/api/auth/email-verification/request", protectedFirstPartyRateLimited(authHandler.RequestEmailVerification))
 	mux.Handle("/api/auth/token/introspect", protectedFirstParty(enterpriseHandler.Introspect))
 	mux.Handle("/api/auth/token/revoke", protectedFirstParty(enterpriseHandler.RevokeToken))
 	mux.Handle("/api/auth/mfa/status", protectedFirstParty(mfaHandler.Status))
-	mux.Handle("/api/auth/mfa/totp/enroll", protectedFirstParty(mfaHandler.EnrollTOTP))
-	mux.Handle("/api/auth/mfa/totp/confirm", protectedFirstParty(mfaHandler.ConfirmTOTP))
-	mux.Handle("/api/auth/mfa/totp/disable", protectedFirstParty(mfaHandler.DisableTOTP))
+	mux.Handle("/api/auth/mfa/totp/enroll", protectedFirstPartyRateLimited(mfaHandler.EnrollTOTP))
+	mux.Handle("/api/auth/mfa/totp/confirm", protectedFirstPartyRateLimited(mfaHandler.ConfirmTOTP))
+	mux.Handle("/api/auth/mfa/totp/disable", protectedFirstPartyRateLimited(mfaHandler.DisableTOTP))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
