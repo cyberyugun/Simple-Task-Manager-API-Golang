@@ -32,6 +32,16 @@ grep -q 'nginx.ingress.kubernetes.io/canary-by-header: "X-Canary"' deploy/k8s/pr
 grep -q 'name: task-api-canary' deploy/k8s/progressive/canary-deployment.yaml
 grep -q 'name: task-api-canary' deploy/k8s/progressive/canary-service.yaml
 grep -q 'maxUnavailable: 0' deploy/k8s/base/deployment.yaml
+grep -q 'app.kubernetes.io/part-of: simple-task-manager' deploy/k8s/base/networkpolicy.yaml
+
+build_push_block="$(awk '/- name: Build and push/{flag=1} /- name: Scan published image/{flag=0} flag' .github/workflows/deploy.yml)"
+if printf '%s\n' "$build_push_block" | grep -q 'IMAGE_REPOSITORY.*latest'; then
+  echo "build step must not publish :latest before promotion succeeds" >&2
+  exit 1
+fi
+grep -q 'name: Enforce deployment freeze' .github/workflows/deploy.yml
+grep -q 'name: Progressive canary release' .github/workflows/deploy.yml
+grep -q 'name: Move latest tag only after successful promotion' .github/workflows/deploy.yml
 
 python3 scripts/check-migration-compatibility.py migrations
 
