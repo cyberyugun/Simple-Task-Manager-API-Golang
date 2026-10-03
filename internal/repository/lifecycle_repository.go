@@ -37,12 +37,14 @@ type InMemoryLifecycleRepository struct {
 
 func NewInMemoryLifecycleRepository() *InMemoryLifecycleRepository {
 	return &InMemoryLifecycleRepository{
-		configured: make(map[int64]bool),
-		runs: make(map[int64]model.LifecycleRun),
-		archives: make(map[int64]map[int64]time.Time),
-		exports: make(map[int64]model.PrivacyExportPackage),
-		consents: make(map[int64]model.ConsentRecord),
-		nextRun: 1, nextExport: 1, nextConsent: 1,
+		configured:  make(map[int64]bool),
+		runs:        make(map[int64]model.LifecycleRun),
+		archives:    make(map[int64]map[int64]time.Time),
+		exports:     make(map[int64]model.PrivacyExportPackage),
+		consents:    make(map[int64]model.ConsentRecord),
+		nextRun:     1,
+		nextExport:  1,
+		nextConsent: 1,
 	}
 }
 
