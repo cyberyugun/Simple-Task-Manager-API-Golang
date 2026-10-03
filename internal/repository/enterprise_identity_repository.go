@@ -10,12 +10,12 @@ import (
 )
 
 var (
-	ErrOAuthClientNotFound   = errors.New("oauth client not found")
-	ErrAuthorizationCode     = errors.New("invalid or expired authorization code")
-	ErrAPIKeyNotFound        = errors.New("api key not found")
-	ErrEnterprisePolicy      = errors.New("enterprise policy not found")
-	ErrOIDCConnection        = errors.New("oidc connection not found")
-	ErrSCIMUserNotFound      = errors.New("scim user not found")
+	ErrOAuthClientNotFound = errors.New("oauth client not found")
+	ErrAuthorizationCode   = errors.New("invalid or expired authorization code")
+	ErrAPIKeyNotFound      = errors.New("api key not found")
+	ErrEnterprisePolicy    = errors.New("enterprise policy not found")
+	ErrOIDCConnection      = errors.New("oidc connection not found")
+	ErrSCIMUserNotFound    = errors.New("scim user not found")
 )
 
 type EnterpriseIdentityRepository interface {
