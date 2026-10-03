@@ -444,7 +444,7 @@ func (s *WorkflowService) executeSubworkflowNode(execution *model.WorkflowExecut
 		child, err := s.startWorkflow(actorUserID, execution.OrganizationID, childID, model.StartWorkflowExecutionRequest{
 			TriggerType: model.WorkflowTriggerInternal, TriggerKey: "subworkflow",
 			TriggerPayload: map[string]any{"parent_execution_id": execution.ID, "parent_node_id": node.ID},
-			Variables: cloneWorkflowVariables(execution.Variables),
+			Variables:      cloneWorkflowVariables(execution.Variables),
 		}, stack)
 		if err != nil {
 			execution.ErrorMessage = err.Error()
@@ -658,7 +658,7 @@ func (s *WorkflowService) recordWorkflowNodeWaiting(executionID int64, node mode
 func (s *WorkflowService) checkpoint(execution model.WorkflowExecution, nodeID string) error {
 	_, err := s.repo.CreateWorkflowCheckpoint(model.WorkflowCheckpoint{
 		ExecutionID: execution.ID, Status: execution.Status, NodeID: nodeID,
-		Variables: cloneWorkflowVariables(execution.Variables),
+		Variables:   cloneWorkflowVariables(execution.Variables),
 		NextNodeIDs: append([]string(nil), execution.NextNodeIDs...), CreatedAt: time.Now().UTC(),
 	})
 	return err

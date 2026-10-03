@@ -48,15 +48,15 @@ const (
 )
 
 type WorkflowDefinition struct {
-	ID              int64      `json:"id"`
-	OrganizationID  int64      `json:"organization_id"`
-	Name            string     `json:"name"`
-	Description     string     `json:"description"`
-	ActiveVersionID *int64     `json:"active_version_id,omitempty"`
-	CreatedByUserID int64      `json:"created_by_user_id"`
-	UpdatedByUserID int64      `json:"updated_by_user_id"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID              int64     `json:"id"`
+	OrganizationID  int64     `json:"organization_id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	ActiveVersionID *int64    `json:"active_version_id,omitempty"`
+	CreatedByUserID int64     `json:"created_by_user_id"`
+	UpdatedByUserID int64     `json:"updated_by_user_id"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type WorkflowVersion struct {
@@ -103,42 +103,42 @@ type WorkflowRetry struct {
 }
 
 type WorkflowExecution struct {
-	ID                int64         `json:"id"`
-	OrganizationID    int64         `json:"organization_id"`
-	WorkflowID        int64         `json:"workflow_id"`
-	WorkflowVersionID int64         `json:"workflow_version_id"`
-	Status            string        `json:"status"`
-	TriggerType       string        `json:"trigger_type"`
-	TriggerKey        string        `json:"trigger_key,omitempty"`
+	ID                int64          `json:"id"`
+	OrganizationID    int64          `json:"organization_id"`
+	WorkflowID        int64          `json:"workflow_id"`
+	WorkflowVersionID int64          `json:"workflow_version_id"`
+	Status            string         `json:"status"`
+	TriggerType       string         `json:"trigger_type"`
+	TriggerKey        string         `json:"trigger_key,omitempty"`
 	TriggerPayload    map[string]any `json:"trigger_payload"`
 	Variables         map[string]any `json:"variables"`
-	WorkflowSnapshot  WorkflowGraph `json:"workflow_snapshot"`
-	NextNodeIDs       []string      `json:"next_node_ids"`
-	DryRun            bool          `json:"dry_run"`
-	ErrorMessage      string        `json:"error_message,omitempty"`
-	RequestedByUserID *int64        `json:"requested_by_user_id,omitempty"`
-	ResumeAt          *time.Time    `json:"resume_at,omitempty"`
-	StartedAt         time.Time     `json:"started_at"`
-	CompletedAt       *time.Time    `json:"completed_at,omitempty"`
-	CreatedAt         time.Time     `json:"created_at"`
-	UpdatedAt         time.Time     `json:"updated_at"`
+	WorkflowSnapshot  WorkflowGraph  `json:"workflow_snapshot"`
+	NextNodeIDs       []string       `json:"next_node_ids"`
+	DryRun            bool           `json:"dry_run"`
+	ErrorMessage      string         `json:"error_message,omitempty"`
+	RequestedByUserID *int64         `json:"requested_by_user_id,omitempty"`
+	ResumeAt          *time.Time     `json:"resume_at,omitempty"`
+	StartedAt         time.Time      `json:"started_at"`
+	CompletedAt       *time.Time     `json:"completed_at,omitempty"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
 }
 
 type WorkflowNodeExecution struct {
-	ID              int64          `json:"id"`
-	ExecutionID     int64          `json:"execution_id"`
-	NodeID          string         `json:"node_id"`
-	NodeType        string         `json:"node_type"`
-	Status          string         `json:"status"`
-	Attempt         int            `json:"attempt"`
-	Input           map[string]any `json:"input"`
-	Output          map[string]any `json:"output"`
-	ErrorMessage    string         `json:"error_message,omitempty"`
-	RetryAt         *time.Time     `json:"retry_at,omitempty"`
-	StartedAt       time.Time      `json:"started_at"`
-	CompletedAt     *time.Time     `json:"completed_at,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID           int64          `json:"id"`
+	ExecutionID  int64          `json:"execution_id"`
+	NodeID       string         `json:"node_id"`
+	NodeType     string         `json:"node_type"`
+	Status       string         `json:"status"`
+	Attempt      int            `json:"attempt"`
+	Input        map[string]any `json:"input"`
+	Output       map[string]any `json:"output"`
+	ErrorMessage string         `json:"error_message,omitempty"`
+	RetryAt      *time.Time     `json:"retry_at,omitempty"`
+	StartedAt    time.Time      `json:"started_at"`
+	CompletedAt  *time.Time     `json:"completed_at,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
 type WorkflowApproval struct {

@@ -14,15 +14,15 @@ import (
 )
 
 var (
-	ErrWorkflowForbidden         = errors.New("workflow action is forbidden")
-	ErrInvalidWorkflow           = errors.New("invalid workflow definition")
-	ErrWorkflowVersionImmutable  = errors.New("published workflow version is immutable")
-	ErrWorkflowNotPublished      = errors.New("workflow version is not published")
-	ErrWorkflowNotActive         = errors.New("workflow has no active published version")
-	ErrInvalidWorkflowDecision   = errors.New("invalid workflow approval decision")
-	ErrInvalidWorkflowExecution  = errors.New("invalid workflow execution state")
-	ErrWorkflowLimit             = errors.New("workflow limit reached")
-	ErrWorkflowRecursion         = errors.New("workflow subworkflow recursion detected")
+	ErrWorkflowForbidden        = errors.New("workflow action is forbidden")
+	ErrInvalidWorkflow          = errors.New("invalid workflow definition")
+	ErrWorkflowVersionImmutable = errors.New("published workflow version is immutable")
+	ErrWorkflowNotPublished     = errors.New("workflow version is not published")
+	ErrWorkflowNotActive        = errors.New("workflow has no active published version")
+	ErrInvalidWorkflowDecision  = errors.New("invalid workflow approval decision")
+	ErrInvalidWorkflowExecution = errors.New("invalid workflow execution state")
+	ErrWorkflowLimit            = errors.New("workflow limit reached")
+	ErrWorkflowRecursion        = errors.New("workflow subworkflow recursion detected")
 )
 
 type WorkflowService struct {
