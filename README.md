@@ -51,6 +51,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Environment/config validation
 - Unit, handler, PostgreSQL integration, and container smoke tests
 - GitHub Actions CI
+- Enterprise billing, subscription, entitlement, usage-metering, invoice, and signed provider-webhook foundations
 
 ## Environment
 
@@ -83,6 +84,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 | `REDIS_WRITE_TIMEOUT` | No | `3s` | Redis write timeout |
 | `IDEMPOTENCY_TTL` | No | `24h` | Retention window for task-create idempotency records |
 | `WEBHOOK_ALLOW_INSECURE_HTTP` | No | `false` | Allow plain HTTP webhook destinations for local testing only |
+| `BILLING_WEBHOOK_SECRET` | No | empty | HMAC-SHA256 secret for generic billing-provider webhooks; minimum 32 characters recommended |
 | `WORKER_POLL_INTERVAL` | No | `2s` | Background worker polling interval |
 | `WORKER_BATCH_SIZE` | No | `50` | Maximum outbox events claimed per worker iteration |
 | `WEBHOOK_TIMEOUT` | No | `10s` | Webhook HTTP request timeout |
@@ -640,3 +642,8 @@ Phase 27 adds legal-hold-aware automated retention processing, task archival and
 ## Enterprise administration and organization management
 
 Phase 28 adds hierarchical organizations, organization lifecycle controls, owner/admin/delegated-admin roles, ownership transfer, member and workspace quotas, bulk member administration, opaque-token invitations, teams, workspace attachment, domain verification, enterprise directory, organization audit events, and administration dashboards. See [docs/enterprise-administration-organizations.md](docs/enterprise-administration-organizations.md).
+
+
+## Enterprise billing and entitlements
+
+Phase 29 adds a provider-neutral billing control plane for organizations. The built-in plan catalog exposes free, pro, and enterprise capacity/feature entitlements; subscriptions support upgrade/downgrade safety, period-boundary or immediate cancellation, grace handling, usage meters, invoice records, signed idempotent provider webhooks, and billing dashboards. Organization member/workspace quotas now use the stricter of the organization quota and active-plan entitlement. See [docs/enterprise-billing-entitlements-usage.md](docs/enterprise-billing-entitlements-usage.md).
