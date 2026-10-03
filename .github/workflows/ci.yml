@@ -21,6 +21,11 @@ jobs:
       - name: Validate production preflight script
         run: bash -n scripts/production-preflight.sh
 
+      - name: Validate Terraform delivery helpers
+        run: |
+          bash -n scripts/terraform-prepare.sh
+          python3 -m py_compile scripts/terraform-plan-metadata.py scripts/terraform-verify-plan.py
+
       - name: Enforce immutable GitHub Action pins
         run: |
           ruby <<'RUBY'
