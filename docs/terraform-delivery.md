@@ -94,10 +94,11 @@ Example:
 cd infra/terraform/bootstrap/azure
 terraform init
 terraform apply \
-  -var='storage_account_name=YOURUNIQUESTATEACCOUNT'
+  -var='storage_account_name=YOURUNIQUESTATEACCOUNT' \
+  -var='allowed_ip_ranges=["YOUR_TRUSTED_EGRESS_IP"]'
 ```
 
-The storage account uses private containers, versioning, retention, TLS 1.2+, infrastructure encryption, no shared access keys, and `prevent_destroy`.
+The storage account uses private containers, versioning, retention, TLS 1.2+, infrastructure encryption, no shared access keys, and `prevent_destroy`. Network rules default to deny; pass `allowed_ip_ranges` for trusted bootstrap/runner egress IPs or run from an approved private execution environment.
 
 Example production backend config:
 
