@@ -597,7 +597,7 @@ func (r *PostgresNotificationRepository) MarkDeliveryFailed(deliveryID int64, fa
 			status=CASE WHEN attempts+1 >= max_attempts THEN 'dead_letter' ELSE 'retry' END,
 			available_at=CASE
 				WHEN attempts+1 >= max_attempts THEN available_at
-				ELSE $3 + (LEAST(POWER(2,attempts+1),300)::text || ' seconds')::interval
+				ELSE $3::timestamptz + (LEAST(POWER(2,attempts+1),300)::text || ' seconds')::interval
 			END,
 			locked_at=NULL,locked_by=NULL,updated_at=$3
 		WHERE id=$1
