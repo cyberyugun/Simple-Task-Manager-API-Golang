@@ -184,6 +184,47 @@ func (s *AuthService) Sessions(userID int64) ([]model.RefreshSession, error) {
 	return s.refreshes.ListActive(userID, time.Now())
 }
 
+func (s *AuthService) SessionRisks(userID int64, current model.SessionMetadata) ([]model.SessionRiskAssessment, error) {
+	sessions, err := s.refreshes.ListActive(userID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	currentUA := strings.TrimSpace(current.UserAgent)
+	currentIP := strings.TrimSpace(current.IPAddress)
+	result := make([]model.SessionRiskAssessment, 0, len(sessions))
+	for _, session := range sessions {
+		indicators := make([]string, 0, 4)
+		score := 0
+		if currentUA != "" && session.UserAgent != "" && session.UserAgent != currentUA {
+			score++
+			indicators = append(indicators, "user_agent_mismatch")
+		}
+		if currentIP != "" && session.IPAddress != "" && session.IPAddress != currentIP {
+			score++
+			indicators = append(indicators, "ip_address_mismatch")
+		}
+		if now.Sub(session.LastUsedAt) > 7*24*time.Hour {
+			score++
+			indicators = append(indicators, "stale_session")
+		}
+		if !session.MFAAuthenticated {
+			indicators = append(indicators, "mfa_not_verified")
+		}
+
+		risk := "low"
+		if score >= 2 {
+			risk = "high"
+		} else if score == 1 {
+			risk = "medium"
+		}
+		result = append(result, model.SessionRiskAssessment{
+			Session: session, Risk: risk, Indicators: indicators,
+		})
+	}
+	return result, nil
+}
+
 func (s *AuthService) RevokeSession(userID, sessionID int64) error {
 	err := s.refreshes.RevokeByID(userID, sessionID, time.Now())
 	if errors.Is(err, repository.ErrInvalidRefreshToken) {
