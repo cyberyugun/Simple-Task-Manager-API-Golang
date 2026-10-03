@@ -381,16 +381,16 @@ resource "aws_db_instance" "postgres" {
   publicly_accessible    = false
   multi_az               = var.postgres_multi_az
 
-  backup_retention_period          = 7
-  backup_window                    = "18:00-19:00"
-  maintenance_window               = "sun:19:00-sun:20:00"
-  auto_minor_version_upgrade       = true
-  deletion_protection              = true
-  skip_final_snapshot              = false
-  final_snapshot_identifier        = "${local.name}-postgres-final"
-  copy_tags_to_snapshot            = true
-  performance_insights_enabled     = true
-  enabled_cloudwatch_logs_exports  = ["postgresql", "upgrade"]
+  backup_retention_period         = 7
+  backup_window                   = "18:00-19:00"
+  maintenance_window              = "sun:19:00-sun:20:00"
+  auto_minor_version_upgrade      = true
+  deletion_protection             = true
+  skip_final_snapshot             = false
+  final_snapshot_identifier       = "${local.name}-postgres-final"
+  copy_tags_to_snapshot           = true
+  performance_insights_enabled    = true
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 }
 
 resource "aws_elasticache_subnet_group" "redis" {
@@ -402,9 +402,9 @@ resource "aws_elasticache_replication_group" "redis" {
   replication_group_id = "${local.name}-redis"
   description          = "Redis for ${local.name}"
 
-  engine         = "redis"
-  node_type      = var.redis_node_type
-  port           = 6379
+  engine             = "redis"
+  node_type          = var.redis_node_type
+  port               = 6379
   num_cache_clusters = 2
 
   automatic_failover_enabled = true
