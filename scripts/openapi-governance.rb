@@ -4,7 +4,7 @@ require "yaml"
 
 spec_path = ARGV.fetch(0, "internal/apidocs/openapi.yaml")
 main_path = ARGV.fetch(1, "cmd/api/main.go")
-spec = YAML.load_file(spec_path)
+spec = YAML.unsafe_load_file(spec_path)
 failures = []
 failures << "OpenAPI version must be 3.1.0" unless spec["openapi"] == "3.1.0"
 failures << "x-api-version must be v1" unless spec["x-api-version"] == "v1"
