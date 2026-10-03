@@ -108,7 +108,7 @@ func (h *EventHandler) ReplayDead(w http.ResponseWriter, r *http.Request) {
 	}
 	response.JSON(w, http.StatusOK, response.Envelope{
 		Success: true,
-		Data: map[string]int64{"replayed": count},
+		Data:    map[string]int64{"replayed": count},
 	})
 }
 
