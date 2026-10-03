@@ -668,6 +668,7 @@ func (r *PostgresNotificationRepository) ReleaseStaleDeliveryLocks(before time.T
 }
 
 func (r *PostgresNotificationRepository) ListReminderCandidates(now, horizon time.Time, limit int) ([]model.NotificationReminderCandidate, error) {
+	_ = now
 	rows, err := r.db.Query(`
 		WITH recipients AS (
 			SELECT t.workspace_id,t.id AS task_id,t.title,t.due_at,a.user_id
@@ -676,21 +677,21 @@ func (r *PostgresNotificationRepository) ListReminderCandidates(now, horizon tim
 			WHERE t.workspace_id IS NOT NULL
 			  AND t.deleted_at IS NULL AND t.archived_at IS NULL
 			  AND t.status NOT IN ('DONE','ARCHIVED')
-			  AND t.due_at IS NOT NULL AND t.due_at <= $2
+			  AND t.due_at IS NOT NULL AND t.due_at <= $1
 			UNION
 			SELECT t.workspace_id,t.id AS task_id,t.title,t.due_at,COALESCE(t.created_by_user_id,t.user_id)
 			FROM tasks t
 			WHERE t.workspace_id IS NOT NULL
 			  AND t.deleted_at IS NULL AND t.archived_at IS NULL
 			  AND t.status NOT IN ('DONE','ARCHIVED')
-			  AND t.due_at IS NOT NULL AND t.due_at <= $2
+			  AND t.due_at IS NOT NULL AND t.due_at <= $1
 		)
 		SELECT workspace_id,task_id,user_id,title,due_at
 		FROM recipients
 		WHERE user_id IS NOT NULL
 		ORDER BY due_at,task_id,user_id
-		LIMIT $3
-	`, now, horizon, limit)
+		LIMIT $2
+	`, horizon, limit)
 	if err != nil {
 		return nil, err
 	}
