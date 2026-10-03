@@ -2,8 +2,8 @@
 # frozen_string_literal: true
 require "yaml"
 
-spec = YAML.load_file(ARGV.fetch(0, "internal/apidocs/openapi.yaml"))
-contract = YAML.load_file(ARGV.fetch(1, "tests/contracts/consumer-v1.yaml"))
+spec = YAML.unsafe_load_file(ARGV.fetch(0, "internal/apidocs/openapi.yaml"))
+contract = YAML.unsafe_load_file(ARGV.fetch(1, "tests/contracts/consumer-v1.yaml"))
 failures = []
 
 def resolve_ref(spec, node)
