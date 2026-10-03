@@ -136,4 +136,34 @@ raise "member audit access should be forbidden, got #{res.code}" unless res.code
 res = request(base, "get", "/api/workspaces/#{workspace_id}/audit", token: token)
 validate_response!(spec, res, "/api/workspaces/{id}/audit", "get", 200)
 
-puts "Live OpenAPI contract PASSED, including multi-tenant RBAC isolation."
+idempotency_key = "contract-idem-#{Time.now.to_i}-#{Process.pid}"
+idem_headers = {"Idempotency-Key" => idempotency_key}
+res = request(base, "post", "/api/tasks", body: {title: "Idempotent task", description: "first request"}, token: token, headers: idem_headers)
+idem_first = validate_response!(spec, res, "/api/tasks", "post", 201)
+res = request(base, "post", "/api/tasks", body: {title: "Idempotent task", description: "first request"}, token: token, headers: idem_headers)
+idem_second = validate_response!(spec, res, "/api/tasks", "post", 201)
+raise "idempotent replay changed task id" unless idem_first.fetch("data").fetch("id") == idem_second.fetch("data").fetch("id")
+raise "idempotent replay header missing" unless res["Idempotency-Replayed"] == "true"
+
+res = request(base, "post", "/api/tasks", body: {title: "Different task", description: "conflict"}, token: token, headers: idem_headers)
+raise "idempotency conflict should return 409, got #{res.code}" unless res.code.to_i == 409
+
+res = request(
+  base,
+  "post",
+  "/api/webhooks",
+  body: {url: "http://127.0.0.1:65534/webhook", event_types: ["task.created"]},
+  token: token
+)
+webhook_created = validate_response!(spec, res, "/api/webhooks", "post", 201)
+webhook_id = webhook_created.fetch("data").fetch("id")
+raise "webhook signing secret missing from create response" if webhook_created.fetch("data").fetch("signing_secret", "").empty?
+
+res = request(base, "get", "/api/webhooks", token: token)
+webhook_list = validate_response!(spec, res, "/api/webhooks", "get", 200)
+raise "created webhook missing from list" unless webhook_list.fetch("data").any? { |item| item["id"] == webhook_id }
+
+res = request(base, "delete", "/api/webhooks/#{webhook_id}", token: token)
+validate_response!(spec, res, "/api/webhooks/{id}", "delete", 200)
+
+puts "Live OpenAPI contract PASSED, including multi-tenant RBAC, task idempotency, and webhook management."
