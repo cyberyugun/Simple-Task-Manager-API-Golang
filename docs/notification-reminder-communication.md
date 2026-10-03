@@ -150,7 +150,7 @@ GET    /api/notifications/endpoints
 POST   /api/notifications/endpoints
 DELETE /api/notifications/endpoints/{endpoint_id}
 
-POST   /api/notifications/{notification_id}/read
+POST   /api/notifications/items/{notification_id}/read
 POST   /api/notifications/read-all
 
 GET    /api/notifications/deliveries
