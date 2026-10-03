@@ -28,33 +28,21 @@ ALTER TABLE tasks
     ALTER COLUMN priority SET DEFAULT 'MEDIUM',
     ALTER COLUMN priority SET NOT NULL;
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'tasks_status_check'
-    ) THEN
-        ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
-            CHECK (status IN ('BACKLOG','TODO','IN_PROGRESS','BLOCKED','IN_REVIEW','DONE','ARCHIVED'));
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'tasks_priority_check'
-    ) THEN
-        ALTER TABLE tasks ADD CONSTRAINT tasks_priority_check
-            CHECK (priority IN ('LOW','MEDIUM','HIGH','URGENT'));
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'tasks_estimated_minutes_check'
-    ) THEN
-        ALTER TABLE tasks ADD CONSTRAINT tasks_estimated_minutes_check
-            CHECK (estimated_minutes IS NULL OR estimated_minutes >= 0);
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'tasks_actual_minutes_check'
-    ) THEN
-        ALTER TABLE tasks ADD CONSTRAINT tasks_actual_minutes_check
-            CHECK (actual_minutes IS NULL OR actual_minutes >= 0);
-    END IF;
-END $$;
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
+    CHECK (status IN ('BACKLOG','TODO','IN_PROGRESS','BLOCKED','IN_REVIEW','DONE','ARCHIVED'));
+
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_priority_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_priority_check
+    CHECK (priority IN ('LOW','MEDIUM','HIGH','URGENT'));
+
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_estimated_minutes_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_estimated_minutes_check
+    CHECK (estimated_minutes IS NULL OR estimated_minutes >= 0);
+
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_actual_minutes_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_actual_minutes_check
+    CHECK (actual_minutes IS NULL OR actual_minutes >= 0);
 
 CREATE TABLE IF NOT EXISTS task_projects (
     id BIGSERIAL PRIMARY KEY,
@@ -184,27 +172,17 @@ CREATE TABLE IF NOT EXISTS task_activities (
 CREATE INDEX IF NOT EXISTS idx_task_activities_task
     ON task_activities (task_id, created_at DESC, id DESC);
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'tasks_project_fk'
-    ) THEN
-        ALTER TABLE tasks ADD CONSTRAINT tasks_project_fk
-            FOREIGN KEY (project_id) REFERENCES task_projects(id) ON DELETE SET NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'tasks_list_fk'
-    ) THEN
-        ALTER TABLE tasks ADD CONSTRAINT tasks_list_fk
-            FOREIGN KEY (list_id) REFERENCES task_lists(id) ON DELETE SET NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'tasks_parent_fk'
-    ) THEN
-        ALTER TABLE tasks ADD CONSTRAINT tasks_parent_fk
-            FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE SET NULL;
-    END IF;
-END $$;
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_project_fk;
+ALTER TABLE tasks ADD CONSTRAINT tasks_project_fk
+    FOREIGN KEY (project_id) REFERENCES task_projects(id) ON DELETE SET NULL;
+
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_list_fk;
+ALTER TABLE tasks ADD CONSTRAINT tasks_list_fk
+    FOREIGN KEY (list_id) REFERENCES task_lists(id) ON DELETE SET NULL;
+
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_parent_fk;
+ALTER TABLE tasks ADD CONSTRAINT tasks_parent_fk
+    FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_tasks_workspace_status_due
     ON tasks (workspace_id, status, due_at, id)
