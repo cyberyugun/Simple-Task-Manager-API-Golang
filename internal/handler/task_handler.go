@@ -41,6 +41,9 @@ func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !requireTaskScope(w, r) {
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
@@ -55,6 +58,9 @@ func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 	_, access, ok := requestScope(w, r)
 	if !ok {
+		return
+	}
+	if !requireTaskScope(w, r) {
 		return
 	}
 
@@ -203,6 +209,18 @@ func (h *TaskHandler) delete(w http.ResponseWriter, workspaceID, id int64) {
 		return
 	}
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "task deleted"})
+}
+
+func requireTaskScope(w http.ResponseWriter, r *http.Request) bool {
+	scope := model.ScopeTasksWrite
+	if r.Method == http.MethodGet {
+		scope = model.ScopeTasksRead
+	}
+	if middleware.HasScope(r.Context(), scope) {
+		return true
+	}
+	response.JSON(w, http.StatusForbidden, response.Envelope{Success: false, Message: "insufficient token scope"})
+	return false
 }
 
 func (h *TaskHandler) handleError(w http.ResponseWriter, err error) {
