@@ -1133,6 +1133,92 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+
+  /api/auth/mfa/webauthn/register/begin:
+    post:
+      tags: [Authentication]
+      summary: Begin WebAuthn credential registration
+      operationId: beginWebAuthnRegistration
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: WebAuthn creation options and one-time ceremony session ID
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/mfa/webauthn/register/finish:
+    post:
+      tags: [Authentication]
+      summary: Finish WebAuthn credential registration
+      operationId: finishWebAuthnRegistration
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: X-WebAuthn-Session
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '201':
+          description: WebAuthn credential registered
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/mfa/webauthn/login/begin:
+    post:
+      tags: [Authentication]
+      summary: Validate password and begin WebAuthn MFA assertion
+      operationId: beginWebAuthnMFALogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: WebAuthn assertion options and one-time ceremony session ID
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/mfa/webauthn/login/finish:
+    post:
+      tags: [Authentication]
+      summary: Finish WebAuthn MFA assertion and issue an MFA-authenticated application session
+      operationId: finishWebAuthnMFALogin
+      parameters:
+        - in: header
+          name: X-WebAuthn-Session
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Authenticated user, access token, and refresh token
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     bearerAuth:
