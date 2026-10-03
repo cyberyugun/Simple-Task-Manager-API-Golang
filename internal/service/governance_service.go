@@ -80,8 +80,8 @@ func (s *GovernanceService) UpdatePolicy(actorUserID, workspaceID int64, req mod
 		s.audit(workspaceID, actorUserID, "governance.policy.updated", "governance_policy", strconv.FormatInt(workspaceID, 10), map[string]any{
 			"default_classification":      classification,
 			"audit_retention_days":        req.AuditRetentionDays,
-			"operational_retention_days": req.OperationalRetentionDays,
-			"privacy_request_sla_hours":  req.PrivacyRequestSLAHours,
+			"operational_retention_days":  req.OperationalRetentionDays,
+			"privacy_request_sla_hours":   req.PrivacyRequestSLAHours,
 		})
 	}
 	return item, err
