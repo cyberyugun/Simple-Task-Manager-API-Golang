@@ -64,6 +64,7 @@ func main() {
 	var actionRepo repository.AuthActionTokenRepository
 	var workspaceRepo repository.WorkspaceRepository
 	var eventRepo repository.EventRepository
+	var enterpriseRepo repository.EnterpriseIdentityRepository
 
 	if cfg.DatabaseURL != "" {
 		db, err = appdb.OpenPostgres(cfg.DatabaseURL, appdb.Options{
@@ -84,6 +85,7 @@ func main() {
 		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
 		workspaceRepo = repository.NewPostgresWorkspaceRepository(db)
 		eventRepo = repository.NewPostgresEventRepository(db)
+		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
 		logger.Info(
 			"storage_configured",
 			"backend", "postgresql",
@@ -97,6 +99,7 @@ func main() {
 		actionRepo = repository.NewInMemoryAuthActionTokenRepository()
 		workspaceRepo = repository.NewInMemoryWorkspaceRepository()
 		eventRepo = repository.NewInMemoryEventRepository()
+		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
 	}
 
@@ -135,11 +138,14 @@ func main() {
 	taskService := service.NewTaskService(taskRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
 	webhookService := service.NewWebhookService(workspaceRepo, eventRepo, cfg.WebhookAllowInsecure)
+	enterpriseService := service.NewEnterpriseIdentityService(enterpriseRepo, workspaceRepo, userRepo, tokenManager)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
 	webhookHandler := handler.NewWebhookHandler(webhookService)
-	authMiddleware := middleware.Auth(tokenManager)
+	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
+	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
+	serviceAuthMiddleware := middleware.EnterpriseAuth(tokenManager, enterpriseRepo)
 	workspaceMiddleware := middleware.WorkspaceScope(workspaceRepo)
 	idempotencyMiddleware := middleware.Idempotency(eventRepo, cfg.IdempotencyTTL)
 
@@ -173,10 +179,10 @@ func main() {
 		return authMiddleware(authRateLimiter.Handler(http.HandlerFunc(h)))
 	}
 	protectedWorkspace := func(h http.HandlerFunc) http.Handler {
-		return authMiddleware(workspaceMiddleware(http.HandlerFunc(h)))
+		return serviceAuthMiddleware(workspaceMiddleware(http.HandlerFunc(h)))
 	}
 	protectedWorkspaceIdempotent := func(h http.HandlerFunc) http.Handler {
-		return authMiddleware(workspaceMiddleware(idempotencyMiddleware(http.HandlerFunc(h))))
+		return serviceAuthMiddleware(workspaceMiddleware(idempotencyMiddleware(http.HandlerFunc(h))))
 	}
 
 	ready := readiness.New(db, redisClient, cfg.ReadinessTimeout, metrics)
@@ -207,16 +213,27 @@ func main() {
 	mux.Handle("/api/auth/forgot-password", rateLimited(authHandler.ForgotPassword))
 	mux.Handle("/api/auth/reset-password", rateLimited(authHandler.ResetPassword))
 	mux.Handle("/api/auth/email-verification/confirm", rateLimited(authHandler.VerifyEmail))
+	mux.Handle("/api/oauth/token", rateLimited(enterpriseHandler.OAuthToken))
+	mux.Handle("/api/oauth/api-key", rateLimited(enterpriseHandler.APIKeyExchange))
 
 	mux.Handle("/api/auth/change-password", protectedRateLimited(authHandler.ChangePassword))
 	mux.Handle("/api/auth/logout-all", protected(authHandler.LogoutAll))
 	mux.Handle("/api/auth/sessions", protected(authHandler.Sessions))
 	mux.Handle("/api/auth/sessions/", protected(authHandler.SessionByID))
 	mux.Handle("/api/auth/email-verification/request", protectedRateLimited(authHandler.RequestEmailVerification))
+	mux.Handle("/api/auth/token/introspect", protected(enterpriseHandler.Introspect))
+	mux.Handle("/api/auth/token/revoke", protected(enterpriseHandler.RevokeToken))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
 	mux.Handle("/api/workspaces/{id}/webhooks/{subscription_id}", protected(webhookHandler.SubscriptionByID))
+	mux.Handle("/api/workspaces/{id}/identity/oauth-clients", protected(enterpriseHandler.OAuthClients))
+	mux.Handle("/api/workspaces/{id}/identity/oauth/authorize", protected(enterpriseHandler.OAuthAuthorize))
+	mux.Handle("/api/workspaces/{id}/identity/api-keys", protected(enterpriseHandler.APIKeys))
+	mux.Handle("/api/workspaces/{id}/identity/api-keys/{key_id}", protected(enterpriseHandler.APIKeyByID))
+	mux.Handle("/api/workspaces/{id}/identity/policy", protected(enterpriseHandler.Policy))
+	mux.Handle("/api/workspaces/{id}/identity/oidc", protected(enterpriseHandler.OIDC))
+	mux.Handle("/api/workspaces/{id}/identity/scim/users", protected(enterpriseHandler.SCIMUsers))
 	mux.Handle("/api/workspaces/", protected(workspaceHandler.WorkspaceByID))
 
 	mux.Handle("/api/tasks", protectedWorkspaceIdempotent(taskHandler.Tasks))
