@@ -63,6 +63,7 @@ func main() {
 	var refreshRepo repository.RefreshTokenRepository
 	var actionRepo repository.AuthActionTokenRepository
 	var workspaceRepo repository.WorkspaceRepository
+	var eventRepo repository.EventRepository
 
 	if cfg.DatabaseURL != "" {
 		db, err = appdb.OpenPostgres(cfg.DatabaseURL, appdb.Options{
@@ -82,6 +83,7 @@ func main() {
 		refreshRepo = repository.NewPostgresRefreshTokenRepository(db)
 		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
 		workspaceRepo = repository.NewPostgresWorkspaceRepository(db)
+		eventRepo = repository.NewPostgresEventRepository(db)
 		logger.Info(
 			"storage_configured",
 			"backend", "postgresql",
@@ -94,6 +96,7 @@ func main() {
 		refreshRepo = repository.NewInMemoryRefreshTokenRepository()
 		actionRepo = repository.NewInMemoryAuthActionTokenRepository()
 		workspaceRepo = repository.NewInMemoryWorkspaceRepository()
+		eventRepo = repository.NewInMemoryEventRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
 	}
 
@@ -131,9 +134,11 @@ func main() {
 	)
 	taskService := service.NewTaskService(taskRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
+	webhookService := service.NewWebhookService(eventRepo, workspaceRepo, cfg.WebhookSigningKey)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
+	webhookHandler := handler.NewWebhookHandler(webhookService)
 	authMiddleware := middleware.Auth(tokenManager)
 	workspaceMiddleware := middleware.WorkspaceScope(workspaceRepo)
 
@@ -210,6 +215,8 @@ func main() {
 
 	mux.Handle("/api/tasks", protectedWorkspace(taskHandler.Tasks))
 	mux.Handle("/api/tasks/", protectedWorkspace(taskHandler.TaskByID))
+	mux.Handle("/api/webhooks", protectedWorkspace(webhookHandler.Webhooks))
+	mux.Handle("/api/webhooks/", protectedWorkspace(webhookHandler.WebhookByID))
 
 	var root http.Handler = mux
 	root = middleware.Recover(logger, metrics, root)
