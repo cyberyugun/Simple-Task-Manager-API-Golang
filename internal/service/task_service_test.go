@@ -12,9 +12,13 @@ func newTestService() *TaskService {
 	return NewTaskService(repository.NewInMemoryTaskRepository())
 }
 
+func workspaceAccess(id int64) model.WorkspaceAccess {
+	return model.WorkspaceAccess{Workspace: model.Workspace{ID: id}, Role: model.WorkspaceRoleMember}
+}
+
 func TestTaskServiceCreate(t *testing.T) {
 	service := newTestService()
-	task, err := service.Create(1, 10, model.CreateTaskRequest{Title: "  Learn Golang  ", Description: "  Build API  "})
+	task, err := service.Create(1, workspaceAccess(10), model.CreateTaskRequest{Title: "  Learn Golang  ", Description: "  Build API  "})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -26,7 +30,7 @@ func TestTaskServiceCreate(t *testing.T) {
 func TestTaskServiceFindAllDefaultsAndValidation(t *testing.T) {
 	service := newTestService()
 	for _, title := range []string{"C task", "A task", "B task"} {
-		if _, err := service.Create(1, 10, model.CreateTaskRequest{Title: title}); err != nil {
+		if _, err := service.Create(1, workspaceAccess(10), model.CreateTaskRequest{Title: title}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -57,7 +61,7 @@ func TestTaskServiceFindAllDefaultsAndValidation(t *testing.T) {
 
 func TestTaskServiceWorkspaceIsolation(t *testing.T) {
 	service := newTestService()
-	created, err := service.Create(1, 10, model.CreateTaskRequest{Title: "Private Task"})
+	created, err := service.Create(1, workspaceAccess(10), model.CreateTaskRequest{Title: "Private Task"})
 	if err != nil {
 		t.Fatal(err)
 	}
