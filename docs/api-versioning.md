@@ -5,7 +5,7 @@
 ## Compatibility line
 
 - API compatibility version: `v1`
-- OpenAPI document version: `1.3.0`
+- OpenAPI document version: `1.4.0`
 - Runtime header: `X-API-Version: v1`
 - Supported versions header: `API-Supported-Versions: v1`
 

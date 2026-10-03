@@ -8,27 +8,33 @@ import (
 	"go-simple-task-api/internal/model"
 )
 
-func TestInMemoryTaskRepositoryCRUDAndOwnership(t *testing.T) {
+func TestInMemoryTaskRepositoryCRUDAndWorkspaceIsolation(t *testing.T) {
 	repo := NewInMemoryTaskRepository()
 	now := time.Now()
 
-	created, err := repo.Create(model.Task{UserID: 1, Title: "Learn Go", CreatedAt: now, UpdatedAt: now})
+	created, err := repo.Create(model.Task{
+		WorkspaceID: 10,
+		UserID:      1,
+		Title:       "Learn Go",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	found, err := repo.FindByID(1, created.ID)
+	found, err := repo.FindByID(10, created.ID)
 	if err != nil || found.Title != "Learn Go" {
 		t.Fatalf("FindByID() = %+v, %v", found, err)
 	}
-	if _, err := repo.FindByID(2, created.ID); !errors.Is(err, ErrTaskNotFound) {
-		t.Fatalf("cross-user FindByID() error = %v, want ErrTaskNotFound", err)
+	if _, err := repo.FindByID(20, created.ID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("cross-workspace FindByID() error = %v, want ErrTaskNotFound", err)
 	}
 
-	if err := repo.Delete(2, created.ID); !errors.Is(err, ErrTaskNotFound) {
-		t.Fatalf("cross-user Delete() error = %v, want ErrTaskNotFound", err)
+	if err := repo.Delete(20, created.ID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("cross-workspace Delete() error = %v, want ErrTaskNotFound", err)
 	}
-	if err := repo.Delete(1, created.ID); err != nil {
+	if err := repo.Delete(10, created.ID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 }
@@ -38,10 +44,10 @@ func TestInMemoryTaskRepositoryQuery(t *testing.T) {
 	base := time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC)
 
 	tasks := []model.Task{
-		{UserID: 1, Title: "Learn Go", Description: "API basics", Completed: false, CreatedAt: base, UpdatedAt: base},
-		{UserID: 1, Title: "PostgreSQL", Description: "Learn database with Go", Completed: true, CreatedAt: base.Add(time.Minute), UpdatedAt: base.Add(time.Minute)},
-		{UserID: 1, Title: "Docker", Description: "Containerize API", Completed: false, CreatedAt: base.Add(2 * time.Minute), UpdatedAt: base.Add(2 * time.Minute)},
-		{UserID: 2, Title: "Other User", Description: "hidden", Completed: false, CreatedAt: base.Add(3 * time.Minute), UpdatedAt: base.Add(3 * time.Minute)},
+		{WorkspaceID: 10, UserID: 1, Title: "Learn Go", Description: "API basics", Completed: false, CreatedAt: base, UpdatedAt: base},
+		{WorkspaceID: 10, UserID: 2, Title: "PostgreSQL", Description: "Learn database with Go", Completed: true, CreatedAt: base.Add(time.Minute), UpdatedAt: base.Add(time.Minute)},
+		{WorkspaceID: 10, UserID: 1, Title: "Docker", Description: "Containerize API", Completed: false, CreatedAt: base.Add(2 * time.Minute), UpdatedAt: base.Add(2 * time.Minute)},
+		{WorkspaceID: 20, UserID: 1, Title: "Other Workspace", Description: "hidden", Completed: false, CreatedAt: base.Add(3 * time.Minute), UpdatedAt: base.Add(3 * time.Minute)},
 	}
 	for _, task := range tasks {
 		if _, err := repo.Create(task); err != nil {
@@ -50,7 +56,7 @@ func TestInMemoryTaskRepositoryQuery(t *testing.T) {
 	}
 
 	completed := false
-	page, err := repo.FindAll(1, model.TaskQuery{
+	page, err := repo.FindAll(10, model.TaskQuery{
 		Page:      1,
 		Limit:     1,
 		Search:    "api",
@@ -68,7 +74,7 @@ func TestInMemoryTaskRepositoryQuery(t *testing.T) {
 		t.Fatalf("items = %+v, want Docker first", page.Items)
 	}
 
-	second, err := repo.FindAll(1, model.TaskQuery{
+	second, err := repo.FindAll(10, model.TaskQuery{
 		Page:      2,
 		Limit:     1,
 		Search:    "api",

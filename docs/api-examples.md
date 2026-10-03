@@ -58,3 +58,21 @@ Authorization: Bearer <access-token>
 ```
 
 The authoritative request/response shapes remain the OpenAPI schemas served at `/openapi.yaml`.
+
+## Shared workspace task
+
+Select a shared workspace without changing the existing task URL:
+
+```http
+POST /api/tasks
+Authorization: Bearer <access-token>
+X-Workspace-ID: 42
+Content-Type: application/json
+
+{
+  "title": "Shared deployment review",
+  "description": "Visible to members of workspace 42"
+}
+```
+
+Omitting `X-Workspace-ID` continues to use the authenticated user's personal workspace.

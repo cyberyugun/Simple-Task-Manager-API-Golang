@@ -33,6 +33,9 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - External Secrets Operator and cert-manager production examples
 - Build/version endpoint with commit metadata
 - Per-user task ownership
+- Workspace RBAC and multi-tenant task isolation
+- Personal workspace fallback for backward-compatible task clients
+- Owner/admin/member workspace membership controls and audit trail
 - Task CRUD and complete action
 - Pagination, search, filtering, sorting, and ordering
 - In-memory and PostgreSQL repositories
@@ -189,6 +192,8 @@ The migration runner:
 Swagger UI supports the Bearer JWT security scheme. Register/login, copy the returned access token, select **Authorize**, and call protected task endpoints from the browser.
 
 The public contract is compatibility line `v1`. Responses advertise `X-API-Version: v1` and `API-Supported-Versions: v1`. OpenAPI governance, backward-compatibility checks, consumer expectations, generated TypeScript SDK validation, and deprecation policy are documented in [`docs/api-versioning.md`](docs/api-versioning.md). Public contract changes are tracked in [`docs/api-changelog.md`](docs/api-changelog.md), with examples in [`docs/api-examples.md`](docs/api-examples.md).
+
+Workspace tenancy, RBAC permissions, tenant-selection headers, rollout compatibility, and audit behavior are documented in [`docs/authorization-multitenancy.md`](docs/authorization-multitenancy.md).
 
 ## Public endpoints
 

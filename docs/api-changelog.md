@@ -1,5 +1,24 @@
 # API Changelog
 
+## 1.4.0 — Phase 23
+
+Compatibility line: **v1**.
+
+Additive authorization and tenancy release:
+
+- adds personal and shared workspaces
+- adds owner/admin/member RBAC
+- adds optional `X-Workspace-ID` selection for existing task endpoints
+- preserves no-header task behavior by resolving the user's personal workspace
+- adds workspace membership-management APIs
+- adds owner/admin workspace audit API
+- adds optional `workspace_id` to task responses
+- adds cross-tenant live contract validation
+- preserves existing v1 endpoint paths, operation IDs, required request fields, and existing response fields
+
+The migration retains legacy task ownership fields during the rolling-deployment compatibility window so old and new pods cannot accidentally cross tenant boundaries.
+
+
 ## 1.3.0 — Phase 22
 
 Compatibility line: **v1**.

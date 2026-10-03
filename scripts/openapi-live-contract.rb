@@ -32,12 +32,13 @@ def validate_schema!(value, schema, spec, trail = "$")
   end
 end
 
-def request(base, method, path, body: nil, token: nil)
+def request(base, method, path, body: nil, token: nil, headers: {})
   uri = base + path
   klass = Net::HTTP.const_get(method.capitalize)
   req = klass.new(uri)
   req["Content-Type"] = "application/json"
   req["Authorization"] = "Bearer " + token if token
+  headers.each { |key, value| req[key] = value }
   req.body = JSON.generate(body) if body
   Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") { |http| http.request(req) }
 end
@@ -87,4 +88,52 @@ id = created.fetch("data").fetch("id")
   validate_response!(spec, res, contract_path, method, status)
 end
 
-puts "Live OpenAPI contract PASSED."
+member_email = "member-#{Time.now.to_i}-#{Process.pid}@example.com"
+res = request(base, "post", "/api/auth/register", body: {name: "Workspace Member", email: member_email, password: "contract-password-123"})
+member_registered = validate_response!(spec, res, "/api/auth/register", "post", 201)
+member_token = member_registered.fetch("data").fetch("access_token")
+
+outsider_email = "outsider-#{Time.now.to_i}-#{Process.pid}@example.com"
+res = request(base, "post", "/api/auth/register", body: {name: "Workspace Outsider", email: outsider_email, password: "contract-password-123"})
+outsider_registered = validate_response!(spec, res, "/api/auth/register", "post", 201)
+outsider_token = outsider_registered.fetch("data").fetch("access_token")
+
+res = request(base, "post", "/api/workspaces", body: {name: "Contract Workspace"}, token: token)
+workspace = validate_response!(spec, res, "/api/workspaces", "post", 201)
+workspace_id = workspace.fetch("data").fetch("id")
+
+res = request(base, "post", "/api/workspaces/#{workspace_id}/members", body: {email: member_email, role: "member"}, token: token)
+validate_response!(spec, res, "/api/workspaces/{id}/members", "post", 201)
+
+res = request(base, "get", "/api/workspaces/#{workspace_id}", token: member_token)
+validate_response!(spec, res, "/api/workspaces/{id}", "get", 200)
+
+res = request(base, "get", "/api/workspaces/#{workspace_id}", token: outsider_token)
+raise "cross-tenant workspace access should be hidden with 404, got #{res.code}" unless res.code.to_i == 404
+
+res = request(
+  base,
+  "post",
+  "/api/tasks",
+  body: {title: "Shared contract task", description: "tenant isolation"},
+  token: member_token,
+  headers: {"X-Workspace-ID" => workspace_id.to_s}
+)
+shared_task = validate_response!(spec, res, "/api/tasks", "post", 201)
+raise "shared task workspace mismatch" unless shared_task.fetch("data").fetch("workspace_id") == workspace_id
+
+res = request(base, "get", "/api/tasks", token: token)
+personal_page = validate_response!(spec, res, "/api/tasks", "get", 200)
+raise "shared task leaked into owner's personal workspace" unless personal_page.fetch("data").fetch("items").empty?
+
+res = request(base, "get", "/api/tasks", token: token, headers: {"X-Workspace-ID" => workspace_id.to_s})
+shared_page = validate_response!(spec, res, "/api/tasks", "get", 200)
+raise "owner cannot see shared workspace task" unless shared_page.fetch("data").fetch("items").any? { |item| item["id"] == shared_task.fetch("data").fetch("id") }
+
+res = request(base, "get", "/api/workspaces/#{workspace_id}/audit", token: member_token)
+raise "member audit access should be forbidden, got #{res.code}" unless res.code.to_i == 403
+
+res = request(base, "get", "/api/workspaces/#{workspace_id}/audit", token: token)
+validate_response!(spec, res, "/api/workspaces/{id}/audit", "get", 200)
+
+puts "Live OpenAPI contract PASSED, including multi-tenant RBAC isolation."

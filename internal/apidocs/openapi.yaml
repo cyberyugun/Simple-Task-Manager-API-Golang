@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.3.0
+  version: 1.4.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -17,6 +17,7 @@ tags:
   - name: System
   - name: Authentication
   - name: Tasks
+  - name: Workspaces
 
 paths:
   /health:
@@ -345,7 +346,252 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
+  /api/workspaces:
+    get:
+      tags: [Workspaces]
+      summary: List workspaces visible to the current user
+      operationId: listWorkspaces
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Workspace memberships
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceAccessListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Workspaces]
+      summary: Create a shared workspace
+      operationId: createWorkspace
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkspaceRequest'
+      responses:
+        '201':
+          description: Workspace created with current user as owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceAccessEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/workspaces/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Workspaces]
+      summary: Get current user's workspace access
+      operationId: getWorkspace
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Workspace access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceAccessEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+    put:
+      tags: [Workspaces]
+      summary: Rename a workspace
+      operationId: renameWorkspace
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameWorkspaceRequest'
+      responses:
+        '200':
+          description: Workspace renamed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+    delete:
+      tags: [Workspaces]
+      summary: Delete a non-personal workspace
+      operationId: deleteWorkspace
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Workspace deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+  /api/workspaces/{id}/members:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Workspaces]
+      summary: List workspace members
+      operationId: listWorkspaceMembers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Workspace members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceMemberListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+    post:
+      tags: [Workspaces]
+      summary: Add a workspace member
+      operationId: addWorkspaceMember
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddWorkspaceMemberRequest'
+      responses:
+        '201':
+          description: Member added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceMemberEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+        '409':
+          description: User is already a workspace member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/workspaces/{id}/members/{user_id}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - $ref: '#/components/parameters/UserID'
+    put:
+      tags: [Workspaces]
+      summary: Change a workspace member role
+      operationId: updateWorkspaceMemberRole
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkspaceMemberRequest'
+      responses:
+        '200':
+          description: Membership updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceMemberEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+    delete:
+      tags: [Workspaces]
+      summary: Remove a workspace member
+      operationId: removeWorkspaceMember
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Membership removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+  /api/workspaces/{id}/audit:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Workspaces]
+      summary: List workspace security audit events
+      operationId: listWorkspaceAudit
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Recent audit events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventListEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+
   /api/tasks:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
     get:
       tags: [Tasks]
       summary: List current user's tasks
@@ -424,6 +670,7 @@ paths:
   /api/tasks/{id}:
     parameters:
       - $ref: '#/components/parameters/TaskID'
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
     get:
       tags: [Tasks]
       summary: Get a task
@@ -484,6 +731,8 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
   /api/tasks/{id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
     patch:
       tags: [Tasks]
       summary: Mark a task completed
@@ -511,6 +760,31 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
+    WorkspaceID:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    UserID:
+      in: path
+      name: user_id
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    WorkspaceIDHeader:
+      in: header
+      name: X-Workspace-ID
+      required: false
+      description: Select a workspace membership. Omit to use the user's personal workspace.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
     TaskID:
       in: path
       name: id
@@ -534,6 +808,18 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     NotFound:
       description: Task not found for the current user
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Authenticated user does not have permission for the workspace action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    WorkspaceNotFound:
+      description: Workspace is missing or not visible to the authenticated user
       content:
         application/json:
           schema:
@@ -690,6 +976,176 @@ components:
           format: int64
           description: Refresh token lifetime in seconds.
           example: 2592000
+    CreateWorkspaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: Platform Team
+    RenameWorkspaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+    AddWorkspaceMemberRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, member]
+    UpdateWorkspaceMemberRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [admin, member]
+    Workspace:
+      type: object
+      required: [id, name, created_by_user_id, is_personal, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        created_by_user_id:
+          type: integer
+          format: int64
+        is_personal:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    WorkspaceAccess:
+      allOf:
+        - $ref: '#/components/schemas/Workspace'
+        - type: object
+          required: [role]
+          properties:
+            role:
+              type: string
+              enum: [owner, admin, member]
+    WorkspaceMember:
+      type: object
+      required: [workspace_id, user_id, role, created_at, updated_at]
+      properties:
+        workspace_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [owner, admin, member]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AuditEvent:
+      type: object
+      required: [id, action, resource_type, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        workspace_id:
+          type: integer
+          format: int64
+        actor_user_id:
+          type: integer
+          format: int64
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    WorkspaceEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/Workspace'
+    WorkspaceAccessEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/WorkspaceAccess'
+    WorkspaceAccessListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceAccess'
+    WorkspaceMemberEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/WorkspaceMember'
+    WorkspaceMemberListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceMember'
+    AuditEventListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
     TaskWriteRequest:
       type: object
       required: [title]
@@ -708,6 +1164,10 @@ components:
         id:
           type: integer
           format: int64
+        workspace_id:
+          type: integer
+          format: int64
+          minimum: 1
         title:
           type: string
         description:

@@ -13,10 +13,10 @@ var ErrTaskNotFound = errors.New("task not found")
 
 type TaskRepository interface {
 	Create(task model.Task) (model.Task, error)
-	FindAll(userID int64, query model.TaskQuery) (model.TaskPage, error)
-	FindByID(userID, id int64) (model.Task, error)
+	FindAll(workspaceID int64, query model.TaskQuery) (model.TaskPage, error)
+	FindByID(workspaceID, id int64) (model.Task, error)
 	Update(task model.Task) (model.Task, error)
-	Delete(userID, id int64) error
+	Delete(workspaceID, id int64) error
 }
 
 type InMemoryTaskRepository struct {
@@ -42,14 +42,14 @@ func (r *InMemoryTaskRepository) Create(task model.Task) (model.Task, error) {
 	return task, nil
 }
 
-func (r *InMemoryTaskRepository) FindAll(userID int64, query model.TaskQuery) (model.TaskPage, error) {
+func (r *InMemoryTaskRepository) FindAll(workspaceID int64, query model.TaskQuery) (model.TaskPage, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	search := strings.ToLower(query.Search)
 	tasks := make([]model.Task, 0)
 	for _, task := range r.tasks {
-		if task.UserID != userID {
+		if task.WorkspaceID != workspaceID {
 			continue
 		}
 		if query.Completed != nil && task.Completed != *query.Completed {
@@ -138,12 +138,12 @@ func totalPages(total int64, limit int) int {
 	return int((total + int64(limit) - 1) / int64(limit))
 }
 
-func (r *InMemoryTaskRepository) FindByID(userID, id int64) (model.Task, error) {
+func (r *InMemoryTaskRepository) FindByID(workspaceID, id int64) (model.Task, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	task, ok := r.tasks[id]
-	if !ok || task.UserID != userID {
+	if !ok || task.WorkspaceID != workspaceID {
 		return model.Task{}, ErrTaskNotFound
 	}
 	return task, nil
@@ -154,7 +154,7 @@ func (r *InMemoryTaskRepository) Update(task model.Task) (model.Task, error) {
 	defer r.mu.Unlock()
 
 	existing, ok := r.tasks[task.ID]
-	if !ok || existing.UserID != task.UserID {
+	if !ok || existing.WorkspaceID != task.WorkspaceID {
 		return model.Task{}, ErrTaskNotFound
 	}
 
@@ -162,12 +162,12 @@ func (r *InMemoryTaskRepository) Update(task model.Task) (model.Task, error) {
 	return task, nil
 }
 
-func (r *InMemoryTaskRepository) Delete(userID, id int64) error {
+func (r *InMemoryTaskRepository) Delete(workspaceID, id int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	task, ok := r.tasks[id]
-	if !ok || task.UserID != userID {
+	if !ok || task.WorkspaceID != workspaceID {
 		return ErrTaskNotFound
 	}
 

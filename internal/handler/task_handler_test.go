@@ -21,17 +21,22 @@ type testEnvelope struct {
 
 func newTestHandler() *TaskHandler {
 	repo := repository.NewInMemoryTaskRepository()
-	service := service.NewTaskService(repo)
-	return NewTaskHandler(service)
+	taskService := service.NewTaskService(repo)
+	return NewTaskHandler(taskService)
 }
 
-func authenticated(req *http.Request, userID int64) *http.Request {
-	return req.WithContext(middleware.WithUserID(req.Context(), userID))
+func scoped(req *http.Request, userID, workspaceID int64, role string) *http.Request {
+	ctx := middleware.WithUserID(req.Context(), userID)
+	ctx = middleware.WithWorkspaceAccess(ctx, model.WorkspaceAccess{
+		Workspace: model.Workspace{ID: workspaceID},
+		Role:      role,
+	})
+	return req.WithContext(ctx)
 }
 
-func createTask(t *testing.T, h *TaskHandler, userID int64, body string) {
+func createTask(t *testing.T, h *TaskHandler, userID, workspaceID int64, body string) {
 	t.Helper()
-	req := authenticated(httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(body)), userID)
+	req := scoped(httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(body)), userID, workspaceID, model.WorkspaceRoleMember)
 	res := httptest.NewRecorder()
 	h.Tasks(res, req)
 	if res.Code != http.StatusCreated {
@@ -41,19 +46,19 @@ func createTask(t *testing.T, h *TaskHandler, userID int64, body string) {
 
 func TestTaskHandlerPaginationSearchFilterAndSort(t *testing.T) {
 	h := newTestHandler()
-	createTask(t, h, 1, `{"title":"Go API","description":"backend"}`)
-	createTask(t, h, 1, `{"title":"Angular","description":"frontend"}`)
-	createTask(t, h, 1, `{"title":"Go Testing","description":"tests"}`)
-	createTask(t, h, 2, `{"title":"Go Hidden","description":"other user"}`)
+	createTask(t, h, 1, 10, `{"title":"Go API","description":"backend"}`)
+	createTask(t, h, 2, 10, `{"title":"Angular","description":"frontend"}`)
+	createTask(t, h, 1, 10, `{"title":"Go Testing","description":"tests"}`)
+	createTask(t, h, 1, 20, `{"title":"Go Hidden","description":"other workspace"}`)
 
-	completeReq := authenticated(httptest.NewRequest(http.MethodPatch, "/api/tasks/3/complete", nil), 1)
+	completeReq := scoped(httptest.NewRequest(http.MethodPatch, "/api/tasks/3/complete", nil), 1, 10, model.WorkspaceRoleMember)
 	completeRes := httptest.NewRecorder()
 	h.TaskByID(completeRes, completeReq)
 	if completeRes.Code != http.StatusOK {
 		t.Fatalf("complete status = %d", completeRes.Code)
 	}
 
-	listReq := authenticated(httptest.NewRequest(http.MethodGet, "/api/tasks?search=go&completed=false&page=1&limit=1&sort=title&order=asc", nil), 1)
+	listReq := scoped(httptest.NewRequest(http.MethodGet, "/api/tasks?search=go&completed=false&page=1&limit=1&sort=title&order=asc", nil), 1, 10, model.WorkspaceRoleMember)
 	listRes := httptest.NewRecorder()
 	h.Tasks(listRes, listReq)
 	if listRes.Code != http.StatusOK {
@@ -83,7 +88,7 @@ func TestTaskHandlerRejectsInvalidQuery(t *testing.T) {
 		"/api/tasks?order=random",
 	}
 	for _, target := range queries {
-		req := authenticated(httptest.NewRequest(http.MethodGet, target, nil), 1)
+		req := scoped(httptest.NewRequest(http.MethodGet, target, nil), 1, 10, model.WorkspaceRoleMember)
 		res := httptest.NewRecorder()
 		h.Tasks(res, req)
 		if res.Code != http.StatusBadRequest {
@@ -92,7 +97,7 @@ func TestTaskHandlerRejectsInvalidQuery(t *testing.T) {
 	}
 }
 
-func TestTaskHandlerRequiresAuthenticationAndHidesOtherUsersTasks(t *testing.T) {
+func TestTaskHandlerRequiresAuthenticationAndHidesOtherWorkspaceTasks(t *testing.T) {
 	h := newTestHandler()
 	unauthorized := httptest.NewRecorder()
 	h.Tasks(unauthorized, httptest.NewRequest(http.MethodGet, "/api/tasks", nil))
@@ -100,11 +105,11 @@ func TestTaskHandlerRequiresAuthenticationAndHidesOtherUsersTasks(t *testing.T) 
 		t.Fatalf("unauthorized status = %d", unauthorized.Code)
 	}
 
-	createTask(t, h, 1, `{"title":"Private"}`)
-	getReq := authenticated(httptest.NewRequest(http.MethodGet, "/api/tasks/1", nil), 2)
+	createTask(t, h, 1, 10, `{"title":"Private"}`)
+	getReq := scoped(httptest.NewRequest(http.MethodGet, "/api/tasks/1", nil), 1, 20, model.WorkspaceRoleMember)
 	getRes := httptest.NewRecorder()
 	h.TaskByID(getRes, getReq)
 	if getRes.Code != http.StatusNotFound {
-		t.Fatalf("cross-user get status = %d", getRes.Code)
+		t.Fatalf("cross-workspace get status = %d", getRes.Code)
 	}
 }
