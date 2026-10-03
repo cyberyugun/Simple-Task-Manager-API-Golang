@@ -22,7 +22,7 @@ func NewTaskService(repo repository.TaskRepository) *TaskService {
 	return &TaskService{repo: repo}
 }
 
-func (s *TaskService) Create(userID int64, req model.CreateTaskRequest) (model.Task, error) {
+func (s *TaskService) Create(userID, workspaceID int64, req model.CreateTaskRequest) (model.Task, error) {
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		return model.Task{}, ErrInvalidTask
@@ -30,6 +30,7 @@ func (s *TaskService) Create(userID int64, req model.CreateTaskRequest) (model.T
 
 	now := time.Now()
 	task := model.Task{
+		WorkspaceID: workspaceID,
 		UserID:      userID,
 		Title:       title,
 		Description: strings.TrimSpace(req.Description),
@@ -41,12 +42,12 @@ func (s *TaskService) Create(userID int64, req model.CreateTaskRequest) (model.T
 	return s.repo.Create(task)
 }
 
-func (s *TaskService) FindAll(userID int64, query model.TaskQuery) (model.TaskPage, error) {
+func (s *TaskService) FindAll(workspaceID int64, query model.TaskQuery) (model.TaskPage, error) {
 	normalized, err := normalizeTaskQuery(query)
 	if err != nil {
 		return model.TaskPage{}, err
 	}
-	return s.repo.FindAll(userID, normalized)
+	return s.repo.FindAll(workspaceID, normalized)
 }
 
 func normalizeTaskQuery(query model.TaskQuery) (model.TaskQuery, error) {
@@ -83,17 +84,17 @@ func normalizeTaskQuery(query model.TaskQuery) (model.TaskQuery, error) {
 	return query, nil
 }
 
-func (s *TaskService) FindByID(userID, id int64) (model.Task, error) {
-	return s.repo.FindByID(userID, id)
+func (s *TaskService) FindByID(workspaceID, id int64) (model.Task, error) {
+	return s.repo.FindByID(workspaceID, id)
 }
 
-func (s *TaskService) Update(userID, id int64, req model.UpdateTaskRequest) (model.Task, error) {
+func (s *TaskService) Update(workspaceID, id int64, req model.UpdateTaskRequest) (model.Task, error) {
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		return model.Task{}, ErrInvalidTask
 	}
 
-	task, err := s.repo.FindByID(userID, id)
+	task, err := s.repo.FindByID(workspaceID, id)
 	if err != nil {
 		return model.Task{}, err
 	}
@@ -104,8 +105,8 @@ func (s *TaskService) Update(userID, id int64, req model.UpdateTaskRequest) (mod
 	return s.repo.Update(task)
 }
 
-func (s *TaskService) Complete(userID, id int64) (model.Task, error) {
-	task, err := s.repo.FindByID(userID, id)
+func (s *TaskService) Complete(workspaceID, id int64) (model.Task, error) {
+	task, err := s.repo.FindByID(workspaceID, id)
 	if err != nil {
 		return model.Task{}, err
 	}
@@ -115,6 +116,6 @@ func (s *TaskService) Complete(userID, id int64) (model.Task, error) {
 	return s.repo.Update(task)
 }
 
-func (s *TaskService) Delete(userID, id int64) error {
-	return s.repo.Delete(userID, id)
+func (s *TaskService) Delete(workspaceID, id int64) error {
+	return s.repo.Delete(workspaceID, id)
 }
