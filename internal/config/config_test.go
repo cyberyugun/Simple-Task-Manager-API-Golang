@@ -22,6 +22,9 @@ func setValidEnv(t *testing.T) {
 		"AUTH_RATE_LIMIT_WINDOW",
 		"RATE_LIMIT_FAIL_OPEN",
 		"EXPOSE_AUTH_TOKENS",
+		"APP_ENV",
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
+		"OTEL_SERVICE_NAME",
 	} {
 		t.Setenv(name, "")
 	}
@@ -56,6 +59,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ExposeAuthTokens {
 		t.Fatal("ExposeAuthTokens should default to false")
 	}
+	if cfg.AppEnv != "development" || cfg.OTELServiceName != "task-api" || cfg.OTELExporterEndpoint != "" {
+		t.Fatalf("unexpected observability defaults: %+v", cfg)
+	}
 }
 
 func TestLoadCustomValues(t *testing.T) {
@@ -74,6 +80,9 @@ func TestLoadCustomValues(t *testing.T) {
 	t.Setenv("AUTH_RATE_LIMIT_WINDOW", "2m")
 	t.Setenv("RATE_LIMIT_FAIL_OPEN", "false")
 	t.Setenv("EXPOSE_AUTH_TOKENS", "true")
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector.monitoring.svc.cluster.local:4318")
+	t.Setenv("OTEL_SERVICE_NAME", "task-api-prod")
 
 	cfg, err := Load()
 	if err != nil {
@@ -96,6 +105,9 @@ func TestLoadCustomValues(t *testing.T) {
 	}
 	if cfg.RateLimitFailOpen || !cfg.ExposeAuthTokens {
 		t.Fatalf("unexpected boolean config: %+v", cfg)
+	}
+	if cfg.AppEnv != "production" || cfg.OTELServiceName != "task-api-prod" || cfg.OTELExporterEndpoint == "" {
+		t.Fatalf("unexpected observability config: %+v", cfg)
 	}
 }
 
