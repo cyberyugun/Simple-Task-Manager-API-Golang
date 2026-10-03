@@ -23,3 +23,8 @@
 /infra/terraform/aws/staging.tfvars.example @cyberyugun
 /infra/terraform/azure/staging.tfvars.example @cyberyugun
 /infra/terraform/gcp/staging.tfvars.example @cyberyugun
+/internal/apidocs/openapi.yaml @cyberyugun
+/tests/contracts/ @cyberyugun
+/docs/api-versioning.md @cyberyugun
+/docs/api-changelog.md @cyberyugun
+/docs/api-examples.md @cyberyugun
