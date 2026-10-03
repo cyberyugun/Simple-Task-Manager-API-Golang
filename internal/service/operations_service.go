@@ -12,10 +12,10 @@ import (
 )
 
 var (
-	ErrOperationsForbidden      = errors.New("operations action is forbidden")
-	ErrInvalidOperationsPolicy  = errors.New("invalid operations policy")
-	ErrInvalidCostAllocation    = errors.New("invalid cost allocation")
-	ErrInvalidMaintenanceWindow = errors.New("invalid maintenance window")
+	ErrOperationsForbidden        = errors.New("operations action is forbidden")
+	ErrInvalidOperationsPolicy    = errors.New("invalid operations policy")
+	ErrInvalidCostAllocation      = errors.New("invalid cost allocation")
+	ErrInvalidMaintenanceWindow   = errors.New("invalid maintenance window")
 	ErrInvalidOperationalIncident = errors.New("invalid operational incident")
 )
 
@@ -80,9 +80,9 @@ func (s *OperationsService) UpdatePolicy(actorUserID, organizationID int64, req 
 	})
 	if err == nil {
 		s.audit(organizationID, actorUserID, "operations.policy.updated", "operations_policy", fmt.Sprint(organizationID), map[string]any{
-			"monthly_budget_cents": req.MonthlyBudgetCents,
+			"monthly_budget_cents":    req.MonthlyBudgetCents,
 			"slo_target_basis_points": req.SLOTargetBasisPoints,
-			"support_tier": tier,
+			"support_tier":            tier,
 		})
 	}
 	return item, err
