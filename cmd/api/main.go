@@ -21,6 +21,7 @@ import (
 	appdb "go-simple-task-api/internal/database"
 	"go-simple-task-api/internal/handler"
 	"go-simple-task-api/internal/middleware"
+	"go-simple-task-api/internal/model"
 	"go-simple-task-api/internal/observability"
 	"go-simple-task-api/internal/readiness"
 	"go-simple-task-api/internal/repository"
@@ -187,6 +188,12 @@ func main() {
 	protected := func(h http.HandlerFunc) http.Handler {
 		return authMiddleware(http.HandlerFunc(h))
 	}
+	protectedFirstParty := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(middleware.RequireFirstPartyUser(http.HandlerFunc(h)))
+	}
+	protectedIdentityAdmin := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(middleware.RequireScope(model.ScopeIdentityAdmin)(http.HandlerFunc(h)))
+	}
 	protectedRateLimited := func(h http.HandlerFunc) http.Handler {
 		return authMiddleware(authRateLimiter.Handler(http.HandlerFunc(h)))
 	}
@@ -228,29 +235,29 @@ func main() {
 	mux.Handle("/api/oauth/token", rateLimited(enterpriseHandler.OAuthToken))
 	mux.Handle("/api/oauth/api-key", rateLimited(enterpriseHandler.APIKeyExchange))
 
-	mux.Handle("/api/auth/change-password", protectedRateLimited(authHandler.ChangePassword))
-	mux.Handle("/api/auth/logout-all", protected(authHandler.LogoutAll))
-	mux.Handle("/api/auth/sessions", protected(authHandler.Sessions))
-	mux.Handle("/api/auth/sessions/risk", protected(authHandler.SessionRisks))
-	mux.Handle("/api/auth/sessions/", protected(authHandler.SessionByID))
-	mux.Handle("/api/auth/email-verification/request", protectedRateLimited(authHandler.RequestEmailVerification))
-	mux.Handle("/api/auth/token/introspect", protected(enterpriseHandler.Introspect))
-	mux.Handle("/api/auth/token/revoke", protected(enterpriseHandler.RevokeToken))
-	mux.Handle("/api/auth/mfa/status", protected(mfaHandler.Status))
-	mux.Handle("/api/auth/mfa/totp/enroll", protected(mfaHandler.EnrollTOTP))
-	mux.Handle("/api/auth/mfa/totp/confirm", protected(mfaHandler.ConfirmTOTP))
-	mux.Handle("/api/auth/mfa/totp/disable", protected(mfaHandler.DisableTOTP))
+	mux.Handle("/api/auth/change-password", protectedFirstParty(authHandler.ChangePassword))
+	mux.Handle("/api/auth/logout-all", protectedFirstParty(authHandler.LogoutAll))
+	mux.Handle("/api/auth/sessions", protectedFirstParty(authHandler.Sessions))
+	mux.Handle("/api/auth/sessions/risk", protectedFirstParty(authHandler.SessionRisks))
+	mux.Handle("/api/auth/sessions/", protectedFirstParty(authHandler.SessionByID))
+	mux.Handle("/api/auth/email-verification/request", protectedFirstParty(authHandler.RequestEmailVerification))
+	mux.Handle("/api/auth/token/introspect", protectedFirstParty(enterpriseHandler.Introspect))
+	mux.Handle("/api/auth/token/revoke", protectedFirstParty(enterpriseHandler.RevokeToken))
+	mux.Handle("/api/auth/mfa/status", protectedFirstParty(mfaHandler.Status))
+	mux.Handle("/api/auth/mfa/totp/enroll", protectedFirstParty(mfaHandler.EnrollTOTP))
+	mux.Handle("/api/auth/mfa/totp/confirm", protectedFirstParty(mfaHandler.ConfirmTOTP))
+	mux.Handle("/api/auth/mfa/totp/disable", protectedFirstParty(mfaHandler.DisableTOTP))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
 	mux.Handle("/api/workspaces/{id}/webhooks/{subscription_id}", protected(webhookHandler.SubscriptionByID))
-	mux.Handle("/api/workspaces/{id}/identity/oauth-clients", protected(enterpriseHandler.OAuthClients))
-	mux.Handle("/api/workspaces/{id}/identity/oauth/authorize", protected(enterpriseHandler.OAuthAuthorize))
-	mux.Handle("/api/workspaces/{id}/identity/api-keys", protected(enterpriseHandler.APIKeys))
-	mux.Handle("/api/workspaces/{id}/identity/api-keys/{key_id}", protected(enterpriseHandler.APIKeyByID))
-	mux.Handle("/api/workspaces/{id}/identity/policy", protected(enterpriseHandler.Policy))
-	mux.Handle("/api/workspaces/{id}/identity/oidc", protected(enterpriseHandler.OIDC))
-	mux.Handle("/api/workspaces/{id}/identity/scim/users", protected(enterpriseHandler.SCIMUsers))
+	mux.Handle("/api/workspaces/{id}/identity/oauth-clients", protectedIdentityAdmin(enterpriseHandler.OAuthClients))
+	mux.Handle("/api/workspaces/{id}/identity/oauth/authorize", protectedFirstParty(enterpriseHandler.OAuthAuthorize))
+	mux.Handle("/api/workspaces/{id}/identity/api-keys", protectedIdentityAdmin(enterpriseHandler.APIKeys))
+	mux.Handle("/api/workspaces/{id}/identity/api-keys/{key_id}", protectedIdentityAdmin(enterpriseHandler.APIKeyByID))
+	mux.Handle("/api/workspaces/{id}/identity/policy", protectedIdentityAdmin(enterpriseHandler.Policy))
+	mux.Handle("/api/workspaces/{id}/identity/oidc", protectedIdentityAdmin(enterpriseHandler.OIDC))
+	mux.Handle("/api/workspaces/{id}/identity/scim/users", protectedIdentityAdmin(enterpriseHandler.SCIMUsers))
 	mux.Handle("/api/workspaces/", protected(workspaceHandler.WorkspaceByID))
 
 	mux.Handle("/api/tasks", protectedWorkspaceIdempotent(taskHandler.Tasks))
