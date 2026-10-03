@@ -19,15 +19,15 @@ import (
 )
 
 var (
-	ErrEnterpriseAccessDenied = errors.New("enterprise identity administration requires workspace owner or admin")
-	ErrInvalidOAuthClient     = errors.New("invalid oauth client configuration")
-	ErrInvalidOAuthRequest    = errors.New("invalid oauth request")
-	ErrInvalidOAuthSecret     = errors.New("invalid oauth client credentials")
-	ErrInvalidScope           = errors.New("invalid or unauthorized scope")
-	ErrServiceAccountsBlocked = errors.New("service accounts are disabled by workspace policy")
+	ErrEnterpriseAccessDenied  = errors.New("enterprise identity administration requires workspace owner or admin")
+	ErrInvalidOAuthClient      = errors.New("invalid oauth client configuration")
+	ErrInvalidOAuthRequest     = errors.New("invalid oauth request")
+	ErrInvalidOAuthSecret      = errors.New("invalid oauth client credentials")
+	ErrInvalidScope            = errors.New("invalid or unauthorized scope")
+	ErrServiceAccountsBlocked  = errors.New("service accounts are disabled by workspace policy")
 	ErrInvalidEnterprisePolicy = errors.New("invalid enterprise security policy")
-	ErrInvalidOIDCConnection  = errors.New("invalid oidc connection")
-	ErrInvalidSCIMUser        = errors.New("invalid scim user")
+	ErrInvalidOIDCConnection   = errors.New("invalid oidc connection")
+	ErrInvalidSCIMUser         = errors.New("invalid scim user")
 )
 
 const authorizationCodeTTL = 5 * time.Minute
