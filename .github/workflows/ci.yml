@@ -252,6 +252,7 @@ jobs:
           JWT_SECRET: ci-local-secret-123456789012345678901234
           EXPOSE_AUTH_TOKENS: "true"
           AUTH_RATE_LIMIT_REQUESTS: "100"
+          WEBHOOK_ALLOW_INSECURE_HTTP: "true"
         run: docker compose up -d --build
 
       - name: Wait for API
