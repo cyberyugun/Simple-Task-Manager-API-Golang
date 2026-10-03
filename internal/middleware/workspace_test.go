@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -41,8 +42,7 @@ func TestWorkspaceScopeRejectsCrossTenantSelection(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tasks", nil)
-	req.Header.Set("X-Workspace-ID", "1")
-	req.Header.Set("X-Workspace-ID", string(rune('0'+owner.ID)))
+	req.Header.Set("X-Workspace-ID", strconv.FormatInt(owner.ID, 10))
 	req = req.WithContext(WithUserID(req.Context(), 2))
 	res := httptest.NewRecorder()
 
