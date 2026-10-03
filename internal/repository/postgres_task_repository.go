@@ -19,13 +19,14 @@ func NewPostgresTaskRepository(db *sql.DB) *PostgresTaskRepository {
 
 func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 	const query = `
-		INSERT INTO tasks (user_id, title, description, completed, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, user_id, title, description, completed, created_at, updated_at
+		INSERT INTO tasks (workspace_id, user_id, title, description, completed, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, workspace_id, user_id, title, description, completed, created_at, updated_at
 	`
 
 	return scanTask(r.db.QueryRow(
 		query,
+		task.WorkspaceID,
 		task.UserID,
 		task.Title,
 		task.Description,
@@ -35,9 +36,21 @@ func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 	))
 }
 
-func (r *PostgresTaskRepository) FindAll(userID int64, query model.TaskQuery) (model.TaskPage, error) {
-	conditions := []string{"user_id = $1"}
-	args := []any{userID}
+func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuery) (model.TaskPage, error) {
+	conditions := []string{`
+		(
+			workspace_id = $1
+			OR (
+				workspace_id IS NULL
+				AND user_id IN (
+					SELECT created_by_user_id
+					FROM workspaces
+					WHERE id = $1 AND is_personal = TRUE
+				)
+			)
+		)
+	`}
+	args := []any{workspaceID}
 
 	if query.Search != "" {
 		args = append(args, "%"+query.Search+"%")
@@ -73,7 +86,7 @@ func (r *PostgresTaskRepository) FindAll(userID int64, query model.TaskQuery) (m
 	offsetPos := len(args)
 
 	statement := fmt.Sprintf(`
-		SELECT id, user_id, title, description, completed, created_at, updated_at
+		SELECT id, COALESCE(workspace_id, $1), user_id, title, description, completed, created_at, updated_at
 		FROM tasks
 		WHERE %s
 		ORDER BY %s %s, id %s
@@ -109,14 +122,25 @@ func (r *PostgresTaskRepository) FindAll(userID int64, query model.TaskQuery) (m
 	}, nil
 }
 
-func (r *PostgresTaskRepository) FindByID(userID, id int64) (model.Task, error) {
+func (r *PostgresTaskRepository) FindByID(workspaceID, id int64) (model.Task, error) {
 	const query = `
-		SELECT id, user_id, title, description, completed, created_at, updated_at
+		SELECT id, COALESCE(workspace_id, $2), user_id, title, description, completed, created_at, updated_at
 		FROM tasks
-		WHERE id = $1 AND user_id = $2
+		WHERE id = $1
+		  AND (
+		    workspace_id = $2
+		    OR (
+		      workspace_id IS NULL
+		      AND user_id IN (
+		        SELECT created_by_user_id
+		        FROM workspaces
+		        WHERE id = $2 AND is_personal = TRUE
+		      )
+		    )
+		  )
 	`
 
-	task, err := scanTask(r.db.QueryRow(query, id, userID))
+	task, err := scanTask(r.db.QueryRow(query, id, workspaceID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Task{}, ErrTaskNotFound
 	}
@@ -126,18 +150,30 @@ func (r *PostgresTaskRepository) FindByID(userID, id int64) (model.Task, error) 
 func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 	const query = `
 		UPDATE tasks
-		SET title = $3,
+		SET workspace_id = COALESCE(workspace_id, $2),
+			title = $3,
 			description = $4,
 			completed = $5,
 			updated_at = $6
-		WHERE id = $1 AND user_id = $2
-		RETURNING id, user_id, title, description, completed, created_at, updated_at
+		WHERE id = $1
+		  AND (
+		    workspace_id = $2
+		    OR (
+		      workspace_id IS NULL
+		      AND user_id IN (
+		        SELECT created_by_user_id
+		        FROM workspaces
+		        WHERE id = $2 AND is_personal = TRUE
+		      )
+		    )
+		  )
+		RETURNING id, workspace_id, user_id, title, description, completed, created_at, updated_at
 	`
 
 	updated, err := scanTask(r.db.QueryRow(
 		query,
 		task.ID,
-		task.UserID,
+		task.WorkspaceID,
 		task.Title,
 		task.Description,
 		task.Completed,
@@ -149,8 +185,22 @@ func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 	return updated, err
 }
 
-func (r *PostgresTaskRepository) Delete(userID, id int64) error {
-	result, err := r.db.Exec(`DELETE FROM tasks WHERE id = $1 AND user_id = $2`, id, userID)
+func (r *PostgresTaskRepository) Delete(workspaceID, id int64) error {
+	result, err := r.db.Exec(`
+		DELETE FROM tasks
+		WHERE id = $1
+		  AND (
+		    workspace_id = $2
+		    OR (
+		      workspace_id IS NULL
+		      AND user_id IN (
+		        SELECT created_by_user_id
+		        FROM workspaces
+		        WHERE id = $2 AND is_personal = TRUE
+		      )
+		    )
+		  )
+	`, id, workspaceID)
 	if err != nil {
 		return err
 	}
@@ -162,7 +212,6 @@ func (r *PostgresTaskRepository) Delete(userID, id int64) error {
 	if rowsAffected == 0 {
 		return ErrTaskNotFound
 	}
-
 	return nil
 }
 
@@ -174,6 +223,7 @@ func scanTask(scanner taskScanner) (model.Task, error) {
 	var task model.Task
 	err := scanner.Scan(
 		&task.ID,
+		&task.WorkspaceID,
 		&task.UserID,
 		&task.Title,
 		&task.Description,
