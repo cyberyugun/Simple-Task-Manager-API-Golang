@@ -68,15 +68,15 @@ func (r *InMemoryRefreshTokenRepository) Rotate(oldHash, newHash string, newExpi
 	r.sessions[oldHash] = old
 
 	r.sessions[newHash] = model.RefreshSession{
-		ID:         r.nextID,
-		UserID:     old.UserID,
-		TokenHash:  newHash,
-		UserAgent:  old.UserAgent,
+		ID:               r.nextID,
+		UserID:           old.UserID,
+		TokenHash:        newHash,
+		UserAgent:        old.UserAgent,
 		IPAddress:        old.IPAddress,
 		MFAAuthenticated: old.MFAAuthenticated,
-		ExpiresAt:  newExpiresAt,
-		LastUsedAt: now,
-		CreatedAt:  now,
+		ExpiresAt:        newExpiresAt,
+		LastUsedAt:       now,
+		CreatedAt:        now,
 	}
 	r.nextID++
 
