@@ -656,7 +656,7 @@ jobs:
           done
           test -n "$notification_id"
 
-          read_notification="$(curl --fail --silent -X POST "http://localhost:8080/api/notifications/$notification_id/read" -H "Authorization: Bearer $token")"
+          read_notification="$(curl --fail --silent -X POST "http://localhost:8080/api/notifications/items/$notification_id/read" -H "Authorization: Bearer $token")"
           printf '%s' "$read_notification" | python3 -c 'import json,sys; n=json.load(sys.stdin)["data"]; assert n["read_at"]'
 
           curl --fail --silent -X POST http://localhost:8080/api/notifications/read-all -H "Authorization: Bearer $token" >/dev/null
