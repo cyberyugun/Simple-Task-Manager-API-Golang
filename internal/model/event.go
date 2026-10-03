@@ -6,9 +6,23 @@ import (
 )
 
 const (
-	EventTaskCreated = "task.created"
-	EventTaskUpdated = "task.updated"
-	EventTaskDeleted = "task.deleted"
+	EventTaskCreated           = "task.created"
+	EventTaskUpdated           = "task.updated"
+	EventTaskDeleted           = "task.deleted"
+	EventTaskStatusChanged     = "task.status_changed"
+	EventTaskPriorityChanged   = "task.priority_changed"
+	EventTaskDueDateChanged    = "task.due_date_changed"
+	EventTaskAssigned          = "task.assigned"
+	EventTaskUnassigned        = "task.unassigned"
+	EventTaskWatcherAdded      = "task.watcher.added"
+	EventTaskCommentCreated    = "task.comment.created"
+	EventTaskCommentUpdated    = "task.comment.updated"
+	EventTaskCommentDeleted    = "task.comment.deleted"
+	EventTaskDependencyCreated = "task.dependency.created"
+	EventTaskDependencyRemoved = "task.dependency.removed"
+	EventTaskRecurrenceUpdated = "task.recurrence.updated"
+	EventTaskArchived          = "task.archived"
+	EventTaskRestored          = "task.restored"
 )
 
 type DomainEvent struct {
