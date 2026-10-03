@@ -70,3 +70,30 @@ updates:
       time: "04:30"
       timezone: Asia/Jakarta
     open-pull-requests-limit: 3
+
+  - package-ecosystem: terraform
+    directory: /infra/terraform/bootstrap/aws
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:45"
+      timezone: Asia/Jakarta
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: terraform
+    directory: /infra/terraform/bootstrap/azure
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Asia/Jakarta
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: terraform
+    directory: /infra/terraform/bootstrap/gcp
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:15"
+      timezone: Asia/Jakarta
+    open-pull-requests-limit: 2
