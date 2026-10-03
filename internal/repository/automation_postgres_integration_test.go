@@ -56,7 +56,7 @@ func TestIntegrationPostgresAutomationRepository(t *testing.T) {
 		OrganizationID: org.ID, Name: "Capacity policy", Enabled: true,
 		TriggerType: model.AutomationTriggerBillingUsagePercent, TriggerKey: "api_operations",
 		Comparator: model.AutomationComparatorGreaterOrEqual, Threshold: 80,
-		ActionType: model.AutomationActionOpenIncident,
+		ActionType:   model.AutomationActionOpenIncident,
 		ActionConfig: map[string]any{"severity": model.IncidentSeverity3, "title": "Capacity"},
 		ApprovalMode: model.AutomationApprovalAutomatic, CooldownMinutes: 60,
 		CreatedByUserID: owner.ID, UpdatedByUserID: owner.ID,
@@ -74,7 +74,7 @@ func TestIntegrationPostgresAutomationRepository(t *testing.T) {
 		OrganizationID: org.ID, PolicyID: policy.ID,
 		DedupeKey: "integration-execution", Status: model.AutomationExecutionPendingApproval,
 		TriggerSnapshot: map[string]any{"utilization_percent": 90},
-		ActionResult: map[string]any{}, RequestedAt: now, CreatedAt: now, UpdatedAt: now,
+		ActionResult:    map[string]any{}, RequestedAt: now, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil || execution.ID == 0 {
 		t.Fatalf("execution=%+v err=%v", execution, err)
