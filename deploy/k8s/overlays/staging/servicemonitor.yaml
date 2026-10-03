@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: task-api-staging
+  labels:
+    app.kubernetes.io/name: task-api
+    app.kubernetes.io/environment: staging
+spec:
+  namespaceSelector:
+    matchNames:
+      - task-manager-staging
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: task-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
