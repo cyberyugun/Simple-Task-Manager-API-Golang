@@ -33,11 +33,11 @@ func (s *TaskService) Create(userID int64, access model.WorkspaceAccess, req mod
 		WorkspaceID:       access.ID,
 		UserID:            userID,
 		PersonalWorkspace: access.IsPersonal,
-		Title:       title,
-		Description: strings.TrimSpace(req.Description),
-		Completed:   false,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		Title:             title,
+		Description:       strings.TrimSpace(req.Description),
+		Completed:         false,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 
 	return s.repo.Create(task)
