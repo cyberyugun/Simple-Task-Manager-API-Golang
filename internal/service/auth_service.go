@@ -113,12 +113,16 @@ func (s *AuthService) ValidatePassword(email, password string) (model.User, erro
 	return user, nil
 }
 
-func (s *AuthService) IssueMFASession(userID int64, meta model.SessionMetadata) (model.AuthResult, error) {
+func (s *AuthService) IssueSession(userID int64, meta model.SessionMetadata, mfaAuthenticated bool) (model.AuthResult, error) {
 	user, err := s.users.FindByID(userID)
 	if err != nil {
 		return model.AuthResult{}, err
 	}
-	return s.issueSession(user, meta, true)
+	return s.issueSession(user, meta, mfaAuthenticated)
+}
+
+func (s *AuthService) IssueMFASession(userID int64, meta model.SessionMetadata) (model.AuthResult, error) {
+	return s.IssueSession(userID, meta, true)
 }
 
 func (s *AuthService) Login(req model.LoginRequest, meta model.SessionMetadata) (model.AuthResult, error) {
