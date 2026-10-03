@@ -19,6 +19,12 @@ resource "azurerm_storage_account" "state" {
   infrastructure_encryption_enabled = true
   allow_nested_items_to_be_public   = false
 
+  network_rules {
+    default_action = "Deny"
+    bypass         = ["AzureServices"]
+    ip_rules       = var.allowed_ip_ranges
+  }
+
   blob_properties {
     versioning_enabled = true
 
