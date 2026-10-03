@@ -73,6 +73,8 @@ services:
       REDIS_DIAL_TIMEOUT: ${REDIS_DIAL_TIMEOUT:-5s}
       REDIS_READ_TIMEOUT: ${REDIS_READ_TIMEOUT:-3s}
       REDIS_WRITE_TIMEOUT: ${REDIS_WRITE_TIMEOUT:-3s}
+      IDEMPOTENCY_TTL: ${IDEMPOTENCY_TTL:-24h}
+      WEBHOOK_ALLOW_INSECURE_HTTP: ${WEBHOOK_ALLOW_INSECURE_HTTP:-false}
     ports:
       - "8080:8080"
     depends_on:
@@ -88,6 +90,27 @@ services:
       timeout: 3s
       start_period: 5s
       retries: 5
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/app/worker"]
+    environment:
+      DATABASE_URL: postgres://task_user:task_password@postgres:5432/task_manager?sslmode=disable
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-2s}
+      WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-50}
+      WEBHOOK_TIMEOUT: ${WEBHOOK_TIMEOUT:-10s}
+      WEBHOOK_ALLOW_INSECURE_HTTP: ${WEBHOOK_ALLOW_INSECURE_HTTP:-false}
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:

@@ -50,6 +50,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	refreshRepo := repository.NewPostgresRefreshTokenRepository(db)
 	actionRepo := repository.NewPostgresAuthActionTokenRepository(db)
 	workspaceRepo := repository.NewPostgresWorkspaceRepository(db)
+	eventRepo := repository.NewPostgresEventRepository(db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	user1, err := userRepo.Create(model.User{
@@ -223,6 +224,104 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 		t.Fatalf("create first task: %v", err)
 	}
 
+	var createdEventCount int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM outbox_events WHERE workspace_id = $1 AND event_type = $2 AND aggregate_id = $3",
+		workspace1.ID, model.EventTaskCreated, fmt.Sprintf("%d", first.ID),
+	).Scan(&createdEventCount); err != nil {
+		t.Fatalf("query task.created outbox event: %v", err)
+	}
+	if createdEventCount != 1 {
+		t.Fatalf("task.created event count = %d, want 1", createdEventCount)
+	}
+
+	webhook, err := eventRepo.CreateWebhook(
+		workspace1.ID,
+		user1.ID,
+		"https://hooks.example.com/task",
+		"whsec_integration-secret-at-least-32-characters",
+		[]string{model.EventTaskCreated},
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create webhook subscription: %v", err)
+	}
+	listedWebhooks, err := eventRepo.ListWebhooks(workspace1.ID)
+	if err != nil {
+		t.Fatalf("list webhook subscriptions: %v", err)
+	}
+	if len(listedWebhooks) != 1 || listedWebhooks[0].ID != webhook.ID || listedWebhooks[0].SigningSecret != "" {
+		t.Fatalf("unexpected webhook list: %+v", listedWebhooks)
+	}
+
+	claimed, err := eventRepo.ClaimReady("integration-worker", 10, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("claim ready events: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].EventType != model.EventTaskCreated {
+		t.Fatalf("unexpected claimed events: %+v", claimed)
+	}
+	pendingSubscriptions, err := eventRepo.PendingSubscriptions(claimed[0])
+	if err != nil {
+		t.Fatalf("pending subscriptions: %v", err)
+	}
+	if len(pendingSubscriptions) != 1 || pendingSubscriptions[0].ID != webhook.ID || pendingSubscriptions[0].SigningSecret == "" {
+		t.Fatalf("unexpected pending subscriptions: %+v", pendingSubscriptions)
+	}
+	deliveredAt := now.Add(2 * time.Second)
+	if err := eventRepo.RecordDelivery(model.WebhookDelivery{
+		EventID: claimed[0].ID, SubscriptionID: webhook.ID, Attempt: 1,
+		Status: "delivered", HTTPStatus: 204, AttemptedAt: deliveredAt, DeliveredAt: &deliveredAt,
+	}); err != nil {
+		t.Fatalf("record webhook delivery: %v", err)
+	}
+	if err := eventRepo.MarkProcessed(claimed[0].ID, deliveredAt); err != nil {
+		t.Fatalf("mark event processed: %v", err)
+	}
+	if err := eventRepo.Replay(claimed[0].EventKey, now.Add(3*time.Second)); err != nil {
+		t.Fatalf("replay event: %v", err)
+	}
+	replayedEvents, err := eventRepo.ClaimReady("integration-worker-replay", 10, now.Add(4*time.Second))
+	if err != nil {
+		t.Fatalf("claim replayed event: %v", err)
+	}
+	if len(replayedEvents) != 1 || replayedEvents[0].EventKey != claimed[0].EventKey {
+		t.Fatalf("unexpected replayed events: %+v", replayedEvents)
+	}
+	replayedSubscriptions, err := eventRepo.PendingSubscriptions(replayedEvents[0])
+	if err != nil {
+		t.Fatalf("replayed pending subscriptions: %v", err)
+	}
+	if len(replayedSubscriptions) != 1 || replayedSubscriptions[0].ID != webhook.ID {
+		t.Fatalf("replay did not clear prior delivery: %+v", replayedSubscriptions)
+	}
+	if err := eventRepo.MarkProcessed(replayedEvents[0].ID, now.Add(5*time.Second)); err != nil {
+		t.Fatalf("mark replayed event processed: %v", err)
+	}
+
+	record, acquired, err := eventRepo.BeginIdempotency(
+		workspace1.ID, "integration-key", "POST", "/api/tasks", "hash-a", now, now.Add(time.Hour),
+	)
+	if err != nil || !acquired || record.State != "pending" {
+		t.Fatalf("begin idempotency = %+v acquired=%v err=%v", record, acquired, err)
+	}
+	if err := eventRepo.CompleteIdempotency(
+		workspace1.ID, "integration-key", 201, "application/json", []byte(`{"success":true}`), now,
+	); err != nil {
+		t.Fatalf("complete idempotency: %v", err)
+	}
+	replayed, acquired, err := eventRepo.BeginIdempotency(
+		workspace1.ID, "integration-key", "POST", "/api/tasks", "hash-a", now.Add(time.Second), now.Add(time.Hour),
+	)
+	if err != nil || acquired || replayed.ResponseStatus != 201 || string(replayed.ResponseBody) != `{"success":true}` {
+		t.Fatalf("replayed idempotency = %+v acquired=%v err=%v", replayed, acquired, err)
+	}
+	if _, _, err := eventRepo.BeginIdempotency(
+		workspace1.ID, "integration-key", "POST", "/api/tasks", "hash-b", now.Add(2*time.Second), now.Add(time.Hour),
+	); !errors.Is(err, repository.ErrIdempotencyConflict) {
+		t.Fatalf("idempotency conflict error = %v, want ErrIdempotencyConflict", err)
+	}
+
 	_, err = taskRepo.Create(model.Task{
 		WorkspaceID: workspace1.ID,
 		UserID:      user1.ID,
@@ -285,10 +384,26 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	if _, err := taskRepo.FindByID(workspace1.ID, first.ID); !errors.Is(err, repository.ErrTaskNotFound) {
 		t.Fatalf("FindByID() after delete error = %v, want ErrTaskNotFound", err)
 	}
+
+	var lifecycleEvents int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM outbox_events WHERE workspace_id = $1 AND aggregate_id = $2 AND event_type IN ($3, $4, $5)",
+		workspace1.ID, fmt.Sprintf("%d", first.ID),
+		model.EventTaskCreated, model.EventTaskUpdated, model.EventTaskDeleted,
+	).Scan(&lifecycleEvents); err != nil {
+		t.Fatalf("query task lifecycle events: %v", err)
+	}
+	if lifecycleEvents != 3 {
+		t.Fatalf("task lifecycle event count = %d, want 3", lifecycleEvents)
+	}
 }
 
 func resetDatabase(db *sql.DB) error {
 	for _, statement := range []string{
+		"DROP TABLE IF EXISTS idempotency_records CASCADE",
+		"DROP TABLE IF EXISTS webhook_deliveries CASCADE",
+		"DROP TABLE IF EXISTS webhook_subscriptions CASCADE",
+		"DROP TABLE IF EXISTS outbox_events CASCADE",
 		"DROP TABLE IF EXISTS audit_events CASCADE",
 		"DROP TABLE IF EXISTS workspace_members CASCADE",
 		"DROP TABLE IF EXISTS auth_action_tokens CASCADE",
@@ -315,6 +430,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"005_account_security.sql",
 		"006_performance_indexes.sql",
 		"007_workspaces_rbac_audit.sql",
+		"008_event_delivery.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {
@@ -350,6 +466,8 @@ func assertPerformanceIndexes(t *testing.T, db *sql.DB) {
 		"idx_tasks_user_completed_created_at",
 		"idx_refresh_tokens_user_active_last_used",
 		"idx_tasks_workspace_completed_created_at",
+		"idx_outbox_events_ready",
+		"idx_idempotency_records_expiry",
 	}
 	foundIndexes := make(map[string]bool, len(expectedNames))
 
@@ -362,7 +480,9 @@ func assertPerformanceIndexes(t *testing.T, db *sql.DB) {
 		    'idx_tasks_user_description_trgm',
 		    'idx_tasks_user_completed_created_at',
 		    'idx_refresh_tokens_user_active_last_used',
-		    'idx_tasks_workspace_completed_created_at'
+		    'idx_tasks_workspace_completed_created_at',
+		    'idx_outbox_events_ready',
+		    'idx_idempotency_records_expiry'
 		  )
 	`)
 	if err != nil {

@@ -36,3 +36,12 @@
 /internal/service/workspace_service.go @cyberyugun
 /internal/handler/workspace_handler.go @cyberyugun
 /docs/authorization-multitenancy.md @cyberyugun
+/internal/events/ @cyberyugun
+/internal/repository/event_repository.go @cyberyugun
+/internal/repository/inmemory_event_repository.go @cyberyugun
+/internal/middleware/idempotency.go @cyberyugun
+/internal/service/webhook_service.go @cyberyugun
+/internal/handler/webhook_handler.go @cyberyugun
+/cmd/worker/ @cyberyugun
+/cmd/event-replay/ @cyberyugun
+/docs/event-driven-processing.md @cyberyugun

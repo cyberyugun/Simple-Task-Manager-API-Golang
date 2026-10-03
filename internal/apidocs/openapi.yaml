@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.4.0
+  version: 1.5.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -18,6 +18,7 @@ tags:
   - name: Authentication
   - name: Tasks
   - name: Workspaces
+  - name: Webhooks
 
 paths:
   /health:
@@ -589,6 +590,84 @@ paths:
         '404':
           $ref: '#/components/responses/WorkspaceNotFound'
 
+  /api/workspaces/{id}/webhooks:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Webhooks]
+      summary: List webhook subscriptions for a workspace
+      operationId: listWebhookSubscriptions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Webhook subscriptions without signing secrets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscriptionListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+    post:
+      tags: [Webhooks]
+      summary: Create a webhook subscription
+      description: The signing_secret is returned only in this creation response.
+      operationId: createWebhookSubscription
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookSubscriptionRequest'
+      responses:
+        '201':
+          description: Webhook subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscriptionEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WorkspaceNotFound'
+  /api/workspaces/{id}/webhooks/{subscription_id}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - $ref: '#/components/parameters/WebhookSubscriptionID'
+    delete:
+      tags: [Webhooks]
+      summary: Delete a webhook subscription
+      operationId: deleteWebhookSubscription
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Webhook subscription deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Workspace or webhook subscription not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /api/tasks:
     parameters:
       - $ref: '#/components/parameters/WorkspaceIDHeader'
@@ -650,6 +729,8 @@ paths:
       operationId: createTask
       security:
         - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -667,6 +748,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Idempotency key conflict or another request with the same key is still in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /api/tasks/{id}:
     parameters:
       - $ref: '#/components/parameters/TaskID'
@@ -785,6 +872,22 @@ components:
         type: integer
         format: int64
         minimum: 1
+    WebhookSubscriptionID:
+      in: path
+      name: subscription_id
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    IdempotencyKey:
+      in: header
+      name: X-Idempotency-Key
+      required: false
+      description: Dedupe key scoped to the resolved workspace. Reusing the same key with a different request returns 409.
+      schema:
+        type: string
+        maxLength: 200
     TaskID:
       in: path
       name: id
@@ -1146,6 +1249,72 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuditEvent'
+    CreateWebhookSubscriptionRequest:
+      type: object
+      required: [url, event_types]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTPS delivery endpoint. Plain HTTP is disabled by default.
+        event_types:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: ['*', task.created, task.updated, task.deleted]
+    WebhookSubscription:
+      type: object
+      required: [id, workspace_id, url, event_types, active, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        workspace_id:
+          type: integer
+          format: int64
+        created_by_user_id:
+          type: integer
+          format: int64
+        url:
+          type: string
+          format: uri
+        event_types:
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        signing_secret:
+          type: string
+          description: Returned only when the subscription is created.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    WebhookSubscriptionEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/WebhookSubscription'
+    WebhookSubscriptionListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookSubscription'
     TaskWriteRequest:
       type: object
       required: [title]

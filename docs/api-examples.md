@@ -76,3 +76,39 @@ Content-Type: application/json
 ```
 
 Omitting `X-Workspace-ID` continues to use the authenticated user's personal workspace.
+
+## Idempotent task creation
+
+```http
+POST /api/tasks
+Authorization: Bearer <access-token>
+X-Idempotency-Key: task-create-20261003-001
+Content-Type: application/json
+
+{
+  "title": "Create exactly once from the client perspective"
+}
+```
+
+A retry with the same key and request returns the stored response with:
+
+```text
+Idempotent-Replayed: true
+```
+
+Reusing the key with different request content returns `409`.
+
+## Create webhook subscription
+
+```http
+POST /api/workspaces/42/webhooks
+Authorization: Bearer <access-token>
+Content-Type: application/json
+
+{
+  "url": "https://events.example.com/task-manager",
+  "event_types": ["task.created", "task.updated", "task.deleted"]
+}
+```
+
+The creation response includes a `signing_secret` once. Store it securely; subsequent list responses omit it.
