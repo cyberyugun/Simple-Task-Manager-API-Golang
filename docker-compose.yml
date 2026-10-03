@@ -99,6 +99,7 @@ services:
     entrypoint: ["/app/worker"]
     environment:
       DATABASE_URL: postgres://task_user:task_password@postgres:5432/task_manager?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-me-1234567890}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-2s}
       WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-50}
