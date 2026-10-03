@@ -68,6 +68,7 @@ func main() {
 	var enterpriseRepo repository.EnterpriseIdentityRepository
 	var governanceRepo repository.GovernanceRepository
 	var lifecycleRepo repository.LifecycleRepository
+	var organizationRepo repository.OrganizationRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
 
@@ -93,6 +94,7 @@ func main() {
 		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
+		organizationRepo = repository.NewPostgresOrganizationRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
 		logger.Info(
@@ -111,6 +113,7 @@ func main() {
 		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
+		organizationRepo = repository.NewInMemoryOrganizationRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
@@ -173,6 +176,7 @@ func main() {
 	enterpriseService := service.NewEnterpriseIdentityService(enterpriseRepo, workspaceRepo, userRepo, tokenManager)
 	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
 	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)
+	organizationService := service.NewOrganizationService(organizationRepo, userRepo, workspaceRepo)
 	workspaceService.SetDeletionGuard(governanceService)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
@@ -181,6 +185,7 @@ func main() {
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
+	organizationHandler := handler.NewOrganizationHandler(organizationService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
 	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
@@ -278,6 +283,26 @@ func main() {
 	mux.Handle("/api/auth/mfa/totp/disable", protectedFirstPartyRateLimited(mfaHandler.DisableTOTP))
 	mux.Handle("/api/auth/mfa/webauthn/register/begin", protectedFirstPartyRateLimited(webAuthnHandler.RegistrationBegin))
 	mux.Handle("/api/auth/mfa/webauthn/register/finish", protectedFirstPartyRateLimited(webAuthnHandler.RegistrationFinish))
+
+	mux.Handle("/api/organizations", protectedFirstParty(organizationHandler.Organizations))
+	mux.Handle("/api/organizations/invitations/accept", protectedFirstParty(organizationHandler.AcceptInvitation))
+	mux.Handle("/api/organizations/{id}", protectedFirstParty(organizationHandler.Organization))
+	mux.Handle("/api/organizations/{id}/status", protectedFirstParty(organizationHandler.Status))
+	mux.Handle("/api/organizations/{id}/quota", protectedFirstParty(organizationHandler.Quota))
+	mux.Handle("/api/organizations/{id}/ownership", protectedFirstParty(organizationHandler.Ownership))
+	mux.Handle("/api/organizations/{id}/directory", protectedFirstParty(organizationHandler.Directory))
+	mux.Handle("/api/organizations/{id}/members/bulk", protectedFirstParty(organizationHandler.BulkMembers))
+	mux.Handle("/api/organizations/{id}/members/{user_id}", protectedFirstParty(organizationHandler.Member))
+	mux.Handle("/api/organizations/{id}/workspaces", protectedFirstParty(organizationHandler.Workspaces))
+	mux.Handle("/api/organizations/{id}/workspaces/{workspace_id}", protectedFirstParty(organizationHandler.Workspace))
+	mux.Handle("/api/organizations/{id}/invitations", protectedFirstParty(organizationHandler.Invitations))
+	mux.Handle("/api/organizations/{id}/invitations/{invitation_id}", protectedFirstParty(organizationHandler.Invitation))
+	mux.Handle("/api/organizations/{id}/teams", protectedFirstParty(organizationHandler.Teams))
+	mux.Handle("/api/organizations/{id}/teams/{team_id}/members", protectedFirstParty(organizationHandler.TeamMembers))
+	mux.Handle("/api/organizations/{id}/domains", protectedFirstParty(organizationHandler.Domains))
+	mux.Handle("/api/organizations/{id}/domains/{domain_id}/verify", protectedFirstParty(organizationHandler.VerifyDomain))
+	mux.Handle("/api/organizations/{id}/dashboard", protectedFirstParty(organizationHandler.Dashboard))
+	mux.Handle("/api/organizations/{id}/audit", protectedFirstParty(organizationHandler.Audit))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))

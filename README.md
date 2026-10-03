@@ -635,3 +635,8 @@ Phase 26 adds workspace governance policy, data classification inventory, legal 
 ## Data lifecycle and privacy automation
 
 Phase 27 adds legal-hold-aware automated retention processing, task archival and delayed archive purge, DSAR export packages with SHA-256 integrity checks, delete-request content anonymization, an append-only consent ledger, automated lifecycle evidence, and governance operations reporting. The existing worker runs lifecycle automation for workspaces with a configured governance policy. Set `LIFECYCLE_POLL_INTERVAL` to override the default one-hour cadence. See [docs/data-lifecycle-privacy-automation.md](docs/data-lifecycle-privacy-automation.md).
+
+
+## Enterprise administration and organization management
+
+Phase 28 adds hierarchical organizations, organization lifecycle controls, owner/admin/delegated-admin roles, ownership transfer, member and workspace quotas, bulk member administration, opaque-token invitations, teams, workspace attachment, domain verification, enterprise directory, organization audit events, and administration dashboards. See [docs/enterprise-administration-organizations.md](docs/enterprise-administration-organizations.md).
