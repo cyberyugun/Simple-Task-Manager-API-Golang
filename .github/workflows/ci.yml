@@ -18,10 +18,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Validate production preflight script
+      - name: Validate operational scripts
         run: |
           bash -n scripts/production-preflight.sh
           bash -n scripts/postgres-backup-restore-check.sh
+          bash -n scripts/dr-readiness-check.sh
+          bash -n scripts/resilience-smoke.sh
+          bash scripts/dr-readiness-check.sh
 
       - name: Validate Terraform delivery helpers
         run: |
@@ -298,6 +301,9 @@ jobs:
           docker compose logs api | grep '"msg":"http_request"'
           docker compose logs api | grep '"request_id"'
           docker compose logs api | grep '"trace_id"'
+
+      - name: Exercise dependency failure and recovery
+        run: bash scripts/resilience-smoke.sh
 
       - name: Show container status
         run: docker compose ps
