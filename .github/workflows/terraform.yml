@@ -32,7 +32,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Check formatting
-        run: terraform fmt -check -recursive infra/terraform
+        run: terraform fmt -check -diff -recursive infra/terraform
 
   validate:
     name: Validate ${{ matrix.name }}
