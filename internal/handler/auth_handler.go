@@ -294,6 +294,8 @@ func (h *AuthHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, repository.ErrEmailExists):
 		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrInvalidCredentials),
+		errors.Is(err, service.ErrMFARequired),
+		errors.Is(err, service.ErrInvalidMFA),
 		errors.Is(err, service.ErrInvalidRefreshToken),
 		errors.Is(err, service.ErrInvalidCurrentPassword),
 		errors.Is(err, service.ErrInvalidActionToken):
