@@ -22,3 +22,9 @@ variable "state_key" {
   type    = string
   default = "production/terraform.tfstate"
 }
+
+variable "allowed_ip_ranges" {
+  description = "Trusted public egress IPs/CIDRs allowed to reach the Terraform state storage endpoint."
+  type        = list(string)
+  default     = []
+}
