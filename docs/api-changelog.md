@@ -1,5 +1,25 @@
 # API Changelog
 
+## 1.5.0 — Phase 24
+
+Compatibility line: **v1**.
+
+Additive event-driven processing release:
+
+- adds transactional outbox events for task create/update/complete/delete
+- adds a separate durable worker process
+- adds owner/admin webhook subscription management
+- adds HMAC-SHA256 webhook signatures and event idempotency headers
+- adds exponential retry and dead-letter handling
+- adds per-workspace event queue statistics and dead-letter replay
+- adds worker crash recovery for stale processing leases
+- blocks private/loopback/link-local webhook destinations
+- adds async queue Prometheus metrics
+- adds Kubernetes worker deployment and coordinated promotion/rollback
+
+Existing v1 task/auth/workspace endpoints and request requirements remain compatible.
+
+
 ## 1.4.0 — Phase 23
 
 Compatibility line: **v1**.
