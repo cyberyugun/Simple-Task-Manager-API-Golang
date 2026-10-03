@@ -613,6 +613,58 @@ jobs:
           restored="$(curl --fail --silent -X PATCH "http://localhost:8080/api/tasks/$task_id/restore" -H "Authorization: Bearer $token")"
           printf '%s' "$restored" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d.get("deleted_at") is None; assert d.get("archived_at") is None; assert d["status"]=="TODO"'
 
+      - name: Smoke test notification reminder communication platform
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          preferences="$(curl --fail --silent -X PUT http://localhost:8080/api/notifications/preferences -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"locale":"id","timezone":"Asia/Jakarta","quiet_hours_enabled":true,"quiet_start":"22:00","quiet_end":"07:00","digest_frequency":"daily","digest_hour":8,"channels":{"in_app":true,"email":false,"push":false,"webhook":false},"events":{"task.assigned":true,"task.watcher.added":true,"task.mention":true,"task.due_soon":true,"task.overdue":true,"workflow.approval":true}}')"
+          printf '%s' "$preferences" | python3 -c 'import json,sys; p=json.load(sys.stdin)["data"]; assert p["locale"]=="id"; assert p["timezone"]=="Asia/Jakarta"; assert p["quiet_hours_enabled"] is True; assert p["digest_frequency"]=="daily"; assert p["channels"]["in_app"] is True'
+
+          email_endpoint="$(curl --fail --silent -X POST http://localhost:8080/api/notifications/endpoints -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"channel":"email","address":"ci@example.com"}')"
+          endpoint_id="$(printf '%s' "$email_endpoint" | python3 -c 'import json,sys; e=json.load(sys.stdin)["data"]; assert e["channel"]=="email"; assert e["address"]=="ci@example.com"; assert "secret" not in e; print(e["id"])')"
+          endpoints="$(curl --fail --silent http://localhost:8080/api/notifications/endpoints -H "Authorization: Bearer $token")"
+          printf '%s' "$endpoints" | ENDPOINT_ID="$endpoint_id" python3 -c 'import json,os,sys; eid=int(os.environ["ENDPOINT_ID"]); items=json.load(sys.stdin)["data"]; assert any(x["id"]==eid and x["channel"]=="email" for x in items)'
+
+          organization_response="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Notifications","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          template="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/notification-templates" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"key":"task.assigned","locale":"id","channel":"in_app","subject":"Tugas baru","body":"Anda mendapat {{task_title}}"}')"
+          template_id="$(printf '%s' "$template" | python3 -c 'import json,sys; t=json.load(sys.stdin)["data"]; assert t["version"]==1; assert t["status"]=="draft"; print(t["id"])')"
+          published="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/notification-templates/$template_id/publish" -H "Authorization: Bearer $token")"
+          printf '%s' "$published" | python3 -c 'import json,sys; t=json.load(sys.stdin)["data"]; assert t["status"]=="published"; assert t["locale"]=="id"; assert t["channel"]=="in_app"'
+
+          workspaces="$(curl --fail --silent http://localhost:8080/api/workspaces -H "Authorization: Bearer $token")"
+          owner_id="$(printf '%s' "$workspaces" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; personal=next(x for x in items if x["is_personal"]); print(personal["created_by_user_id"])')"
+
+          due="$(python3 -c 'import datetime; print((datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(minutes=30)).isoformat().replace("+00:00","Z"))')"
+          task_payload="$(python3 -c 'import json,sys; print(json.dumps({"title":"Phase 35 notification smoke","description":"event fanout","status":"TODO","priority":"HIGH","due_at":sys.argv[1]}))' "$due")"
+          task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$task_payload")"
+          task_id="$(printf '%s' "$task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          assignee_payload="$(python3 -c 'import json,sys; print(json.dumps({"user_id":int(sys.argv[1])}))' "$owner_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/tasks/$task_id/assignees" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$assignee_payload" >/dev/null
+
+          notification_id=""
+          for attempt in $(seq 1 30); do
+            notifications="$(curl --fail --silent 'http://localhost:8080/api/notifications?limit=100' -H "Authorization: Bearer $token")"
+            notification_id="$(printf '%s' "$notifications" | TASK_ID="$task_id" python3 -c 'import json,os,sys; tid=int(os.environ["TASK_ID"]); items=json.load(sys.stdin)["data"]["items"]; matches=[x for x in items if x["event_type"]=="task.assigned" and int(x["data"].get("task_id",0))==tid]; print(matches[0]["id"] if matches else "")')"
+            if [ -n "$notification_id" ]; then
+              printf '%s' "$notifications" | TASK_ID="$task_id" python3 -c 'import json,os,sys; tid=int(os.environ["TASK_ID"]); d=json.load(sys.stdin)["data"]; item=next(x for x in d["items"] if x["event_type"]=="task.assigned" and int(x["data"].get("task_id",0))==tid); assert item["template_key"]=="task.assigned"; assert d["unread"] >= 1'
+              break
+            fi
+            sleep 1
+          done
+          test -n "$notification_id"
+
+          read_notification="$(curl --fail --silent -X POST "http://localhost:8080/api/notifications/$notification_id/read" -H "Authorization: Bearer $token")"
+          printf '%s' "$read_notification" | python3 -c 'import json,sys; n=json.load(sys.stdin)["data"]; assert n["read_at"]'
+
+          curl --fail --silent -X POST http://localhost:8080/api/notifications/read-all -H "Authorization: Bearer $token" >/dev/null
+          after_read="$(curl --fail --silent 'http://localhost:8080/api/notifications?unread=true&limit=100' -H "Authorization: Bearer $token")"
+          printf '%s' "$after_read" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["unread"]==0; assert len(d["items"])==0'
+
+          curl --fail --silent -X DELETE "http://localhost:8080/api/notifications/endpoints/$endpoint_id" -H "Authorization: Bearer $token" >/dev/null
+
       - name: Smoke test idempotent task and outbox worker
         run: |
           login_response="$(curl --fail --silent \
@@ -653,11 +705,12 @@ jobs:
           docker compose logs worker | grep '"msg":"event_worker_started"'
           docker compose logs worker | grep '"msg":"lifecycle_worker_started"'
           docker compose logs worker | grep '"msg":"workflow_worker_started"'
+          docker compose logs worker | grep '"msg":"notification_worker_started"'
 
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "19"
+          test "$migration_count" = "20"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
