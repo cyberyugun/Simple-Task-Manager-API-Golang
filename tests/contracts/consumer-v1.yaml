@@ -1,0 +1,47 @@
+consumer: task-manager-typescript
+api_version: v1
+expectations:
+  - operation_id: register
+    success_status: "201"
+    required_response_fields:
+      - success
+      - data.user
+      - data.access_token
+      - data.refresh_token
+  - operation_id: login
+    success_status: "200"
+    required_response_fields:
+      - success
+      - data.user
+      - data.access_token
+      - data.refresh_token
+  - operation_id: listTasks
+    success_status: "200"
+    required_response_fields:
+      - success
+      - data.items
+      - data.pagination
+  - operation_id: createTask
+    success_status: "201"
+    required_response_fields:
+      - success
+      - data.id
+      - data.title
+      - data.completed
+  - operation_id: getTask
+    success_status: "200"
+    required_response_fields:
+      - success
+      - data.id
+      - data.title
+  - operation_id: completeTask
+    success_status: "200"
+    required_response_fields:
+      - success
+      - data.id
+      - data.completed
+  - operation_id: deleteTask
+    success_status: "200"
+    required_response_fields:
+      - success
+      - message
