@@ -78,8 +78,8 @@ func (s *GovernanceService) UpdatePolicy(actorUserID, workspaceID int64, req mod
 	})
 	if err == nil {
 		s.audit(workspaceID, actorUserID, "governance.policy.updated", "governance_policy", strconv.FormatInt(workspaceID, 10), map[string]any{
-			"default_classification": classification,
-			"audit_retention_days":   req.AuditRetentionDays,
+			"default_classification":      classification,
+			"audit_retention_days":        req.AuditRetentionDays,
 			"operational_retention_days": req.OperationalRetentionDays,
 			"privacy_request_sla_hours":  req.PrivacyRequestSLAHours,
 		})

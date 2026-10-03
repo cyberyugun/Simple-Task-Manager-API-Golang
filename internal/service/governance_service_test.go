@@ -34,7 +34,7 @@ func TestGovernanceLifecycleAndLegalHoldDeletionGuard(t *testing.T) {
 	svc := NewGovernanceService(governance, workspaces)
 	policy, err := svc.UpdatePolicy(owner.ID, workspace.ID, model.UpdateGovernancePolicyRequest{
 		DefaultClassification: model.DataClassificationConfidential,
-		AuditRetentionDays: 730, OperationalRetentionDays: 365, PrivacyRequestSLAHours: 72,
+		AuditRetentionDays:    730, OperationalRetentionDays: 365, PrivacyRequestSLAHours: 72,
 		RequireDPA: true, RestrictCrossRegionTransfer: true, AllowedDataRegions: []string{"id", "sg"},
 	})
 	if err != nil {
