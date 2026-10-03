@@ -404,6 +404,10 @@ func resetDatabase(db *sql.DB) error {
 		"DROP TABLE IF EXISTS webhook_deliveries CASCADE",
 		"DROP TABLE IF EXISTS webhook_subscriptions CASCADE",
 		"DROP TABLE IF EXISTS outbox_events CASCADE",
+		"DROP TABLE IF EXISTS consent_ledger CASCADE",
+		"DROP TABLE IF EXISTS privacy_export_packages CASCADE",
+		"DROP TABLE IF EXISTS archived_tasks CASCADE",
+		"DROP TABLE IF EXISTS governance_lifecycle_runs CASCADE",
 		"DROP TABLE IF EXISTS compliance_evidence CASCADE",
 		"DROP TABLE IF EXISTS privacy_requests CASCADE",
 		"DROP TABLE IF EXISTS legal_holds CASCADE",
@@ -439,6 +443,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"009_enterprise_identity.sql",
 		"010_mfa_device_security.sql",
 		"011_governance_compliance_data_protection.sql",
+		"012_data_lifecycle_privacy_automation.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {

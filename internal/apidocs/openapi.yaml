@@ -1429,6 +1429,140 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+
+  /api/workspaces/{id}/governance/lifecycle/runs:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Governance]
+      summary: List workspace data lifecycle runs
+      operationId: listLifecycleRuns
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lifecycle run history
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Governance]
+      summary: Run legal-hold-aware retention, archive, and purge processing
+      operationId: runDataLifecycle
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lifecycle run result
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/workspaces/{id}/governance/privacy-requests/{request_id}/export:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - in: path
+        name: request_id
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    post:
+      tags: [Enterprise Governance]
+      summary: Generate a checksum-protected DSAR export package
+      operationId: exportPrivacyRequest
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Privacy export package created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/workspaces/{id}/governance/privacy-requests/{request_id}/erase:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - in: path
+        name: request_id
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    post:
+      tags: [Enterprise Governance]
+      summary: Execute legal-hold-aware content anonymization for a delete request
+      operationId: erasePrivacyRequest
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Personal task content anonymized and request completed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Erasure blocked by active legal hold
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/workspaces/{id}/governance/consents:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Governance]
+      summary: List append-only consent and preference ledger records
+      operationId: listConsentLedger
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Consent ledger
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Governance]
+      summary: Record a consent grant or withdrawal
+      operationId: recordConsent
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Consent record appended
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/workspaces/{id}/governance/report:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Governance]
+      summary: Generate workspace governance operations report
+      operationId: getGovernanceOperationsReport
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Governance operations report
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
 components:
   securitySchemes:
     bearerAuth:

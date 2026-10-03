@@ -67,6 +67,7 @@ func main() {
 	var eventRepo repository.EventRepository
 	var enterpriseRepo repository.EnterpriseIdentityRepository
 	var governanceRepo repository.GovernanceRepository
+	var lifecycleRepo repository.LifecycleRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
 
@@ -91,6 +92,7 @@ func main() {
 		eventRepo = repository.NewPostgresEventRepository(db)
 		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
+		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
 		logger.Info(
@@ -108,6 +110,7 @@ func main() {
 		eventRepo = repository.NewInMemoryEventRepository()
 		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
+		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
@@ -169,6 +172,7 @@ func main() {
 	webhookService := service.NewWebhookService(workspaceRepo, eventRepo, cfg.WebhookAllowInsecure)
 	enterpriseService := service.NewEnterpriseIdentityService(enterpriseRepo, workspaceRepo, userRepo, tokenManager)
 	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
+	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)
 	workspaceService.SetDeletionGuard(governanceService)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
@@ -176,6 +180,7 @@ func main() {
 	webhookHandler := handler.NewWebhookHandler(webhookService)
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
+	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
 	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
@@ -291,6 +296,11 @@ func main() {
 	mux.Handle("/api/workspaces/{id}/governance/privacy-requests", protectedFirstParty(governanceHandler.PrivacyRequests))
 	mux.Handle("/api/workspaces/{id}/governance/privacy-requests/{request_id}/complete", protectedFirstParty(governanceHandler.CompletePrivacyRequest))
 	mux.Handle("/api/workspaces/{id}/governance/evidence", protectedFirstParty(governanceHandler.Evidence))
+	mux.Handle("/api/workspaces/{id}/governance/lifecycle/runs", protectedFirstParty(lifecycleHandler.Runs))
+	mux.Handle("/api/workspaces/{id}/governance/privacy-requests/{request_id}/export", protectedFirstParty(lifecycleHandler.ExportPrivacyRequest))
+	mux.Handle("/api/workspaces/{id}/governance/privacy-requests/{request_id}/erase", protectedFirstParty(lifecycleHandler.ErasePrivacyRequest))
+	mux.Handle("/api/workspaces/{id}/governance/consents", protectedFirstParty(lifecycleHandler.Consents))
+	mux.Handle("/api/workspaces/{id}/governance/report", protectedFirstParty(lifecycleHandler.Report))
 	mux.Handle("/api/workspaces/", protected(workspaceHandler.WorkspaceByID))
 
 	mux.Handle("/api/tasks", protectedWorkspaceIdempotent(taskHandler.Tasks))

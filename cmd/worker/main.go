@@ -15,6 +15,7 @@ import (
 	"go-simple-task-api/internal/events"
 	"go-simple-task-api/internal/observability"
 	"go-simple-task-api/internal/repository"
+	"go-simple-task-api/internal/service"
 )
 
 func main() {
@@ -48,6 +49,11 @@ func main() {
 		logger.Error("event_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	lifecyclePoll, err := durationEnv("LIFECYCLE_POLL_INTERVAL", time.Hour)
+	if err != nil {
+		logger.Error("lifecycle_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	allowInsecure, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("WEBHOOK_ALLOW_INSECURE_HTTP")))
 	host, _ := os.Hostname()
 	workerID := fmt.Sprintf("%s-%d", host, os.Getpid())
@@ -59,6 +65,15 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	lifecycleService := service.NewLifecycleService(
+		repository.NewPostgresLifecycleRepository(db),
+		repository.NewPostgresGovernanceRepository(db),
+		repository.NewPostgresWorkspaceRepository(db),
+		repository.NewPostgresTaskRepository(db),
+	)
+	go runLifecycleAutomation(ctx, lifecycleService, lifecyclePoll, logger)
+
 	logger.Info("event_worker_started", "worker_id", workerID, "batch_size", batch, "poll_interval", poll)
 	if err := worker.Run(ctx); err != nil && ctx.Err() == nil {
 		logger.Error("event_worker_stopped", "error", err)
@@ -89,4 +104,36 @@ func intEnv(name string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be a positive integer", name)
 	}
 	return value, nil
+}
+
+func runLifecycleAutomation(ctx context.Context, lifecycle *service.LifecycleService, poll time.Duration, logger *slog.Logger) {
+	run := func() {
+		workspaceIDs, err := lifecycle.ConfiguredWorkspaceIDs()
+		if err != nil {
+			logger.Error("lifecycle_workspace_list_failed", "error", err)
+			return
+		}
+		for _, workspaceID := range workspaceIDs {
+			run, err := lifecycle.RunSystem(workspaceID)
+			if err != nil {
+				logger.Error("lifecycle_run_failed", "workspace_id", workspaceID, "error", err)
+				continue
+			}
+			logger.Info("lifecycle_run_completed", "workspace_id", workspaceID, "status", run.Status, "archived_count", run.ArchivedCount, "purged_count", run.PurgedCount)
+		}
+	}
+
+	logger.Info("lifecycle_worker_started", "poll_interval", poll)
+	run()
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("lifecycle_worker_stopped")
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
 }
