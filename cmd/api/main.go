@@ -62,6 +62,7 @@ func main() {
 	var userRepo repository.UserRepository
 	var refreshRepo repository.RefreshTokenRepository
 	var actionRepo repository.AuthActionTokenRepository
+	var workspaceRepo repository.WorkspaceRepository
 
 	if cfg.DatabaseURL != "" {
 		db, err = appdb.OpenPostgres(cfg.DatabaseURL, appdb.Options{
@@ -80,6 +81,7 @@ func main() {
 		userRepo = repository.NewPostgresUserRepository(db)
 		refreshRepo = repository.NewPostgresRefreshTokenRepository(db)
 		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
+		workspaceRepo = repository.NewPostgresWorkspaceRepository(db)
 		logger.Info(
 			"storage_configured",
 			"backend", "postgresql",
@@ -91,6 +93,7 @@ func main() {
 		userRepo = repository.NewInMemoryUserRepository()
 		refreshRepo = repository.NewInMemoryRefreshTokenRepository()
 		actionRepo = repository.NewInMemoryAuthActionTokenRepository()
+		workspaceRepo = repository.NewInMemoryWorkspaceRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
 	}
 
@@ -127,9 +130,12 @@ func main() {
 		cfg.EmailVerificationTTL,
 	)
 	taskService := service.NewTaskService(taskRepo)
+	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
+	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
 	authMiddleware := middleware.Auth(tokenManager)
+	workspaceMiddleware := middleware.WorkspaceScope(workspaceRepo)
 
 	var authRateLimiter middleware.AuthRateLimiter
 	if redisClient != nil {
@@ -159,6 +165,9 @@ func main() {
 	}
 	protectedRateLimited := func(h http.HandlerFunc) http.Handler {
 		return authMiddleware(authRateLimiter.Handler(http.HandlerFunc(h)))
+	}
+	protectedWorkspace := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(workspaceMiddleware(http.HandlerFunc(h)))
 	}
 
 	ready := readiness.New(db, redisClient, cfg.ReadinessTimeout, metrics)
@@ -196,8 +205,11 @@ func main() {
 	mux.Handle("/api/auth/sessions/", protected(authHandler.SessionByID))
 	mux.Handle("/api/auth/email-verification/request", protectedRateLimited(authHandler.RequestEmailVerification))
 
-	mux.Handle("/api/tasks", protected(taskHandler.Tasks))
-	mux.Handle("/api/tasks/", protected(taskHandler.TaskByID))
+	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
+	mux.Handle("/api/workspaces/", protected(workspaceHandler.WorkspaceByID))
+
+	mux.Handle("/api/tasks", protectedWorkspace(taskHandler.Tasks))
+	mux.Handle("/api/tasks/", protectedWorkspace(taskHandler.TaskByID))
 
 	var root http.Handler = mux
 	root = middleware.Recover(logger, metrics, root)
