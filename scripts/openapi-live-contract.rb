@@ -136,4 +136,37 @@ raise "member audit access should be forbidden, got #{res.code}" unless res.code
 res = request(base, "get", "/api/workspaces/#{workspace_id}/audit", token: token)
 validate_response!(spec, res, "/api/workspaces/{id}/audit", "get", 200)
 
-puts "Live OpenAPI contract PASSED, including multi-tenant RBAC isolation."
+webhook_headers = {"X-Workspace-ID" => workspace_id.to_s}
+res = request(
+  base,
+  "post",
+  "/api/webhooks",
+  body: {
+    url: "https://example.com/webhook",
+    secret: "12345678901234567890123456789012",
+    event_types: ["task.created", "task.completed"]
+  },
+  token: token,
+  headers: webhook_headers
+)
+webhook = validate_response!(spec, res, "/api/webhooks", "post", 201)
+webhook_id = webhook.fetch("data").fetch("id")
+raise "webhook response leaked signing secret" if webhook.fetch("data").key?("secret")
+
+res = request(base, "get", "/api/webhooks", token: token, headers: webhook_headers)
+subscriptions = validate_response!(spec, res, "/api/webhooks", "get", 200)
+raise "created webhook missing from list" unless subscriptions.fetch("data").any? { |item| item["id"] == webhook_id }
+
+res = request(base, "get", "/api/webhooks", token: member_token, headers: webhook_headers)
+raise "member webhook administration should be forbidden, got #{res.code}" unless res.code.to_i == 403
+
+res = request(base, "get", "/api/events/stats", token: token, headers: webhook_headers)
+validate_response!(spec, res, "/api/events/stats", "get", 200)
+
+res = request(base, "post", "/api/events/replay", token: token, headers: webhook_headers)
+validate_response!(spec, res, "/api/events/replay", "post", 200)
+
+res = request(base, "delete", "/api/webhooks/#{webhook_id}", token: token, headers: webhook_headers)
+validate_response!(spec, res, "/api/webhooks/{id}", "delete", 200)
+
+puts "Live OpenAPI contract PASSED, including multi-tenant RBAC and async event administration."
