@@ -72,6 +72,7 @@ func main() {
 	var billingRepo repository.BillingRepository
 	var operationsRepo repository.OperationsRepository
 	var automationRepo repository.AutomationRepository
+	var integrationRepo repository.IntegrationRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
 
@@ -101,6 +102,7 @@ func main() {
 		billingRepo = repository.NewPostgresBillingRepository(db)
 		operationsRepo = repository.NewPostgresOperationsRepository(db)
 		automationRepo = repository.NewPostgresAutomationRepository(db)
+		integrationRepo = repository.NewPostgresIntegrationRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
 		logger.Info(
@@ -123,6 +125,7 @@ func main() {
 		billingRepo = repository.NewInMemoryBillingRepository()
 		operationsRepo = repository.NewInMemoryOperationsRepository()
 		automationRepo = repository.NewInMemoryAutomationRepository()
+		integrationRepo = repository.NewInMemoryIntegrationRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
@@ -189,6 +192,12 @@ func main() {
 	billingService := service.NewBillingService(billingRepo, organizationRepo)
 	operationsService := service.NewOperationsService(operationsRepo, organizationRepo, billingRepo, billingService)
 	automationService := service.NewAutomationService(automationRepo, organizationRepo, operationsRepo, billingRepo, billingService)
+	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
+	if err != nil {
+		logger.Error("integration_cipher_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	integrationService := service.NewIntegrationService(integrationRepo, organizationRepo, integrationCipher, cfg.WebhookAllowInsecure)
 	organizationService.SetEntitlementProvider(billingService)
 	workspaceService.SetDeletionGuard(governanceService)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
@@ -202,6 +211,7 @@ func main() {
 	billingHandler := handler.NewBillingHandler(billingService, cfg.BillingWebhookSecret)
 	operationsHandler := handler.NewOperationsHandler(operationsService)
 	automationHandler := handler.NewAutomationHandler(automationService)
+	integrationHandler := handler.NewIntegrationHandler(integrationService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
 	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
@@ -302,6 +312,8 @@ func main() {
 
 	mux.Handle("/api/billing/plans", protectedFirstParty(billingHandler.Plans))
 	mux.Handle("/api/billing/webhooks/{provider}", http.HandlerFunc(billingHandler.Webhook))
+	mux.Handle("/api/integrations/connectors", protectedFirstParty(integrationHandler.Connectors))
+	mux.Handle("/api/integrations/inbound/{connection_id}", http.HandlerFunc(integrationHandler.Inbound))
 
 	mux.Handle("/api/organizations", protectedFirstParty(organizationHandler.Organizations))
 	mux.Handle("/api/organizations/invitations/accept", protectedFirstParty(organizationHandler.AcceptInvitation))
@@ -343,6 +355,11 @@ func main() {
 	mux.Handle("/api/organizations/{id}/automation/executions", protectedFirstParty(automationHandler.Executions))
 	mux.Handle("/api/organizations/{id}/automation/executions/{execution_id}/decision", protectedFirstParty(automationHandler.DecideExecution))
 	mux.Handle("/api/organizations/{id}/automation/evaluate", protectedFirstParty(automationHandler.Evaluate))
+	mux.Handle("/api/organizations/{id}/integrations/connections", protectedFirstParty(integrationHandler.Connections))
+	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}", protectedFirstParty(integrationHandler.ConnectionByID))
+	mux.Handle("/api/organizations/{id}/integrations/deliveries", protectedFirstParty(integrationHandler.Deliveries))
+	mux.Handle("/api/organizations/{id}/integrations/deliveries/{delivery_id}/replay", protectedFirstParty(integrationHandler.ReplayDelivery))
+	mux.Handle("/api/organizations/{id}/integrations/inbound-events", protectedFirstParty(integrationHandler.InboundEvents))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))

@@ -59,6 +59,16 @@ func main() {
 		logger.Error("automation_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	integrationPoll, err := durationEnv("INTEGRATION_POLL_INTERVAL", 2*time.Second)
+	if err != nil {
+		logger.Error("integration_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	integrationBatch, err := intEnv("INTEGRATION_BATCH_SIZE", 25)
+	if err != nil {
+		logger.Error("integration_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	allowInsecure, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("WEBHOOK_ALLOW_INSECURE_HTTP")))
 	host, _ := os.Hostname()
 	workerID := fmt.Sprintf("%s-%d", host, os.Getpid())
@@ -90,6 +100,19 @@ func main() {
 		billingService,
 	)
 	go runAutomationPolicies(ctx, automationService, automationPoll, logger)
+
+	integrationCipher, err := service.NewIntegrationCredentialCipher(os.Getenv("JWT_SECRET"))
+	if err != nil {
+		logger.Error("integration_cipher_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	integrationService := service.NewIntegrationService(
+		repository.NewPostgresIntegrationRepository(db),
+		organizationRepo,
+		integrationCipher,
+		allowInsecure,
+	)
+	go runIntegrationDeliveries(ctx, integrationService, workerID+"-integration", integrationPoll, integrationBatch, logger)
 
 	logger.Info("event_worker_started", "worker_id", workerID, "batch_size", batch, "poll_interval", poll)
 	if err := worker.Run(ctx); err != nil && ctx.Err() == nil {
@@ -181,6 +204,39 @@ func runAutomationPolicies(ctx context.Context, automation *service.AutomationSe
 		select {
 		case <-ctx.Done():
 			logger.Info("automation_worker_stopped")
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
+func runIntegrationDeliveries(ctx context.Context, integrations *service.IntegrationService, workerID string, poll time.Duration, batch int, logger *slog.Logger) {
+	run := func() {
+		deliveries, err := integrations.ProcessBatch(workerID, batch)
+		if err != nil {
+			logger.Error("integration_delivery_batch_failed", "error", err)
+			return
+		}
+		for _, delivery := range deliveries {
+			logger.Info(
+				"integration_delivery_processed",
+				"organization_id", delivery.OrganizationID,
+				"connection_id", delivery.ConnectionID,
+				"delivery_id", delivery.ID,
+				"status", delivery.Status,
+			)
+		}
+	}
+
+	logger.Info("integration_worker_started", "poll_interval", poll, "batch_size", batch)
+	run()
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("integration_worker_stopped")
 			return
 		case <-ticker.C:
 			run()

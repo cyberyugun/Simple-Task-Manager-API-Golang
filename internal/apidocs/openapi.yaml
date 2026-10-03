@@ -25,6 +25,7 @@ tags:
   - name: Enterprise Billing
   - name: Enterprise Operations
   - name: Enterprise Automation
+  - name: Enterprise Integrations
 
 paths:
   /health:
@@ -2311,6 +2312,116 @@ paths:
           description: Newly requested or completed executions
         '403':
           $ref: '#/components/responses/Forbidden'
+
+
+  /api/integrations/connectors:
+    get:
+      tags: [Enterprise Integrations]
+      summary: List built-in integration connector capabilities
+      operationId: listIntegrationConnectors
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Connector catalog
+  /api/integrations/inbound/{connection_id}:
+    post:
+      tags: [Enterprise Integrations]
+      summary: Accept an HMAC-signed federated integration event
+      operationId: acceptIntegrationInboundEvent
+      responses:
+        '202':
+          description: Inbound event accepted
+        '200':
+          description: Duplicate event ignored idempotently
+        '401':
+          description: Invalid integration signature
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/integrations/connections:
+    get:
+      tags: [Enterprise Integrations]
+      summary: List organization integration connections without credentials
+      operationId: listIntegrationConnections
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Integration connections
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Integrations]
+      summary: Create an encrypted integration connection
+      operationId: createIntegrationConnection
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Integration connection created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/integrations/connections/{connection_id}:
+    put:
+      tags: [Enterprise Integrations]
+      summary: Update connection configuration, status, or credentials
+      operationId: updateIntegrationConnection
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Integration connection updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/integrations/deliveries:
+    get:
+      tags: [Enterprise Integrations]
+      summary: List outbound delivery history including retry/dead-letter state
+      operationId: listIntegrationDeliveries
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Integration deliveries
+    post:
+      tags: [Enterprise Integrations]
+      summary: Queue an outbound federated integration event
+      operationId: createIntegrationDelivery
+      security:
+        - bearerAuth: []
+      responses:
+        '202':
+          description: Delivery queued
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Connection disabled
+  /api/organizations/{id}/integrations/deliveries/{delivery_id}/replay:
+    post:
+      tags: [Enterprise Integrations]
+      summary: Replay an integration delivery from retry or dead-letter state
+      operationId: replayIntegrationDelivery
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Delivery queued for replay
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/integrations/inbound-events:
+    get:
+      tags: [Enterprise Integrations]
+      summary: List accepted inbound federated events
+      operationId: listIntegrationInboundEvents
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Inbound integration event history
 
 components:
   securitySchemes:

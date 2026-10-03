@@ -658,3 +658,8 @@ Phase 30 adds an organization-level operational control plane: configurable mont
 ## Enterprise automation and policy orchestration
 
 Phase 31 adds structured policy-as-code automation across billing and operations. Policies can evaluate operational alerts or billing API-capacity utilization, apply comparator/threshold conditions, require approval or use guarded automatic execution, enforce cooldown/deduplication, and execute only whitelisted runbooks. The initial runbook opens operational incidents; SEV1/SEV2 actions always require explicit approval. The worker evaluates enabled rules every five minutes by default; set `AUTOMATION_POLL_INTERVAL` to change the cadence. See [docs/enterprise-automation-policy-orchestration.md](docs/enterprise-automation-policy-orchestration.md).
+
+
+## Enterprise integration hub and workflow federation
+
+Phase 32 adds a provider-neutral integration hub with a connector catalog for Slack, Microsoft Teams, Jira, GitHub, and generic webhooks. Organization connections keep credentials AES-GCM encrypted at rest and never return credentials through list/update responses. Outbound events use a persisted worker queue with exponential retry, dead-letter state, replay, stale-lock recovery, connection health, and rate-limit metadata. Inbound federation is HMAC-SHA256 signed and deduplicated by provider event ID. Set `INTEGRATION_POLL_INTERVAL` and `INTEGRATION_BATCH_SIZE` to tune dispatcher behavior. See [docs/enterprise-integration-hub.md](docs/enterprise-integration-hub.md).
