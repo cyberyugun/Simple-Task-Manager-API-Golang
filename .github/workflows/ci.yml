@@ -637,8 +637,7 @@ jobs:
           workspaces="$(curl --fail --silent http://localhost:8080/api/workspaces -H "Authorization: Bearer $token")"
           owner_id="$(printf '%s' "$workspaces" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; personal=next(x for x in items if x["is_personal"]); print(personal["created_by_user_id"])')"
 
-          due="$(python3 -c 'import datetime; print((datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(minutes=30)).isoformat().replace("+00:00","Z"))')"
-          task_payload="$(python3 -c 'import json,sys; print(json.dumps({"title":"Phase 35 notification smoke","description":"event fanout","status":"TODO","priority":"HIGH","due_at":sys.argv[1]}))' "$due")"
+          task_payload='{"title":"Phase 35 notification smoke","description":"event fanout","status":"TODO","priority":"HIGH"}'
           task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$task_payload")"
           task_id="$(printf '%s' "$task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
           assignee_payload="$(python3 -c 'import json,sys; print(json.dumps({"user_id":int(sys.argv[1])}))' "$owner_id")"
