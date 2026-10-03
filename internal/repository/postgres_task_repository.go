@@ -131,7 +131,7 @@ func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuer
 		"id": "id", "title": "LOWER(title)", "created_at": "created_at",
 		"updated_at": "updated_at", "completed": "completed", "status": "status",
 		"priority": `CASE priority WHEN 'LOW' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'HIGH' THEN 3 WHEN 'URGENT' THEN 4 ELSE 0 END`,
-		"due_at": "due_at", "position": "position",
+		"due_at":   "due_at", "position": "position",
 	}
 	sortColumn := sortColumns[query.Sort]
 	if sortColumn == "" {
@@ -174,7 +174,7 @@ func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuer
 		return model.TaskPage{}, err
 	}
 	return model.TaskPage{
-		Items: tasks,
+		Items:      tasks,
 		Pagination: model.Pagination{Page: query.Page, Limit: query.Limit, Total: total, TotalPages: totalPages(total, query.Limit)},
 	}, nil
 }
