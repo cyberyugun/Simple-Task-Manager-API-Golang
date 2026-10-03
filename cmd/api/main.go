@@ -73,6 +73,7 @@ func main() {
 	var billingRepo repository.BillingRepository
 	var operationsRepo repository.OperationsRepository
 	var automationRepo repository.AutomationRepository
+	var workflowRepo repository.WorkflowRepository
 	var integrationRepo repository.IntegrationRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
@@ -104,6 +105,7 @@ func main() {
 		billingRepo = repository.NewPostgresBillingRepository(db)
 		operationsRepo = repository.NewPostgresOperationsRepository(db)
 		automationRepo = repository.NewPostgresAutomationRepository(db)
+		workflowRepo = repository.NewPostgresWorkflowRepository(db)
 		integrationRepo = repository.NewPostgresIntegrationRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
@@ -128,6 +130,7 @@ func main() {
 		billingRepo = repository.NewInMemoryBillingRepository()
 		operationsRepo = repository.NewInMemoryOperationsRepository()
 		automationRepo = repository.NewInMemoryAutomationRepository()
+		workflowRepo = repository.NewInMemoryWorkflowRepository()
 		integrationRepo = repository.NewInMemoryIntegrationRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
@@ -197,6 +200,8 @@ func main() {
 	billingService := service.NewBillingService(billingRepo, organizationRepo)
 	operationsService := service.NewOperationsService(operationsRepo, organizationRepo, billingRepo, billingService)
 	automationService := service.NewAutomationService(automationRepo, organizationRepo, operationsRepo, billingRepo, billingService)
+	workflowExecutors := service.NewWorkflowExecutorRegistry(taskRepo, operationsRepo)
+	workflowService := service.NewWorkflowService(workflowRepo, organizationRepo, workflowExecutors)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {
 		logger.Error("integration_cipher_configuration_failed", "error", err)
@@ -217,6 +222,7 @@ func main() {
 	billingHandler := handler.NewBillingHandler(billingService, cfg.BillingWebhookSecret)
 	operationsHandler := handler.NewOperationsHandler(operationsService)
 	automationHandler := handler.NewAutomationHandler(automationService)
+	workflowHandler := handler.NewWorkflowHandler(workflowService)
 	integrationHandler := handler.NewIntegrationHandler(integrationService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
@@ -361,6 +367,20 @@ func main() {
 	mux.Handle("/api/organizations/{id}/automation/executions", protectedFirstParty(automationHandler.Executions))
 	mux.Handle("/api/organizations/{id}/automation/executions/{execution_id}/decision", protectedFirstParty(automationHandler.DecideExecution))
 	mux.Handle("/api/organizations/{id}/automation/evaluate", protectedFirstParty(automationHandler.Evaluate))
+	mux.Handle("/api/organizations/{id}/workflows/node-schemas", protectedFirstParty(workflowHandler.NodeSchemas))
+	mux.Handle("/api/organizations/{id}/workflows/trigger", protectedFirstParty(workflowHandler.Trigger))
+	mux.Handle("/api/organizations/{id}/workflows", protectedFirstParty(workflowHandler.Workflows))
+	mux.Handle("/api/organizations/{id}/workflows/{workflow_id}", protectedFirstParty(workflowHandler.WorkflowByID))
+	mux.Handle("/api/organizations/{id}/workflows/{workflow_id}/versions", protectedFirstParty(workflowHandler.Versions))
+	mux.Handle("/api/organizations/{id}/workflows/{workflow_id}/versions/{version_id}", protectedFirstParty(workflowHandler.VersionByID))
+	mux.Handle("/api/organizations/{id}/workflows/{workflow_id}/versions/{version_id}/publish", protectedFirstParty(workflowHandler.Publish))
+	mux.Handle("/api/organizations/{id}/workflows/{workflow_id}/versions/{version_id}/activate", protectedFirstParty(workflowHandler.Activate))
+	mux.Handle("/api/organizations/{id}/workflows/{workflow_id}/start", protectedFirstParty(workflowHandler.Start))
+	mux.Handle("/api/organizations/{id}/workflow-executions", protectedFirstParty(workflowHandler.Executions))
+	mux.Handle("/api/organizations/{id}/workflow-executions/{execution_id}", protectedFirstParty(workflowHandler.ExecutionByID))
+	mux.Handle("/api/organizations/{id}/workflow-executions/{execution_id}/cancel", protectedFirstParty(workflowHandler.Cancel))
+	mux.Handle("/api/organizations/{id}/workflow-executions/{execution_id}/retry", protectedFirstParty(workflowHandler.Retry))
+	mux.Handle("/api/organizations/{id}/workflow-approvals/{approval_id}/decision", protectedFirstParty(workflowHandler.DecideApproval))
 	mux.Handle("/api/organizations/{id}/integrations/connections", protectedFirstParty(integrationHandler.Connections))
 	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}", protectedFirstParty(integrationHandler.ConnectionByID))
 	mux.Handle("/api/organizations/{id}/integrations/deliveries", protectedFirstParty(integrationHandler.Deliveries))

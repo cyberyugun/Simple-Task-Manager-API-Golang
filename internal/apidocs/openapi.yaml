@@ -26,6 +26,7 @@ tags:
   - name: Enterprise Billing
   - name: Enterprise Operations
   - name: Enterprise Automation
+  - name: Enterprise Workflows
   - name: Enterprise Integrations
 
 paths:
@@ -2314,6 +2315,161 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+
+  /api/organizations/{id}/workflows/node-schemas:
+    get:
+      tags: [Enterprise Workflows]
+      summary: List supported workflow node schemas and allowlisted executors
+      operationId: listWorkflowNodeSchemas
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow node schema registry }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/organizations/{id}/workflows/trigger:
+    post:
+      tags: [Enterprise Workflows]
+      summary: Trigger active workflows by event, schedule, connector, or internal trigger
+      operationId: triggerWorkflows
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Matching workflow executions created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/organizations/{id}/workflows:
+    get:
+      tags: [Enterprise Workflows]
+      summary: List organization workflow definitions
+      operationId: listWorkflows
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow definitions }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Enterprise Workflows]
+      summary: Create a workflow definition with its first draft version
+      operationId: createWorkflow
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Workflow and draft version created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Organization workflow limit reached }
+  /api/organizations/{id}/workflows/{workflow_id}:
+    get:
+      tags: [Enterprise Workflows]
+      summary: Get an organization workflow definition
+      operationId: getWorkflow
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow definition }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/organizations/{id}/workflows/{workflow_id}/versions:
+    get:
+      tags: [Enterprise Workflows]
+      summary: List immutable published and editable draft workflow versions
+      operationId: listWorkflowVersions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow versions }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Enterprise Workflows]
+      summary: Create a new draft workflow version
+      operationId: createWorkflowDraft
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Draft workflow version created }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/organizations/{id}/workflows/{workflow_id}/versions/{version_id}:
+    put:
+      tags: [Enterprise Workflows]
+      summary: Replace an editable draft workflow graph
+      operationId: updateWorkflowDraft
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Draft workflow version updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Published workflow version is immutable }
+  /api/organizations/{id}/workflows/{workflow_id}/versions/{version_id}/publish:
+    post:
+      tags: [Enterprise Workflows]
+      summary: Validate and publish an immutable workflow version
+      operationId: publishWorkflowVersion
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow version published with deterministic checksum }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Workflow version cannot be published }
+  /api/organizations/{id}/workflows/{workflow_id}/versions/{version_id}/activate:
+    post:
+      tags: [Enterprise Workflows]
+      summary: Activate a published workflow version
+      operationId: activateWorkflowVersion
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow active version changed }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Version must be published before activation }
+  /api/organizations/{id}/workflows/{workflow_id}/start:
+    post:
+      tags: [Enterprise Workflows]
+      summary: Start the active workflow version manually or in test/dry-run mode
+      operationId: startWorkflowExecution
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Durable workflow execution created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Workflow has no active published version }
+  /api/organizations/{id}/workflow-executions:
+    get:
+      tags: [Enterprise Workflows]
+      summary: List workflow execution history
+      operationId: listWorkflowExecutions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow execution history }
+  /api/organizations/{id}/workflow-executions/{execution_id}:
+    get:
+      tags: [Enterprise Workflows]
+      summary: Get execution observability detail including node runs, approvals, and checkpoints
+      operationId: getWorkflowExecution
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow execution detail }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/organizations/{id}/workflow-executions/{execution_id}/cancel:
+    post:
+      tags: [Enterprise Workflows]
+      summary: Cancel a non-terminal workflow execution
+      operationId: cancelWorkflowExecution
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow execution cancelled }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Workflow execution is already terminal }
+  /api/organizations/{id}/workflow-executions/{execution_id}/retry:
+    post:
+      tags: [Enterprise Workflows]
+      summary: Manually retry a failed or compensated workflow execution
+      operationId: retryWorkflowExecution
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workflow execution retried from the requested or latest failed node }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Workflow execution is not retryable }
+  /api/organizations/{id}/workflow-approvals/{approval_id}/decision:
+    post:
+      tags: [Enterprise Workflows]
+      summary: Approve or reject a pending workflow approval node
+      operationId: decideWorkflowApproval
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Approval decision applied and execution resumed or failed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/integrations/connectors:
     get:

@@ -670,3 +670,8 @@ Phase 32 adds a provider-neutral integration hub with a connector catalog for Sl
 Phase 33 upgrades the core product domain from simple completed/not-completed tasks to a collaborative work-management model. Tasks now support lifecycle status, priority, start/due/completed timestamps, projects and lists, parent/subtask hierarchy, estimates and actual time, optimistic versions, archive/trash/restore, assignees, watchers, labels, comments, dependencies with cycle prevention, recurrence configuration, custom fields, and an activity timeline. Legacy `completed` remains compatible: `DONE` maps to `completed=true`, and the existing `/api/tasks/{id}/complete` endpoint is retained.
 
 See [docs/task-management-2-collaboration.md](docs/task-management-2-collaboration.md).
+
+
+## Enterprise workflow builder and event-driven orchestration
+
+Phase 34 adds organization-scoped, versioned workflow DAGs with draft/publish/activate lifecycle, deterministic published snapshots, manual/event/scheduled/connector/internal triggers, condition/transform/approval/action/delay/branch/parallel/join/subworkflow nodes, variable mappings, durable checkpoints, worker-driven resume, retries/timeouts, cancellation, manual retry, compensation, dry-run execution, and execution history. Runtime actions are restricted to an allowlisted executor registry; arbitrary shell/code execution is not supported. Set `WORKFLOW_POLL_INTERVAL` to tune delayed/retry resumption. See [docs/enterprise-workflow-builder.md](docs/enterprise-workflow-builder.md).
