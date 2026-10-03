@@ -126,6 +126,25 @@ func (h *AuthHandler) Sessions(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: sessions})
 }
 
+func (h *AuthHandler) SessionRisks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		unauthorized(w)
+		return
+	}
+
+	items, err := h.service.SessionRisks(userID, sessionMetadata(r))
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: items})
+}
+
 func (h *AuthHandler) SessionByID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		methodNotAllowed(w)
