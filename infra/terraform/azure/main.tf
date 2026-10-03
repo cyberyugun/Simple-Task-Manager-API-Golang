@@ -99,6 +99,7 @@ resource "azurerm_kubernetes_cluster" "main" {
     name                         = "system"
     vm_size                      = var.aks_node_vm_size
     node_count                   = var.aks_node_count
+    zones                        = var.aks_node_zones
     vnet_subnet_id               = azurerm_subnet.aks.id
     only_critical_addons_enabled = true
 
@@ -161,7 +162,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
 
   storage_mb                    = 32768
   sku_name                      = var.postgres_sku_name
-  backup_retention_days         = 14
+  backup_retention_days         = var.postgres_backup_retention_days
   geo_redundant_backup_enabled  = true
   public_network_access_enabled = false
 
