@@ -88,7 +88,7 @@ func (h *LifecycleHandler) ErasePrivacyRequest(w http.ResponseWriter, r *http.Re
 	}
 	response.JSON(w, http.StatusOK, response.Envelope{
 		Success: true,
-		Data: map[string]any{"anonymized_tasks": count},
+		Data:    map[string]any{"anonymized_tasks": count},
 	})
 }
 
