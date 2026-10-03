@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ type TaskCollaborationService struct {
 	repo       repository.TaskCollaborationRepository
 	tasks      repository.TaskRepository
 	workspaces repository.WorkspaceRepository
+	notifier   NotificationEmitter
 }
 
 func NewTaskCollaborationService(
@@ -34,6 +36,10 @@ func NewTaskCollaborationService(
 	workspaces repository.WorkspaceRepository,
 ) *TaskCollaborationService {
 	return &TaskCollaborationService{repo: repo, tasks: tasks, workspaces: workspaces}
+}
+
+func (s *TaskCollaborationService) SetNotificationEmitter(notifier NotificationEmitter) {
+	s.notifier = notifier
 }
 
 func (s *TaskCollaborationService) CreateProject(actorUserID int64, access model.WorkspaceAccess, req model.CreateTaskProjectRequest) (model.TaskProject, error) {
@@ -134,7 +140,8 @@ func (s *TaskCollaborationService) TaskLabels(workspaceID, taskID int64) ([]mode
 }
 
 func (s *TaskCollaborationService) AddAssignee(actorUserID, workspaceID, taskID, userID int64) error {
-	if _, err := s.requireTask(workspaceID, taskID); err != nil {
+	task, err := s.requireTask(workspaceID, taskID)
+	if err != nil {
 		return err
 	}
 	if _, err := s.workspaces.ResolveAccess(userID, workspaceID, time.Now().UTC()); err != nil {
@@ -144,8 +151,23 @@ func (s *TaskCollaborationService) AddAssignee(actorUserID, workspaceID, taskID,
 	if err := s.repo.AddAssignee(workspaceID, taskID, userID, actorUserID, now); err != nil {
 		return err
 	}
-	return s.record(actorUserID, workspaceID, taskID, "task.assigned", model.EventTaskAssigned,
-		map[string]any{"user_id": userID}, map[string]any{"task_id": taskID, "user_id": userID})
+	if err := s.record(actorUserID, workspaceID, taskID, "task.assigned", model.EventTaskAssigned,
+		map[string]any{"user_id": userID}, map[string]any{"task_id": taskID, "user_id": userID}); err != nil {
+		return err
+	}
+	if s.notifier != nil && userID != actorUserID {
+		workspace := workspaceID
+		if err := s.notifier.EmitNotificationSignal(model.NotificationSignal{
+			UserIDs: []int64{userID}, WorkspaceID: &workspace,
+			EventType: model.NotificationEventTaskAssigned,
+			Title: "Task assigned", Body: "You were assigned to "+task.Title,
+			DedupKey: fmt.Sprintf("task-assigned:%d:%d:%d", taskID, userID, now.UnixNano()),
+			Data: map[string]any{"task_id": taskID, "actor_user_id": actorUserID},
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *TaskCollaborationService) RemoveAssignee(actorUserID, workspaceID, taskID, userID int64) error {
@@ -217,6 +239,31 @@ func (s *TaskCollaborationService) CreateComment(actorUserID, workspaceID, taskI
 	if err := s.record(actorUserID, workspaceID, taskID, "task.comment.created", model.EventTaskCommentCreated,
 		map[string]any{"comment_id": item.ID}, item); err != nil {
 		return model.TaskComment{}, err
+	}
+	if s.notifier != nil {
+		mentioned := extractMentionUserIDs(item.Body)
+		filtered := make([]int64, 0, len(mentioned))
+		for _, userID := range mentioned {
+			if userID == actorUserID {
+				continue
+			}
+			if _, err := s.workspaces.ResolveAccess(userID, workspaceID, time.Now().UTC()); err == nil {
+				filtered = append(filtered, userID)
+			}
+		}
+		if len(filtered) > 0 {
+			workspace := workspaceID
+			if err := s.notifier.EmitNotificationSignal(model.NotificationSignal{
+				UserIDs: filtered, WorkspaceID: &workspace,
+				EventType: model.NotificationEventTaskMentioned,
+				Title: "Mentioned in a task comment",
+				Body: item.Body,
+				DedupKey: fmt.Sprintf("task-mention:%d:%d", taskID, item.ID),
+				Data: map[string]any{"task_id": taskID, "comment_id": item.ID, "actor_user_id": actorUserID},
+			}); err != nil {
+				return model.TaskComment{}, err
+			}
+		}
 	}
 	return item, nil
 }
@@ -604,4 +651,23 @@ func taskTimeEqual(a, b *time.Time) bool {
 
 func formatTaskID(id int64) string {
 	return fmt.Sprint(id)
+}
+
+
+func extractMentionUserIDs(body string) []int64 {
+	seen := map[int64]bool{}
+	out := make([]int64, 0)
+	for _, token := range strings.Fields(body) {
+		token = strings.Trim(token, ".,:;!?()[]{}<>")
+		if !strings.HasPrefix(token, "@") || len(token) < 2 {
+			continue
+		}
+		id, err := strconv.ParseInt(strings.TrimPrefix(token, "@"), 10, 64)
+		if err != nil || id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }
