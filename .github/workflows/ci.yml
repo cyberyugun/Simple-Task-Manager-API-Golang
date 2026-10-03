@@ -347,6 +347,17 @@ jobs:
             -d "{\"refresh_token\":\"$new_refresh\"}")"
           test "$logout_all_refresh_status" = "401"
 
+      - name: Smoke test enterprise organization administration
+        run: |
+          login_response="$(curl --fail --silent             -X POST http://localhost:8080/api/auth/login             -H 'Content-Type: application/json'             -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          organization_response="$(curl --fail --silent             -X POST http://localhost:8080/api/organizations             -H "Authorization: Bearer $token"             -H 'Content-Type: application/json'             -d '{"name":"CI Enterprise","max_workspaces":2,"max_members":10}')"
+          organization_id="$(printf '%s' "$organization_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          dashboard="$(curl --fail --silent             "http://localhost:8080/api/organizations/$organization_id/dashboard"             -H "Authorization: Bearer $token")"
+          printf '%s' "$dashboard" | python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert data["member_count"] == 1; assert data["workspace_count"] == 0; assert data["member_capacity"] == 9; assert data["workspace_capacity"] == 2'
+
       - name: Smoke test idempotent task and outbox worker
         run: |
           login_response="$(curl --fail --silent \
