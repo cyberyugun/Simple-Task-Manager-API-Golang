@@ -25,6 +25,16 @@ func setValidEnv(t *testing.T) {
 		"APP_ENV",
 		"OTEL_EXPORTER_OTLP_ENDPOINT",
 		"OTEL_SERVICE_NAME",
+		"DB_MAX_OPEN_CONNS",
+		"DB_MAX_IDLE_CONNS",
+		"DB_CONN_MAX_IDLE_TIME",
+		"DB_CONN_MAX_LIFETIME",
+		"REDIS_POOL_SIZE",
+		"REDIS_MIN_IDLE_CONNS",
+		"REDIS_POOL_TIMEOUT",
+		"REDIS_DIAL_TIMEOUT",
+		"REDIS_READ_TIMEOUT",
+		"REDIS_WRITE_TIMEOUT",
 	} {
 		t.Setenv(name, "")
 	}
@@ -62,6 +72,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.AppEnv != "development" || cfg.OTELServiceName != "task-api" || cfg.OTELExporterEndpoint != "" {
 		t.Fatalf("unexpected observability defaults: %+v", cfg)
 	}
+	if cfg.DBMaxOpenConns != 10 || cfg.DBMaxIdleConns != 5 || cfg.DBConnMaxIdleTime != 5*time.Minute || cfg.DBConnMaxLifetime != 30*time.Minute {
+		t.Fatalf("unexpected database pool defaults: %+v", cfg)
+	}
+	if cfg.RedisPoolSize != 20 || cfg.RedisMinIdleConns != 5 || cfg.RedisPoolTimeout != 4*time.Second {
+		t.Fatalf("unexpected redis pool defaults: %+v", cfg)
+	}
 }
 
 func TestLoadCustomValues(t *testing.T) {
@@ -83,6 +99,16 @@ func TestLoadCustomValues(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector.monitoring.svc.cluster.local:4318")
 	t.Setenv("OTEL_SERVICE_NAME", "task-api-prod")
+	t.Setenv("DB_MAX_OPEN_CONNS", "24")
+	t.Setenv("DB_MAX_IDLE_CONNS", "12")
+	t.Setenv("DB_CONN_MAX_IDLE_TIME", "4m")
+	t.Setenv("DB_CONN_MAX_LIFETIME", "20m")
+	t.Setenv("REDIS_POOL_SIZE", "40")
+	t.Setenv("REDIS_MIN_IDLE_CONNS", "10")
+	t.Setenv("REDIS_POOL_TIMEOUT", "5s")
+	t.Setenv("REDIS_DIAL_TIMEOUT", "6s")
+	t.Setenv("REDIS_READ_TIMEOUT", "4s")
+	t.Setenv("REDIS_WRITE_TIMEOUT", "4s")
 
 	cfg, err := Load()
 	if err != nil {
@@ -109,6 +135,9 @@ func TestLoadCustomValues(t *testing.T) {
 	if cfg.AppEnv != "production" || cfg.OTELServiceName != "task-api-prod" || cfg.OTELExporterEndpoint == "" {
 		t.Fatalf("unexpected observability config: %+v", cfg)
 	}
+	if cfg.DBMaxOpenConns != 24 || cfg.DBMaxIdleConns != 12 || cfg.RedisPoolSize != 40 || cfg.RedisMinIdleConns != 10 {
+		t.Fatalf("unexpected pool config: %+v", cfg)
+	}
 }
 
 func TestLoadRejectsInvalidValues(t *testing.T) {
@@ -130,6 +159,12 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{name: "invalid rate window", envName: "AUTH_RATE_LIMIT_WINDOW", value: "-1m"},
 		{name: "invalid fail open", envName: "RATE_LIMIT_FAIL_OPEN", value: "sometimes"},
 		{name: "invalid expose flag", envName: "EXPOSE_AUTH_TOKENS", value: "sometimes"},
+		{name: "invalid db max open", envName: "DB_MAX_OPEN_CONNS", value: "0"},
+		{name: "invalid db max idle", envName: "DB_MAX_IDLE_CONNS", value: "-1"},
+		{name: "invalid db idle duration", envName: "DB_CONN_MAX_IDLE_TIME", value: "0s"},
+		{name: "invalid redis pool", envName: "REDIS_POOL_SIZE", value: "0"},
+		{name: "invalid redis min idle", envName: "REDIS_MIN_IDLE_CONNS", value: "-1"},
+		{name: "invalid redis timeout", envName: "REDIS_POOL_TIMEOUT", value: "0s"},
 	}
 
 	for _, tt := range tests {
@@ -145,6 +180,24 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 	t.Run("short secret", func(t *testing.T) {
 		setValidEnv(t)
 		t.Setenv("JWT_SECRET", "short")
+		if _, err := Load(); err == nil {
+			t.Fatal("Load() error = nil, want validation error")
+		}
+	})
+
+	t.Run("db idle exceeds open", func(t *testing.T) {
+		setValidEnv(t)
+		t.Setenv("DB_MAX_OPEN_CONNS", "4")
+		t.Setenv("DB_MAX_IDLE_CONNS", "5")
+		if _, err := Load(); err == nil {
+			t.Fatal("Load() error = nil, want validation error")
+		}
+	})
+
+	t.Run("redis idle exceeds pool", func(t *testing.T) {
+		setValidEnv(t)
+		t.Setenv("REDIS_POOL_SIZE", "4")
+		t.Setenv("REDIS_MIN_IDLE_CONNS", "5")
 		if _, err := Load(); err == nil {
 			t.Fatal("Load() error = nil, want validation error")
 		}
