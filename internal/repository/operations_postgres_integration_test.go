@@ -90,7 +90,7 @@ func TestIntegrationPostgresOperationsRepository(t *testing.T) {
 
 	window, err := ops.CreateMaintenanceWindow(model.MaintenanceWindow{
 		OrganizationID: org.ID, Title: "maintenance", Status: model.MaintenanceStatusScheduled,
-		StartsAt: now.Add(time.Hour), EndsAt: now.Add(2*time.Hour),
+		StartsAt: now.Add(time.Hour), EndsAt: now.Add(2 * time.Hour),
 		CreatedByUserID: owner.ID, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
