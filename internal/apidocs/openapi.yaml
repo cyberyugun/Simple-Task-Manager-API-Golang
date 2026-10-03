@@ -21,6 +21,7 @@ tags:
   - name: Webhooks
   - name: Enterprise Identity
   - name: Enterprise Governance
+  - name: Enterprise Administration
 
 paths:
   /health:
@@ -1560,6 +1561,342 @@ paths:
           description: Governance operations report
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+
+  /api/organizations:
+    get:
+      tags: [Enterprise Administration]
+      summary: List organizations available to the authenticated user
+      operationId: listOrganizations
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization list
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Enterprise Administration]
+      summary: Create an organization or child organization
+      operationId: createOrganization
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Organization created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/invitations/accept:
+    post:
+      tags: [Enterprise Administration]
+      summary: Accept an organization invitation using its opaque token
+      operationId: acceptOrganizationInvitation
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Invitation accepted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}:
+    get:
+      tags: [Enterprise Administration]
+      summary: Get an organization visible to the authenticated member
+      operationId: getOrganization
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/status:
+    put:
+      tags: [Enterprise Administration]
+      summary: Suspend, reactivate, or deactivate an organization
+      operationId: updateOrganizationStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization status updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/quota:
+    put:
+      tags: [Enterprise Administration]
+      summary: Update organization workspace and member quotas
+      operationId: updateOrganizationQuota
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization quota updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/ownership:
+    put:
+      tags: [Enterprise Administration]
+      summary: Transfer organization ownership to an existing member
+      operationId: transferOrganizationOwnership
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Ownership transferred
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/directory:
+    get:
+      tags: [Enterprise Administration]
+      summary: List organization enterprise directory
+      operationId: getOrganizationDirectory
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization directory
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/members/bulk:
+    post:
+      tags: [Enterprise Administration]
+      summary: Bulk add or update organization members
+      operationId: bulkUpsertOrganizationMembers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Members updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Organization member quota exceeded
+  /api/organizations/{id}/members/{user_id}:
+    delete:
+      tags: [Enterprise Administration]
+      summary: Remove a non-owner organization member
+      operationId: removeOrganizationMember
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Member removed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/workspaces:
+    get:
+      tags: [Enterprise Administration]
+      summary: List organization workspaces
+      operationId: listOrganizationWorkspaces
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization workspace list
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Administration]
+      summary: Attach a workspace with quota enforcement
+      operationId: attachOrganizationWorkspace
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Workspace attached
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Workspace quota exceeded or already attached
+  /api/organizations/{id}/workspaces/{workspace_id}:
+    delete:
+      tags: [Enterprise Administration]
+      summary: Detach a workspace from an organization
+      operationId: detachOrganizationWorkspace
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Workspace detached
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/invitations:
+    get:
+      tags: [Enterprise Administration]
+      summary: List organization invitations
+      operationId: listOrganizationInvitations
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Invitation list
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Administration]
+      summary: Create an organization invitation; opaque token is returned once
+      operationId: createOrganizationInvitation
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Invitation created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Organization member quota exceeded
+  /api/organizations/{id}/invitations/{invitation_id}:
+    delete:
+      tags: [Enterprise Administration]
+      summary: Revoke a pending organization invitation
+      operationId: revokeOrganizationInvitation
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Invitation revoked
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/teams:
+    get:
+      tags: [Enterprise Administration]
+      summary: List organization teams
+      operationId: listOrganizationTeams
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Team list
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Administration]
+      summary: Create an organization team
+      operationId: createOrganizationTeam
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Team created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/teams/{team_id}/members:
+    get:
+      tags: [Enterprise Administration]
+      summary: List organization team members
+      operationId: listOrganizationTeamMembers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Team member list
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Administration]
+      summary: Add an organization member to a team
+      operationId: addOrganizationTeamMember
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Team member added
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/domains:
+    get:
+      tags: [Enterprise Administration]
+      summary: List organization domains and verification state
+      operationId: listOrganizationDomains
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Domain list
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Administration]
+      summary: Create a domain verification challenge
+      operationId: createOrganizationDomainChallenge
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Domain verification challenge created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/domains/{domain_id}/verify:
+    post:
+      tags: [Enterprise Administration]
+      summary: Verify an organization domain using its opaque proof token
+      operationId: verifyOrganizationDomain
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Domain verified
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/dashboard:
+    get:
+      tags: [Enterprise Administration]
+      summary: Get organization administration and capacity dashboard
+      operationId: getOrganizationDashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization administration dashboard
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/audit:
+    get:
+      tags: [Enterprise Administration]
+      summary: List organization administration audit events
+      operationId: listOrganizationAuditEvents
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Organization audit events
         '403':
           $ref: '#/components/responses/Forbidden'
 
