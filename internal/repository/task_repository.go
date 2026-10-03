@@ -298,7 +298,6 @@ func (r *InMemoryTaskRepository) Delete(workspaceID, id int64) error {
 	return nil
 }
 
-
 func normalizeTaskDefaults(task model.Task) model.Task {
 	if task.Status == "" {
 		if task.Completed {
