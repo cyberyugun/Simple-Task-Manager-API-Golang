@@ -2523,7 +2523,7 @@ paths:
       responses:
         '200': { description: Notification endpoint deleted }
         '404': { $ref: '#/components/responses/NotFound' }
-  /api/notifications/{notification_id}/read:
+  /api/notifications/items/{notification_id}/read:
     post:
       tags: [Enterprise Notifications]
       summary: Mark one notification as read
