@@ -203,6 +203,7 @@ jobs:
             "/tmp/kubernetes.yaml",
             "deploy/k8s/base/migration-job.yaml",
             "deploy/k8s/base/worker-deployment.yaml",
+            "deploy/k8s/base/worker-pdb.yaml",
             "deploy/k8s/base/secret.example.yaml",
             "deploy/k8s/optional/external-secret.example.yaml",
             "deploy/k8s/optional/cert-manager-clusterissuer.example.yaml",
