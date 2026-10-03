@@ -1,0 +1,10 @@
+kubeconfig_path = "~/.kube/config"
+kube_context    = "production"
+
+# Pin exact chart versions reviewed by your platform team.
+cert_manager_chart_version    = "REPLACE_WITH_APPROVED_VERSION"
+ingress_nginx_chart_version   = "REPLACE_WITH_APPROVED_VERSION"
+metrics_server_chart_version  = "REPLACE_WITH_APPROVED_VERSION"
+external_secrets_chart_version = "REPLACE_WITH_APPROVED_VERSION"
+
+enable_external_secrets = true
