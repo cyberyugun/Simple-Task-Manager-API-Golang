@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"go-simple-task-api/internal/model"
 	"go-simple-task-api/internal/repository"
