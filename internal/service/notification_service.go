@@ -180,8 +180,9 @@ func (s *NotificationService) CreateEndpoint(userID int64, req model.CreateNotif
 	if err != nil {
 		return model.NotificationEndpoint{}, err
 	}
-	if channel != model.NotificationChannelWebhook {
-		item.Secret = ""
+	item.Secret = ""
+	if channel == model.NotificationChannelWebhook {
+		item.SigningSecret = secret
 	}
 	return item, nil
 }
