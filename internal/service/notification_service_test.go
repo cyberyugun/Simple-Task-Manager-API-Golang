@@ -72,7 +72,7 @@ func TestNotificationEventFanoutAndMentionDeduplication(t *testing.T) {
 
 	comment := model.TaskComment{
 		ID: 10, TaskID: task.ID, WorkspaceID: access.ID, UserID: owner.ID,
-		Body: "please review <@" + notificationTestInt64(member.ID) + "> and @{" + notificationTestInt64(member.ID) + "}",
+		Body:      "please review <@" + notificationTestInt64(member.ID) + "> and @{" + notificationTestInt64(member.ID) + "}",
 		CreatedAt: now, UpdatedAt: now,
 	}
 	commentData, _ := json.Marshal(comment)
@@ -105,9 +105,9 @@ func TestNotificationPreferenceQuietHoursAndChannelEnforcement(t *testing.T) {
 		Locale: "id", Timezone: "Asia/Jakarta", QuietHoursEnabled: true,
 		QuietStart: "22:00", QuietEnd: "07:00", DigestFrequency: model.NotificationDigestDaily,
 		DigestHour: 8, Channels: map[string]bool{
-			model.NotificationChannelInApp: true,
-			model.NotificationChannelEmail: true,
-			model.NotificationChannelPush: false,
+			model.NotificationChannelInApp:   true,
+			model.NotificationChannelEmail:   true,
+			model.NotificationChannelPush:    false,
 			model.NotificationChannelWebhook: false,
 		},
 		Events: map[string]bool{model.NotificationEventTaskAssigned: false},

@@ -32,7 +32,7 @@ type NotificationConfig struct {
 	ProviderToken    string
 	HTTPTimeout      time.Duration
 	AllowInsecure    bool
-	ReminderHorizon time.Duration
+	ReminderHorizon  time.Duration
 }
 
 type NotificationService struct {
@@ -334,8 +334,8 @@ func (s *NotificationService) notifyTaskRelation(event model.DomainEvent, userID
 	}
 	return s.createNotification(model.NotificationCreate{
 		WorkspaceID: notificationInt64Ptr(event.WorkspaceID),
-		UserID: userID, EventType: eventType, TemplateKey: templateKey,
-		Data: map[string]any{"task_id": taskID, "task_title": taskTitle},
+		UserID:      userID, EventType: eventType, TemplateKey: templateKey,
+		Data:      map[string]any{"task_id": taskID, "task_title": taskTitle},
 		DedupeKey: fmt.Sprintf("event:%s:%s:%d", event.EventKey, eventType, userID),
 	})
 }
@@ -363,7 +363,7 @@ func (s *NotificationService) notifyCommentMentions(event model.DomainEvent, com
 		seen[userID] = true
 		if err := s.createNotification(model.NotificationCreate{
 			WorkspaceID: notificationInt64Ptr(event.WorkspaceID),
-			UserID: userID, EventType: model.NotificationEventTaskMention, TemplateKey: "task.mention",
+			UserID:      userID, EventType: model.NotificationEventTaskMention, TemplateKey: "task.mention",
 			Data: map[string]any{
 				"task_id": comment.TaskID, "task_title": taskTitle,
 				"comment_id": comment.ID, "comment_body": comment.Body,
@@ -402,7 +402,7 @@ func (s *NotificationService) GenerateReminders(now time.Time, limit int) (int, 
 		}
 		wasCreated, err := s.createNotificationWithResult(model.NotificationCreate{
 			WorkspaceID: notificationInt64Ptr(candidate.WorkspaceID),
-			UserID: candidate.UserID, EventType: eventType, TemplateKey: templateKey,
+			UserID:      candidate.UserID, EventType: eventType, TemplateKey: templateKey,
 			Data: map[string]any{
 				"task_id": candidate.TaskID, "task_title": candidate.TaskTitle,
 				"due_at": candidate.DueAt.UTC().Format(time.RFC3339),
@@ -432,7 +432,7 @@ func (s *NotificationService) GenerateApprovalNotifications(limit int) (int, err
 		orgID := candidate.OrganizationID
 		wasCreated, err := s.createNotificationWithResult(model.NotificationCreate{
 			OrganizationID: &orgID,
-			UserID: candidate.UserID, EventType: model.NotificationEventWorkflowApproval,
+			UserID:         candidate.UserID, EventType: model.NotificationEventWorkflowApproval,
 			TemplateKey: "workflow.approval",
 			Data: map[string]any{
 				"workflow_id": candidate.WorkflowID, "workflow_name": candidate.WorkflowName,
@@ -494,8 +494,8 @@ func (s *NotificationService) GenerateDigests(now time.Time) (int, error) {
 		wasCreated, err := s.createNotificationWithResult(model.NotificationCreate{
 			UserID: pref.UserID, EventType: model.NotificationEventDigestSummary,
 			TemplateKey: "digest.summary",
-			Data: map[string]any{"count": count, "frequency": pref.DigestFrequency},
-			DedupeKey: dedupe,
+			Data:        map[string]any{"count": count, "frequency": pref.DigestFrequency},
+			DedupeKey:   dedupe,
 		})
 		if err != nil {
 			return created, err

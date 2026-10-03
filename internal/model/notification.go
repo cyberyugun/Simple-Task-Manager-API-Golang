@@ -21,13 +21,13 @@ const (
 	NotificationDigestDaily  = "daily"
 	NotificationDigestWeekly = "weekly"
 
-	NotificationEventTaskAssigned        = "task.assigned"
-	NotificationEventTaskWatcherAdded    = "task.watcher.added"
-	NotificationEventTaskMention         = "task.mention"
-	NotificationEventTaskDueSoon         = "task.due_soon"
-	NotificationEventTaskOverdue         = "task.overdue"
-	NotificationEventWorkflowApproval    = "workflow.approval"
-	NotificationEventDigestSummary       = "digest.summary"
+	NotificationEventTaskAssigned     = "task.assigned"
+	NotificationEventTaskWatcherAdded = "task.watcher.added"
+	NotificationEventTaskMention      = "task.mention"
+	NotificationEventTaskDueSoon      = "task.due_soon"
+	NotificationEventTaskOverdue      = "task.overdue"
+	NotificationEventWorkflowApproval = "workflow.approval"
+	NotificationEventDigestSummary    = "digest.summary"
 )
 
 type NotificationPreference struct {

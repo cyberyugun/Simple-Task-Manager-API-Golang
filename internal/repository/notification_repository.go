@@ -90,9 +90,9 @@ func defaultNotificationPreference(userID int64) model.NotificationPreference {
 		UserID: userID, Locale: "en", Timezone: "UTC",
 		DigestFrequency: model.NotificationDigestOff, DigestHour: 8,
 		Channels: map[string]bool{
-			model.NotificationChannelInApp: true,
-			model.NotificationChannelEmail: false,
-			model.NotificationChannelPush: false,
+			model.NotificationChannelInApp:   true,
+			model.NotificationChannelEmail:   false,
+			model.NotificationChannelPush:    false,
 			model.NotificationChannelWebhook: false,
 		},
 		Events: map[string]bool{}, CreatedAt: now, UpdatedAt: now,
