@@ -4,6 +4,7 @@ import "time"
 
 type Task struct {
 	ID          int64     `json:"id"`
+	WorkspaceID int64     `json:"workspace_id,omitempty"`
 	UserID      int64     `json:"-"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
