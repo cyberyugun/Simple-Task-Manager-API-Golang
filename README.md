@@ -437,6 +437,8 @@ The deployment workflow natively supports GitHub OIDC for AWS EKS, Azure AKS, an
 
 Before the first production rollout, follow the full readiness runbook in [`docs/production-readiness.md`](docs/production-readiness.md). The deployment workflow runs the same cluster preflight automatically before migrations or rollout.
 
+Production infrastructure can be provisioned from the Terraform stacks under `infra/terraform/`. See [`docs/infrastructure-as-code.md`](docs/infrastructure-as-code.md) for AWS, Azure, GCP, remote-state, private-runner, and platform bootstrap guidance.
+
 ## Security and software supply chain
 
 Security automation lives in `.github/workflows/security.yml` and runs on pushes to `main`, pull requests, manual dispatches, and a weekly schedule.
