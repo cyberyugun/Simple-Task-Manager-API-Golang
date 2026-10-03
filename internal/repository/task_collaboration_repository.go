@@ -70,41 +70,41 @@ type TaskCollaborationRepository interface {
 type InMemoryTaskCollaborationRepository struct {
 	mu sync.Mutex
 
-	projects map[int64]model.TaskProject
-	lists map[int64]model.TaskList
-	labels map[int64]model.TaskLabel
-	taskLabels map[int64]map[int64]bool
-	assignees map[int64]map[int64]bool
-	watchers map[int64]map[int64]bool
-	comments map[int64]model.TaskComment
+	projects     map[int64]model.TaskProject
+	lists        map[int64]model.TaskList
+	labels       map[int64]model.TaskLabel
+	taskLabels   map[int64]map[int64]bool
+	assignees    map[int64]map[int64]bool
+	watchers     map[int64]map[int64]bool
+	comments     map[int64]model.TaskComment
 	dependencies map[int64]map[int64]model.TaskDependency
-	recurrences map[int64]model.TaskRecurrenceRule
+	recurrences  map[int64]model.TaskRecurrenceRule
 	customFields map[int64]model.TaskCustomFieldDefinition
 	customValues map[string]model.TaskCustomFieldValue
-	activities map[int64][]model.TaskActivity
+	activities   map[int64][]model.TaskActivity
 
-	nextProjectID int64
-	nextListID int64
-	nextLabelID int64
-	nextCommentID int64
-	nextFieldID int64
+	nextProjectID  int64
+	nextListID     int64
+	nextLabelID    int64
+	nextCommentID  int64
+	nextFieldID    int64
 	nextActivityID int64
 }
 
 func NewInMemoryTaskCollaborationRepository() *InMemoryTaskCollaborationRepository {
 	return &InMemoryTaskCollaborationRepository{
-		projects: make(map[int64]model.TaskProject),
-		lists: make(map[int64]model.TaskList),
-		labels: make(map[int64]model.TaskLabel),
-		taskLabels: make(map[int64]map[int64]bool),
-		assignees: make(map[int64]map[int64]bool),
-		watchers: make(map[int64]map[int64]bool),
-		comments: make(map[int64]model.TaskComment),
-		dependencies: make(map[int64]map[int64]model.TaskDependency),
-		recurrences: make(map[int64]model.TaskRecurrenceRule),
-		customFields: make(map[int64]model.TaskCustomFieldDefinition),
-		customValues: make(map[string]model.TaskCustomFieldValue),
-		activities: make(map[int64][]model.TaskActivity),
+		projects:      make(map[int64]model.TaskProject),
+		lists:         make(map[int64]model.TaskList),
+		labels:        make(map[int64]model.TaskLabel),
+		taskLabels:    make(map[int64]map[int64]bool),
+		assignees:     make(map[int64]map[int64]bool),
+		watchers:      make(map[int64]map[int64]bool),
+		comments:      make(map[int64]model.TaskComment),
+		dependencies:  make(map[int64]map[int64]model.TaskDependency),
+		recurrences:   make(map[int64]model.TaskRecurrenceRule),
+		customFields:  make(map[int64]model.TaskCustomFieldDefinition),
+		customValues:  make(map[string]model.TaskCustomFieldValue),
+		activities:    make(map[int64][]model.TaskActivity),
 		nextProjectID: 1, nextListID: 1, nextLabelID: 1,
 		nextCommentID: 1, nextFieldID: 1, nextActivityID: 1,
 	}
@@ -520,7 +520,7 @@ func (r *InMemoryTaskCollaborationRepository) ListActivity(workspaceID, taskID i
 	defer r.mu.Unlock()
 	source := r.activities[taskID]
 	items := make([]model.TaskActivity, 0)
-	for i := len(source)-1; i >= 0 && (limit <= 0 || len(items) < limit); i-- {
+	for i := len(source) - 1; i >= 0 && (limit <= 0 || len(items) < limit); i-- {
 		if source[i].WorkspaceID == workspaceID {
 			items = append(items, source[i])
 		}
