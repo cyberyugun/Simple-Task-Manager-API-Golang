@@ -5,6 +5,30 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      override_freeze:
+        description: "Override an active production deployment freeze"
+        required: false
+        default: false
+        type: boolean
+      canary_weight:
+        description: "Percentage of normal traffic sent to canary"
+        required: true
+        default: "10"
+        type: choice
+        options:
+          - "5"
+          - "10"
+          - "20"
+      canary_observation_seconds:
+        description: "Canary observation window"
+        required: true
+        default: "60"
+        type: choice
+        options:
+          - "30"
+          - "60"
+          - "120"
 
 permissions:
   contents: read
@@ -67,7 +91,6 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
-            ${{ env.IMAGE_REPOSITORY }}:latest
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
@@ -137,12 +160,35 @@ jobs:
     environment: production
     env:
       IMAGE_DIGEST: ${{ needs.build.outputs.image-digest }}
+      CANARY_WEIGHT: ${{ inputs.canary_weight || vars.CANARY_WEIGHT || '10' }}
+      CANARY_OBSERVATION_SECONDS: ${{ inputs.canary_observation_seconds || vars.CANARY_OBSERVATION_SECONDS || '60' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Enforce deployment freeze
+        env:
+          DEPLOYMENT_FREEZE: ${{ vars.DEPLOYMENT_FREEZE }}
+          OVERRIDE_FREEZE: ${{ inputs.override_freeze }}
+        run: |
+          if [ "${DEPLOYMENT_FREEZE:-false}" = "true" ]; then
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "${OVERRIDE_FREEZE:-false}" = "true" ]; then
+              echo "::warning::Production deployment freeze overridden by manual workflow dispatch."
+            else
+              echo "::error::Production deployment is frozen. Use an approved manual override if emergency deployment is required."
+              exit 1
+            fi
+          fi
+
+      - name: Validate progressive release policy
+        run: |
+          bash -n scripts/progressive-deploy.sh
+          bash -n scripts/release-policy-check.sh
+          python3 -m py_compile scripts/check-migration-compatibility.py
+          bash scripts/release-policy-check.sh
 
       - name: Log in to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
@@ -253,84 +299,53 @@ jobs:
           REQUIRE_OBSERVABILITY: ${{ vars.REQUIRE_OBSERVABILITY }}
         run: bash scripts/production-preflight.sh
 
-      - name: Apply runtime configuration
-        run: kubectl apply -f deploy/k8s/base/configmap.yaml
-
-      - name: Run database migration from signed digest
-        run: |
-          kubectl -n "$KUBE_NAMESPACE" delete job task-api-migrate --ignore-not-found --wait=true
-          sed "s|image: task-api:latest|image: $IMAGE_REPOSITORY@$IMAGE_DIGEST|" \
-            deploy/k8s/base/migration-job.yaml | kubectl apply -f -
-
-          if ! kubectl -n "$KUBE_NAMESPACE" wait \
-            --for=condition=complete job/task-api-migrate \
-            --timeout=5m; then
-            kubectl -n "$KUBE_NAMESPACE" logs job/task-api-migrate --all-containers=true || true
-            exit 1
-          fi
-
-      - name: Deploy application by immutable digest
+      - name: Progressive canary release
         env:
           INGRESS_HOST: ${{ vars.KUBE_INGRESS_HOST }}
           CERT_MANAGER_EMAIL: ${{ vars.CERT_MANAGER_EMAIL }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EVIDENCE_PATH: release-evidence.json
+        run: bash scripts/progressive-deploy.sh
+
+      - name: Set up Docker Buildx for stable tag
+        if: success()
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Move latest tag only after successful promotion
+        if: success()
         run: |
-          if [ -z "$INGRESS_HOST" ]; then
-            echo "::error::Production environment variable KUBE_INGRESS_HOST is required."
-            exit 1
-          fi
-          if [ -z "$CERT_MANAGER_EMAIL" ]; then
-            echo "::error::Production environment variable CERT_MANAGER_EMAIL is required."
-            exit 1
-          fi
+          docker buildx imagetools create             --tag "$IMAGE_REPOSITORY:latest"             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
 
-          sed -i "s/task-api.example.com/$INGRESS_HOST/g" \
-            deploy/k8s/overlays/production/ingress.yaml
-          sed -i "s/platform@example.com/$CERT_MANAGER_EMAIL/g" \
-            deploy/k8s/overlays/production/clusterissuer.yaml
-          sed -i "s/newTag: latest/digest: $IMAGE_DIGEST/" \
-            deploy/k8s/overlays/production/kustomization.yaml
-
-          kubectl apply -k deploy/k8s/overlays/production
-          kubectl -n "$KUBE_NAMESPACE" rollout status deployment/task-api --timeout=5m
-
-      - name: Verify deployed version
+      - name: Verify stable telemetry
+        if: success()
         run: |
           kubectl -n "$KUBE_NAMESPACE" port-forward service/task-api 18080:80 >/tmp/task-api-port-forward.log 2>&1 &
           port_forward_pid=$!
           trap 'kill "$port_forward_pid" 2>/dev/null || true' EXIT
 
           for attempt in $(seq 1 20); do
-            if curl --fail --silent http://127.0.0.1:18080/version >/tmp/version.json; then
+            if curl --fail --silent http://127.0.0.1:18080/metrics >/tmp/metrics.txt; then
               break
             fi
             sleep 1
           done
 
-          curl --fail --silent http://127.0.0.1:18080/health >/tmp/health.json
-          curl --fail --silent http://127.0.0.1:18080/ready >/tmp/ready.json
-          curl --fail --silent http://127.0.0.1:18080/metrics >/tmp/metrics.txt
           grep -q 'task_api_http_request_duration_seconds_bucket' /tmp/metrics.txt
           grep -q 'task_api_trace_export_errors_total' /tmp/metrics.txt
+          grep -q 'task_api_db_max_open_connections' /tmp/metrics.txt
 
-          cat /tmp/version.json
-          python3 - <<'PY'
-          import json
-          import os
-
-          with open("/tmp/version.json", "r", encoding="utf-8") as file:
-              payload = json.load(file)
-
-          actual = payload["data"]["commit"]
-          expected = os.environ["GITHUB_SHA"]
-          if actual != expected:
-              raise SystemExit(f"deployed commit {actual!r} does not match {expected!r}")
-          PY
-
-      - name: Verify observability resources
-        run: |
           kubectl -n "$KUBE_NAMESPACE" get servicemonitor task-api
           kubectl -n "$KUBE_NAMESPACE" get prometheusrule task-api-slo
           kubectl -n monitoring get configmap task-api-grafana-dashboard
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: release-evidence.json
+          if-no-files-found: warn
+          retention-days: 90
 
       - name: Show rollout
         run: |
