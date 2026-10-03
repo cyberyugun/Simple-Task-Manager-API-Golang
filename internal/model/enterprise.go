@@ -6,12 +6,12 @@ const (
 	TokenUseUser    = "user"
 	TokenUseService = "service"
 
-	ScopeTasksRead       = "tasks:read"
-	ScopeTasksWrite      = "tasks:write"
-	ScopeWorkspaceRead   = "workspace:read"
-	ScopeWorkspaceAdmin  = "workspace:admin"
-	ScopeAuditRead       = "audit:read"
-	ScopeIdentityAdmin   = "identity:admin"
+	ScopeTasksRead      = "tasks:read"
+	ScopeTasksWrite     = "tasks:write"
+	ScopeWorkspaceRead  = "workspace:read"
+	ScopeWorkspaceAdmin = "workspace:admin"
+	ScopeAuditRead      = "audit:read"
+	ScopeIdentityAdmin  = "identity:admin"
 )
 
 type OAuthClient struct {
