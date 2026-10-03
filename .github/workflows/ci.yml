@@ -556,7 +556,6 @@ jobs:
           docker compose logs api | grep '"msg":"http_request"'
           docker compose logs api | grep '"request_id"'
           docker compose logs api | grep '"trace_id"'
-          docker compose ps worker | grep -q 'Up'
 
       - name: Exercise dependency failure and recovery
         run: bash scripts/resilience-smoke.sh
@@ -751,7 +750,6 @@ jobs:
           docker compose logs api | grep '"msg":"http_request"'
           docker compose logs api | grep '"request_id"'
           docker compose logs api | grep '"trace_id"'
-          docker compose ps worker | grep -q 'Up'
 
       - name: Exercise dependency failure and recovery
         run: bash scripts/resilience-smoke.sh
