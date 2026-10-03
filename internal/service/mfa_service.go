@@ -17,11 +17,16 @@ var (
 	ErrMFANotEnrolled = errors.New("mfa is not enrolled")
 )
 
+type WebAuthnCredentialChecker interface {
+	HasCredentials(userID int64) (bool, error)
+}
+
 type MFAService struct {
-	repo   repository.MFARepository
-	users  repository.UserRepository
-	cipher *auth.SecretCipher
-	issuer string
+	repo     repository.MFARepository
+	users    repository.UserRepository
+	cipher   *auth.SecretCipher
+	issuer   string
+	webauthn WebAuthnCredentialChecker
 }
 
 func NewMFAService(
@@ -35,6 +40,10 @@ func NewMFAService(
 		issuer = "Simple Task Manager"
 	}
 	return &MFAService{repo: repo, users: users, cipher: cipher, issuer: issuer}
+}
+
+func (s *MFAService) SetWebAuthnCredentialChecker(checker WebAuthnCredentialChecker) {
+	s.webauthn = checker
 }
 
 func (s *MFAService) BeginTOTP(userID int64) (model.TOTPEnrollResult, error) {
@@ -82,13 +91,16 @@ func (s *MFAService) ConfirmTOTP(userID int64, code string) error {
 
 func (s *MFAService) Enabled(userID int64) (bool, error) {
 	credential, err := s.repo.GetTOTP(userID)
-	if errors.Is(err, repository.ErrTOTPCredentialNotFound) {
-		return false, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, repository.ErrTOTPCredentialNotFound) {
 		return false, err
 	}
-	return credential.ConfirmedAt != nil, nil
+	if err == nil && credential.ConfirmedAt != nil {
+		return true, nil
+	}
+	if s.webauthn != nil {
+		return s.webauthn.HasCredentials(userID)
+	}
+	return false, nil
 }
 
 func (s *MFAService) Verify(userID int64, code string) (bool, error) {
@@ -124,13 +136,25 @@ func (s *MFAService) DisableTOTP(userID int64, code string) error {
 }
 
 func (s *MFAService) Status(userID int64) (model.MFAStatus, error) {
-	enabled, err := s.Enabled(userID)
-	if err != nil {
+	totpEnabled := false
+	credential, err := s.repo.GetTOTP(userID)
+	if err != nil && !errors.Is(err, repository.ErrTOTPCredentialNotFound) {
 		return model.MFAStatus{}, err
 	}
+	if err == nil {
+		totpEnabled = credential.ConfirmedAt != nil
+	}
+
+	webAuthnAvailable := false
+	if s.webauthn != nil {
+		webAuthnAvailable, err = s.webauthn.HasCredentials(userID)
+		if err != nil {
+			return model.MFAStatus{}, err
+		}
+	}
 	return model.MFAStatus{
-		TOTPEnabled:       enabled,
-		WebAuthnAvailable: false,
+		TOTPEnabled:       totpEnabled,
+		WebAuthnAvailable: webAuthnAvailable,
 	}, nil
 }
 
