@@ -16,7 +16,17 @@ type Options struct {
 	ConnMaxLifetime time.Duration
 }
 
-func OpenPostgres(databaseURL string, options Options) (*sql.DB, error) {
+func OpenPostgres(databaseURL string, tunings ...Options) (*sql.DB, error) {
+	options := Options{
+		MaxOpenConns:    10,
+		MaxIdleConns:    5,
+		ConnMaxIdleTime: 5 * time.Minute,
+		ConnMaxLifetime: 30 * time.Minute,
+	}
+	if len(tunings) > 0 {
+		options = tunings[0]
+	}
+
 	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("open postgres: %w", err)
