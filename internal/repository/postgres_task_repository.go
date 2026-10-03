@@ -2,12 +2,18 @@ package repository
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
+	"go-simple-task-api/internal/events"
 	"go-simple-task-api/internal/model"
 )
+
+const idempotencyTTL = 24 * time.Hour
 
 type PostgresTaskRepository struct {
 	db *sql.DB
@@ -18,6 +24,108 @@ func NewPostgresTaskRepository(db *sql.DB) *PostgresTaskRepository {
 }
 
 func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return model.Task{}, err
+	}
+	defer tx.Rollback()
+
+	created, err := insertTask(tx, task)
+	if err != nil {
+		return model.Task{}, err
+	}
+	if err := enqueueTaskEvent(tx, created, model.EventTaskCreated, created.CreatedAt); err != nil {
+		return model.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Task{}, err
+	}
+	return created, nil
+}
+
+func (r *PostgresTaskRepository) CreateIdempotent(task model.Task, key, requestHash string, now time.Time) (model.TaskCreateResult, error) {
+	if key == "" {
+		created, err := r.Create(task)
+		return model.TaskCreateResult{Task: created}, err
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return model.TaskCreateResult{}, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		DELETE FROM idempotency_keys
+		WHERE workspace_id = $1 AND idempotency_key = $2 AND expires_at <= $3
+	`, task.WorkspaceID, key, now); err != nil {
+		return model.TaskCreateResult{}, err
+	}
+
+	result, err := tx.Exec(`
+		INSERT INTO idempotency_keys (
+			workspace_id, idempotency_key, request_hash, resource_type,
+			resource_id, created_at, expires_at
+		)
+		VALUES ($1, $2, $3, 'task', '', $4, $5)
+		ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
+	`, task.WorkspaceID, key, requestHash, now, now.Add(idempotencyTTL))
+	if err != nil {
+		return model.TaskCreateResult{}, err
+	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return model.TaskCreateResult{}, err
+	}
+
+	if inserted == 0 {
+		var storedHash, resourceID string
+		err := tx.QueryRow(`
+			SELECT request_hash, resource_id
+			FROM idempotency_keys
+			WHERE workspace_id = $1 AND idempotency_key = $2
+		`, task.WorkspaceID, key).Scan(&storedHash, &resourceID)
+		if err != nil {
+			return model.TaskCreateResult{}, err
+		}
+		if storedHash != requestHash {
+			return model.TaskCreateResult{}, ErrIdempotencyConflict
+		}
+		id, err := strconv.ParseInt(resourceID, 10, 64)
+		if err != nil || id <= 0 {
+			return model.TaskCreateResult{}, fmt.Errorf("idempotency resource is incomplete")
+		}
+		existing, err := findTaskByID(tx, task.WorkspaceID, id)
+		if err != nil {
+			return model.TaskCreateResult{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return model.TaskCreateResult{}, err
+		}
+		return model.TaskCreateResult{Task: existing, Replayed: true}, nil
+	}
+
+	created, err := insertTask(tx, task)
+	if err != nil {
+		return model.TaskCreateResult{}, err
+	}
+	if err := enqueueTaskEvent(tx, created, model.EventTaskCreated, created.CreatedAt); err != nil {
+		return model.TaskCreateResult{}, err
+	}
+	if _, err := tx.Exec(`
+		UPDATE idempotency_keys
+		SET resource_id = $3
+		WHERE workspace_id = $1 AND idempotency_key = $2
+	`, task.WorkspaceID, key, strconv.FormatInt(created.ID, 10)); err != nil {
+		return model.TaskCreateResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.TaskCreateResult{}, err
+	}
+	return model.TaskCreateResult{Task: created}, nil
+}
+
+func insertTask(tx *sql.Tx, task model.Task) (model.Task, error) {
 	const query = `
 		INSERT INTO tasks (workspace_id, user_id, created_by_user_id, title, description, completed, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -28,7 +136,7 @@ func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 	if task.PersonalWorkspace {
 		legacyUserID = task.UserID
 	}
-	return scanTask(r.db.QueryRow(
+	return scanTask(tx.QueryRow(
 		query,
 		task.WorkspaceID,
 		legacyUserID,
@@ -128,6 +236,14 @@ func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuer
 }
 
 func (r *PostgresTaskRepository) FindByID(workspaceID, id int64) (model.Task, error) {
+	return findTaskByID(r.db, workspaceID, id)
+}
+
+type queryRower interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func findTaskByID(q queryRower, workspaceID, id int64) (model.Task, error) {
 	const query = `
 		SELECT id, COALESCE(workspace_id, $2), COALESCE(created_by_user_id, user_id), title, description, completed, created_at, updated_at
 		FROM tasks
@@ -145,7 +261,7 @@ func (r *PostgresTaskRepository) FindByID(workspaceID, id int64) (model.Task, er
 		  )
 	`
 
-	task, err := scanTask(r.db.QueryRow(query, id, workspaceID))
+	task, err := scanTask(q.QueryRow(query, id, workspaceID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Task{}, ErrTaskNotFound
 	}
@@ -153,6 +269,26 @@ func (r *PostgresTaskRepository) FindByID(workspaceID, id int64) (model.Task, er
 }
 
 func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return model.Task{}, err
+	}
+	defer tx.Rollback()
+
+	updated, err := updateTask(tx, task)
+	if err != nil {
+		return model.Task{}, err
+	}
+	if err := enqueueTaskEvent(tx, updated, model.EventTaskUpdated, updated.UpdatedAt); err != nil {
+		return model.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Task{}, err
+	}
+	return updated, nil
+}
+
+func updateTask(tx *sql.Tx, task model.Task) (model.Task, error) {
 	const query = `
 		UPDATE tasks
 		SET workspace_id = COALESCE(workspace_id, $2),
@@ -175,7 +311,7 @@ func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 		RETURNING id, workspace_id, COALESCE(created_by_user_id, user_id), title, description, completed, created_at, updated_at
 	`
 
-	updated, err := scanTask(r.db.QueryRow(
+	updated, err := scanTask(tx.QueryRow(
 		query,
 		task.ID,
 		task.WorkspaceID,
@@ -190,8 +326,40 @@ func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 	return updated, err
 }
 
+func (r *PostgresTaskRepository) Complete(workspaceID, id int64, updatedAt time.Time) (model.Task, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return model.Task{}, err
+	}
+	defer tx.Rollback()
+
+	task, err := findTaskByID(tx, workspaceID, id)
+	if err != nil {
+		return model.Task{}, err
+	}
+	task.Completed = true
+	task.UpdatedAt = updatedAt
+	updated, err := updateTask(tx, task)
+	if err != nil {
+		return model.Task{}, err
+	}
+	if err := enqueueTaskEvent(tx, updated, model.EventTaskCompleted, updatedAt); err != nil {
+		return model.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Task{}, err
+	}
+	return updated, nil
+}
+
 func (r *PostgresTaskRepository) Delete(workspaceID, id int64) error {
-	result, err := r.db.Exec(`
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	const query = `
 		DELETE FROM tasks
 		WHERE id = $1
 		  AND (
@@ -205,19 +373,55 @@ func (r *PostgresTaskRepository) Delete(workspaceID, id int64) error {
 		      )
 		    )
 		  )
-	`, id, workspaceID)
-	if err != nil {
-		return err
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
+		RETURNING id, COALESCE(workspace_id, $2), COALESCE(created_by_user_id, user_id), title, description, completed, created_at, updated_at
+	`
+	task, err := scanTask(tx.QueryRow(query, id, workspaceID))
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrTaskNotFound
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if err := enqueueTaskEvent(tx, task, model.EventTaskDeleted, time.Now()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func enqueueTaskEvent(tx *sql.Tx, task model.Task, eventType string, occurredAt time.Time) error {
+	eventID, err := events.NewEventID()
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(map[string]any{
+		"id":                 task.ID,
+		"workspace_id":       task.WorkspaceID,
+		"created_by_user_id": task.UserID,
+		"title":              task.Title,
+		"description":        task.Description,
+		"completed":          task.Completed,
+		"created_at":         task.CreatedAt,
+		"updated_at":         task.UpdatedAt,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`
+		INSERT INTO outbox_events (
+			event_id, workspace_id, aggregate_type, aggregate_id,
+			event_type, schema_version, payload, occurred_at, available_at
+		)
+		VALUES ($1, $2, 'task', $3, $4, $5, $6::jsonb, $7, $7)
+	`,
+		eventID,
+		task.WorkspaceID,
+		strconv.FormatInt(task.ID, 10),
+		eventType,
+		model.EventSchemaVersion,
+		string(payload),
+		occurredAt,
+	)
+	return err
 }
 
 type taskScanner interface {
