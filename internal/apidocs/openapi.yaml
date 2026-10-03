@@ -1,10 +1,14 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.2.0
+  version: 1.3.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
+    This document is the governed public compatibility contract for API v1.
+x-api-version: v1
+x-stability: stable
+x-runtime-version-header: X-API-Version
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -89,12 +93,16 @@ paths:
                 $ref: '#/components/schemas/AuthEnvelope'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '409':
           description: Email already registered
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /api/auth/login:
     post:
       tags: [Authentication]
@@ -117,6 +125,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /api/auth/refresh:
     post:
       tags: [Authentication]

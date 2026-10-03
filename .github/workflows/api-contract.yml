@@ -1,0 +1,87 @@
+name: API Contract
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: OpenAPI Governance and Compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate contract tooling syntax
+        run: |
+          ruby -c scripts/openapi-governance.rb
+          ruby -c scripts/openapi-compatibility.rb
+          ruby -c scripts/consumer-contract.rb
+          ruby -c scripts/generate-typescript-sdk.rb
+          ruby -c scripts/openapi-live-contract.rb
+
+      - name: Validate OpenAPI governance
+        run: ruby scripts/openapi-governance.rb
+
+      - name: Validate consumer expectations
+        run: ruby scripts/consumer-contract.rb
+
+      - name: Build compatibility baseline
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -n "${BASE_SHA:-}" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BASE_SHA:internal/apidocs/openapi.yaml" 2>/dev/null; then
+            git show "$BASE_SHA:internal/apidocs/openapi.yaml" > /tmp/openapi-baseline.yaml
+          else
+            cp internal/apidocs/openapi.yaml /tmp/openapi-baseline.yaml
+          fi
+          ruby scripts/openapi-compatibility.rb /tmp/openapi-baseline.yaml internal/apidocs/openapi.yaml
+
+      - name: Generate TypeScript SDK
+        run: |
+          mkdir -p generated-sdk
+          ruby scripts/generate-typescript-sdk.rb internal/apidocs/openapi.yaml generated-sdk/task-manager-api.ts
+          test -s generated-sdk/task-manager-api.ts
+          grep -q 'export class TaskManagerApiClient' generated-sdk/task-manager-api.ts
+          grep -q 'export const operations' generated-sdk/task-manager-api.ts
+
+      - name: Upload generated SDK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: typescript-sdk-${{ github.sha }}
+          path: generated-sdk/task-manager-api.ts
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build and start provider
+        env:
+          JWT_SECRET: contract-ci-secret-123456789012345678901234
+          AUTH_RATE_LIMIT_REQUESTS: "1000"
+        run: docker compose up -d --build
+
+      - name: Wait for provider
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+
+      - name: Run live provider contract
+        run: ruby scripts/openapi-live-contract.rb http://127.0.0.1:8080 internal/apidocs/openapi.yaml
+
+      - name: Stop provider
+        if: always()
+        run: docker compose down -v
