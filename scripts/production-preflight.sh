@@ -5,6 +5,7 @@ KUBECTL_BIN="${KUBECTL_BIN:-kubectl}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-task-manager}"
 REQUIRE_GHCR_PULL_SECRET="${REQUIRE_GHCR_PULL_SECRET:-false}"
 REQUIRE_METRICS_SERVER="${REQUIRE_METRICS_SERVER:-true}"
+REQUIRE_OBSERVABILITY="${REQUIRE_OBSERVABILITY:-true}"
 
 failures=0
 
@@ -108,6 +109,23 @@ else
   warn "metrics.k8s.io API is unavailable, but REQUIRE_METRICS_SERVER is not true"
 fi
 
+if [ "$REQUIRE_OBSERVABILITY" = "true" ]; then
+  monitoring_resources="$("$KUBECTL_BIN" api-resources --api-group=monitoring.coreos.com -o name 2>/dev/null || true)"
+  for resource in servicemonitors.monitoring.coreos.com prometheusrules.monitoring.coreos.com; do
+    if printf '%s\n' "$monitoring_resources" | grep -qx "$resource"; then
+      pass "Prometheus Operator API resource is available: $resource"
+    else
+      fail "Prometheus Operator API resource is missing: $resource"
+    fi
+  done
+
+  if "$KUBECTL_BIN" get namespace monitoring >/dev/null 2>&1; then
+    pass "monitoring namespace exists"
+  else
+    fail "monitoring namespace is missing"
+  fi
+fi
+
 if "$KUBECTL_BIN" -n "$KUBE_NAMESPACE" get secret task-api-secrets >/dev/null 2>&1; then
   pass "task-api-secrets exists"
   check_secret_key task-api-secrets DATABASE_URL
@@ -139,6 +157,10 @@ check_can_i create horizontalpodautoscalers.autoscaling
 check_can_i create poddisruptionbudgets.policy
 check_can_i create networkpolicies.networking.k8s.io
 check_can_i create clusterissuers.cert-manager.io cluster
+if [ "$REQUIRE_OBSERVABILITY" = "true" ]; then
+  check_can_i create servicemonitors.monitoring.coreos.com
+  check_can_i create prometheusrules.monitoring.coreos.com
+fi
 
 if [ "$failures" -gt 0 ]; then
   printf '\nProduction readiness FAILED with %d issue(s).\n' "$failures" >&2
