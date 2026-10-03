@@ -175,6 +175,31 @@ func (r *PostgresNotificationRepository) notificationByDedup(userID int64, dedup
 	return item, nil
 }
 
+func (r *PostgresNotificationRepository) GetNotification(notificationID int64) (model.Notification, error) {
+	var item model.Notification
+	var org, workspace sql.NullInt64
+	var raw []byte
+	err := r.db.QueryRow(`
+		SELECT id,user_id,organization_id,workspace_id,event_type,title,body,data,
+		       dedup_key,template_key,template_version,read_at,created_at
+		FROM notifications WHERE id=$1
+	`, notificationID).Scan(
+		&item.ID, &item.UserID, &org, &workspace, &item.EventType, &item.Title, &item.Body, &raw,
+		&item.DedupKey, &item.TemplateKey, &item.TemplateVersion, &item.ReadAt, &item.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.Notification{}, ErrNotificationNotFound
+	}
+	if err != nil {
+		return model.Notification{}, err
+	}
+	if org.Valid { value:=org.Int64; item.OrganizationID=&value }
+	if workspace.Valid { value:=workspace.Int64; item.WorkspaceID=&value }
+	item.Data=map[string]any{}
+	_ = json.Unmarshal(raw,&item.Data)
+	return item,nil
+}
+
 func (r *PostgresNotificationRepository) ListNotifications(userID int64, limit int) ([]model.Notification, error) {
 	rows, err := r.db.Query(`
 		SELECT id,user_id,organization_id,workspace_id,event_type,title,body,data,
