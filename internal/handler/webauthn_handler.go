@@ -46,12 +46,13 @@ func (h *WebAuthnHandler) RegistrationFinish(w http.ResponseWriter, r *http.Requ
 		methodNotAllowed(w)
 		return
 	}
-	if _, ok := middleware.UserIDFromContext(r.Context()); !ok {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
 		unauthorized(w)
 		return
 	}
 	sessionID := strings.TrimSpace(r.Header.Get(webAuthnSessionHeader))
-	credentialID, err := h.service.FinishRegistration(sessionID, r)
+	credentialID, err := h.service.FinishRegistration(userID, sessionID, r)
 	if err != nil {
 		h.handleError(w, err)
 		return
