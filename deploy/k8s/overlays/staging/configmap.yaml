@@ -2,6 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: task-api-config
+  namespace: task-manager
 data:
   APP_ENV: "staging"
   OTEL_SERVICE_NAME: "task-api-staging"
