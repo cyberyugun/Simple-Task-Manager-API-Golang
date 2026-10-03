@@ -65,6 +65,9 @@ type Config struct {
 	RedisWriteTimeout     time.Duration
 	IdempotencyTTL        time.Duration
 	WebhookAllowInsecure  bool
+	WebAuthnRPID          string
+	WebAuthnRPOrigins     []string
+	WebAuthnRPDisplayName string
 }
 
 func Load() (Config, error) {
@@ -97,6 +100,8 @@ func Load() (Config, error) {
 		RedisReadTimeout:      defaultRedisReadTimeout,
 		RedisWriteTimeout:     defaultRedisWriteTimeout,
 		IdempotencyTTL:        defaultIdempotencyTTL,
+		WebAuthnRPID:          strings.TrimSpace(os.Getenv("WEBAUTHN_RP_ID")),
+		WebAuthnRPDisplayName: strings.TrimSpace(os.Getenv("WEBAUTHN_RP_DISPLAY_NAME")),
 	}
 
 	var err error
@@ -112,6 +117,22 @@ func Load() (Config, error) {
 	}
 	if cfg.OTELServiceName == "" {
 		cfg.OTELServiceName = defaultOTELServiceName
+	}
+	if cfg.WebAuthnRPID == "" {
+		cfg.WebAuthnRPID = "localhost"
+	}
+	if cfg.WebAuthnRPDisplayName == "" {
+		cfg.WebAuthnRPDisplayName = "Simple Task Manager"
+	}
+	if rawOrigins := strings.TrimSpace(os.Getenv("WEBAUTHN_RP_ORIGINS")); rawOrigins != "" {
+		for _, origin := range strings.Split(rawOrigins, ",") {
+			if origin = strings.TrimSpace(origin); origin != "" {
+				cfg.WebAuthnRPOrigins = append(cfg.WebAuthnRPOrigins, origin)
+			}
+		}
+	}
+	if len(cfg.WebAuthnRPOrigins) == 0 {
+		cfg.WebAuthnRPOrigins = []string{"http://localhost:8080"}
 	}
 
 	if cfg.DBMaxOpenConns, err = parseIntAtLeast("DB_MAX_OPEN_CONNS", cfg.DBMaxOpenConns, 1); err != nil {

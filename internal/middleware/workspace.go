@@ -35,6 +35,21 @@ func WorkspaceScope(repo repository.WorkspaceRepository) func(http.Handler) http
 				workspaceID = parsed
 			}
 
+			if claims, hasClaims := AuthClaimsFromContext(r.Context()); hasClaims && claims.TokenUse == model.TokenUseService {
+				if claims.WorkspaceID <= 0 || (workspaceID > 0 && workspaceID != claims.WorkspaceID) {
+					response.JSON(w, http.StatusNotFound, response.Envelope{Success: false, Message: "workspace not found"})
+					return
+				}
+				access := model.WorkspaceAccess{
+					Workspace: model.Workspace{ID: claims.WorkspaceID, CreatedByUserID: userID},
+					Role:      "service",
+				}
+				w.Header().Set("X-Workspace-ID", strconv.FormatInt(access.ID, 10))
+				w.Header().Set("X-Workspace-Role", access.Role)
+				next.ServeHTTP(w, r.WithContext(WithWorkspaceAccess(r.Context(), access)))
+				return
+			}
+
 			access, err := repo.ResolveAccess(userID, workspaceID, time.Now())
 			if err != nil {
 				if errors.Is(err, repository.ErrWorkspaceNotFound) {

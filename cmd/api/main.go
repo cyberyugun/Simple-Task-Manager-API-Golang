@@ -21,6 +21,7 @@ import (
 	appdb "go-simple-task-api/internal/database"
 	"go-simple-task-api/internal/handler"
 	"go-simple-task-api/internal/middleware"
+	"go-simple-task-api/internal/model"
 	"go-simple-task-api/internal/observability"
 	"go-simple-task-api/internal/readiness"
 	"go-simple-task-api/internal/repository"
@@ -64,6 +65,9 @@ func main() {
 	var actionRepo repository.AuthActionTokenRepository
 	var workspaceRepo repository.WorkspaceRepository
 	var eventRepo repository.EventRepository
+	var enterpriseRepo repository.EnterpriseIdentityRepository
+	var mfaRepo repository.MFARepository
+	var webAuthnRepo repository.WebAuthnRepository
 
 	if cfg.DatabaseURL != "" {
 		db, err = appdb.OpenPostgres(cfg.DatabaseURL, appdb.Options{
@@ -84,6 +88,9 @@ func main() {
 		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
 		workspaceRepo = repository.NewPostgresWorkspaceRepository(db)
 		eventRepo = repository.NewPostgresEventRepository(db)
+		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
+		mfaRepo = repository.NewPostgresMFARepository(db)
+		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
 		logger.Info(
 			"storage_configured",
 			"backend", "postgresql",
@@ -97,6 +104,9 @@ func main() {
 		actionRepo = repository.NewInMemoryAuthActionTokenRepository()
 		workspaceRepo = repository.NewInMemoryWorkspaceRepository()
 		eventRepo = repository.NewInMemoryEventRepository()
+		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
+		mfaRepo = repository.NewInMemoryMFARepository()
+		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
 	}
 
@@ -122,6 +132,11 @@ func main() {
 	}
 
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
+	mfaCipher, err := auth.NewSecretCipher(cfg.JWTSecret)
+	if err != nil {
+		logger.Error("mfa_cipher_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	authService := service.NewAuthService(
 		userRepo,
 		refreshRepo,
@@ -132,15 +147,35 @@ func main() {
 		cfg.PasswordResetTTL,
 		cfg.EmailVerificationTTL,
 	)
+	mfaService := service.NewMFAService(mfaRepo, userRepo, mfaCipher, "Simple Task Manager")
+	webAuthnService, err := service.NewWebAuthnService(
+		webAuthnRepo,
+		userRepo,
+		cfg.WebAuthnRPID,
+		cfg.WebAuthnRPOrigins,
+		cfg.WebAuthnRPDisplayName,
+	)
+	if err != nil {
+		logger.Error("webauthn_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	mfaService.SetWebAuthnCredentialChecker(webAuthnService)
+	authService.SetMFAVerifier(mfaService)
 	taskService := service.NewTaskService(taskRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
 	webhookService := service.NewWebhookService(workspaceRepo, eventRepo, cfg.WebhookAllowInsecure)
+	enterpriseService := service.NewEnterpriseIdentityService(enterpriseRepo, workspaceRepo, userRepo, tokenManager)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
 	webhookHandler := handler.NewWebhookHandler(webhookService)
-	authMiddleware := middleware.Auth(tokenManager)
+	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
+	mfaHandler := handler.NewMFAHandler(mfaService)
+	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
+	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
+	serviceAuthMiddleware := middleware.EnterpriseAuth(tokenManager, enterpriseRepo)
 	workspaceMiddleware := middleware.WorkspaceScope(workspaceRepo)
+	enterprisePolicyMiddleware := middleware.EnterpriseWorkspacePolicy(enterpriseRepo)
 	idempotencyMiddleware := middleware.Idempotency(eventRepo, cfg.IdempotencyTTL)
 
 	var authRateLimiter middleware.AuthRateLimiter
@@ -169,14 +204,20 @@ func main() {
 	protected := func(h http.HandlerFunc) http.Handler {
 		return authMiddleware(http.HandlerFunc(h))
 	}
-	protectedRateLimited := func(h http.HandlerFunc) http.Handler {
-		return authMiddleware(authRateLimiter.Handler(http.HandlerFunc(h)))
+	protectedFirstParty := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(middleware.RequireFirstPartyUser(http.HandlerFunc(h)))
+	}
+	protectedIdentityAdmin := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(middleware.RequireScope(model.ScopeIdentityAdmin)(http.HandlerFunc(h)))
+	}
+	protectedFirstPartyRateLimited := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(middleware.RequireFirstPartyUser(authRateLimiter.Handler(http.HandlerFunc(h))))
 	}
 	protectedWorkspace := func(h http.HandlerFunc) http.Handler {
-		return authMiddleware(workspaceMiddleware(http.HandlerFunc(h)))
+		return serviceAuthMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(http.HandlerFunc(h))))
 	}
 	protectedWorkspaceIdempotent := func(h http.HandlerFunc) http.Handler {
-		return authMiddleware(workspaceMiddleware(idempotencyMiddleware(http.HandlerFunc(h))))
+		return serviceAuthMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(idempotencyMiddleware(http.HandlerFunc(h)))))
 	}
 
 	ready := readiness.New(db, redisClient, cfg.ReadinessTimeout, metrics)
@@ -207,16 +248,36 @@ func main() {
 	mux.Handle("/api/auth/forgot-password", rateLimited(authHandler.ForgotPassword))
 	mux.Handle("/api/auth/reset-password", rateLimited(authHandler.ResetPassword))
 	mux.Handle("/api/auth/email-verification/confirm", rateLimited(authHandler.VerifyEmail))
+	mux.Handle("/api/oauth/token", rateLimited(enterpriseHandler.OAuthToken))
+	mux.Handle("/api/oauth/api-key", rateLimited(enterpriseHandler.APIKeyExchange))
+	mux.Handle("/api/auth/mfa/webauthn/login/begin", rateLimited(webAuthnHandler.LoginBegin))
+	mux.Handle("/api/auth/mfa/webauthn/login/finish", rateLimited(webAuthnHandler.LoginFinish))
 
-	mux.Handle("/api/auth/change-password", protectedRateLimited(authHandler.ChangePassword))
-	mux.Handle("/api/auth/logout-all", protected(authHandler.LogoutAll))
-	mux.Handle("/api/auth/sessions", protected(authHandler.Sessions))
-	mux.Handle("/api/auth/sessions/", protected(authHandler.SessionByID))
-	mux.Handle("/api/auth/email-verification/request", protectedRateLimited(authHandler.RequestEmailVerification))
+	mux.Handle("/api/auth/change-password", protectedFirstPartyRateLimited(authHandler.ChangePassword))
+	mux.Handle("/api/auth/logout-all", protectedFirstParty(authHandler.LogoutAll))
+	mux.Handle("/api/auth/sessions", protectedFirstParty(authHandler.Sessions))
+	mux.Handle("/api/auth/sessions/risk", protectedFirstParty(authHandler.SessionRisks))
+	mux.Handle("/api/auth/sessions/", protectedFirstParty(authHandler.SessionByID))
+	mux.Handle("/api/auth/email-verification/request", protectedFirstPartyRateLimited(authHandler.RequestEmailVerification))
+	mux.Handle("/api/auth/token/introspect", protectedFirstParty(enterpriseHandler.Introspect))
+	mux.Handle("/api/auth/token/revoke", protectedFirstParty(enterpriseHandler.RevokeToken))
+	mux.Handle("/api/auth/mfa/status", protectedFirstParty(mfaHandler.Status))
+	mux.Handle("/api/auth/mfa/totp/enroll", protectedFirstPartyRateLimited(mfaHandler.EnrollTOTP))
+	mux.Handle("/api/auth/mfa/totp/confirm", protectedFirstPartyRateLimited(mfaHandler.ConfirmTOTP))
+	mux.Handle("/api/auth/mfa/totp/disable", protectedFirstPartyRateLimited(mfaHandler.DisableTOTP))
+	mux.Handle("/api/auth/mfa/webauthn/register/begin", protectedFirstPartyRateLimited(webAuthnHandler.RegistrationBegin))
+	mux.Handle("/api/auth/mfa/webauthn/register/finish", protectedFirstPartyRateLimited(webAuthnHandler.RegistrationFinish))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
 	mux.Handle("/api/workspaces/{id}/webhooks/{subscription_id}", protected(webhookHandler.SubscriptionByID))
+	mux.Handle("/api/workspaces/{id}/identity/oauth-clients", protectedIdentityAdmin(enterpriseHandler.OAuthClients))
+	mux.Handle("/api/workspaces/{id}/identity/oauth/authorize", protectedFirstParty(enterpriseHandler.OAuthAuthorize))
+	mux.Handle("/api/workspaces/{id}/identity/api-keys", protectedIdentityAdmin(enterpriseHandler.APIKeys))
+	mux.Handle("/api/workspaces/{id}/identity/api-keys/{key_id}", protectedIdentityAdmin(enterpriseHandler.APIKeyByID))
+	mux.Handle("/api/workspaces/{id}/identity/policy", protectedIdentityAdmin(enterpriseHandler.Policy))
+	mux.Handle("/api/workspaces/{id}/identity/oidc", protectedIdentityAdmin(enterpriseHandler.OIDC))
+	mux.Handle("/api/workspaces/{id}/identity/scim/users", protectedIdentityAdmin(enterpriseHandler.SCIMUsers))
 	mux.Handle("/api/workspaces/", protected(workspaceHandler.WorkspaceByID))
 
 	mux.Handle("/api/tasks", protectedWorkspaceIdempotent(taskHandler.Tasks))

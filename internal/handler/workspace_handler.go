@@ -31,6 +31,9 @@ func (h *WorkspaceHandler) Workspaces(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		if !requireScope(w, r, model.ScopeWorkspaceRead) {
+			return
+		}
 		items, err := h.service.List(userID)
 		if err != nil {
 			h.handleError(w, err)
@@ -38,6 +41,9 @@ func (h *WorkspaceHandler) Workspaces(w http.ResponseWriter, r *http.Request) {
 		}
 		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: items})
 	case http.MethodPost:
+		if !requireScope(w, r, model.ScopeWorkspaceAdmin) {
+			return
+		}
 		defer r.Body.Close()
 		var req model.CreateWorkspaceRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -86,6 +92,9 @@ func (h *WorkspaceHandler) WorkspaceByID(w http.ResponseWriter, r *http.Request)
 			methodNotAllowed(w)
 			return
 		}
+		if !requireScope(w, r, model.ScopeAuditRead) {
+			return
+		}
 		limit := 100
 		if raw := r.URL.Query().Get("limit"); raw != "" {
 			parsed, err := strconv.Atoi(raw)
@@ -109,6 +118,9 @@ func (h *WorkspaceHandler) WorkspaceByID(w http.ResponseWriter, r *http.Request)
 func (h *WorkspaceHandler) workspace(w http.ResponseWriter, r *http.Request, userID, workspaceID int64) {
 	switch r.Method {
 	case http.MethodGet:
+		if !requireScope(w, r, model.ScopeWorkspaceRead) {
+			return
+		}
 		item, err := h.service.Access(userID, workspaceID)
 		if err != nil {
 			h.handleError(w, err)
@@ -116,6 +128,9 @@ func (h *WorkspaceHandler) workspace(w http.ResponseWriter, r *http.Request, use
 		}
 		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: item})
 	case http.MethodPut:
+		if !requireScope(w, r, model.ScopeWorkspaceAdmin) {
+			return
+		}
 		defer r.Body.Close()
 		var req model.RenameWorkspaceRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -129,6 +144,9 @@ func (h *WorkspaceHandler) workspace(w http.ResponseWriter, r *http.Request, use
 		}
 		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: item})
 	case http.MethodDelete:
+		if !requireScope(w, r, model.ScopeWorkspaceAdmin) {
+			return
+		}
 		if err := h.service.Delete(userID, workspaceID); err != nil {
 			h.handleError(w, err)
 			return
@@ -143,6 +161,9 @@ func (h *WorkspaceHandler) members(w http.ResponseWriter, r *http.Request, userI
 	if len(rest) == 0 {
 		switch r.Method {
 		case http.MethodGet:
+			if !requireScope(w, r, model.ScopeWorkspaceRead) {
+				return
+			}
 			items, err := h.service.ListMembers(userID, workspaceID)
 			if err != nil {
 				h.handleError(w, err)
@@ -150,6 +171,9 @@ func (h *WorkspaceHandler) members(w http.ResponseWriter, r *http.Request, userI
 			}
 			response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: items})
 		case http.MethodPost:
+			if !requireScope(w, r, model.ScopeWorkspaceAdmin) {
+				return
+			}
 			defer r.Body.Close()
 			var req model.AddWorkspaceMemberRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -179,6 +203,9 @@ func (h *WorkspaceHandler) members(w http.ResponseWriter, r *http.Request, userI
 
 	switch r.Method {
 	case http.MethodPut:
+		if !requireScope(w, r, model.ScopeWorkspaceAdmin) {
+			return
+		}
 		defer r.Body.Close()
 		var req model.UpdateWorkspaceMemberRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -192,6 +219,9 @@ func (h *WorkspaceHandler) members(w http.ResponseWriter, r *http.Request, userI
 		}
 		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: item})
 	case http.MethodDelete:
+		if !requireScope(w, r, model.ScopeWorkspaceAdmin) {
+			return
+		}
 		if err := h.service.RemoveMember(userID, workspaceID, targetUserID); err != nil {
 			h.handleError(w, err)
 			return

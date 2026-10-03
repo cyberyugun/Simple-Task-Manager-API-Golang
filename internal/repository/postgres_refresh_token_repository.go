@@ -19,9 +19,9 @@ func NewPostgresRefreshTokenRepository(db *sql.DB) *PostgresRefreshTokenReposito
 func (r *PostgresRefreshTokenRepository) Create(session model.RefreshSession) error {
 	const query = `
 		INSERT INTO refresh_tokens (
-			user_id, token_hash, user_agent, ip_address, expires_at, last_used_at, created_at
+			user_id, token_hash, user_agent, ip_address, mfa_authenticated, expires_at, last_used_at, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 	_, err := r.db.Exec(
 		query,
@@ -29,6 +29,7 @@ func (r *PostgresRefreshTokenRepository) Create(session model.RefreshSession) er
 		session.TokenHash,
 		session.UserAgent,
 		session.IPAddress,
+		session.MFAAuthenticated,
 		session.ExpiresAt,
 		session.LastUsedAt,
 		session.CreatedAt,
@@ -49,7 +50,7 @@ func (r *PostgresRefreshTokenRepository) Rotate(oldHash, newHash string, newExpi
 		WHERE token_hash = $1
 		  AND revoked_at IS NULL
 		  AND expires_at > $2
-		RETURNING id, user_id, token_hash, user_agent, ip_address, expires_at, last_used_at, revoked_at, created_at
+		RETURNING id, user_id, token_hash, user_agent, ip_address, mfa_authenticated, expires_at, last_used_at, revoked_at, created_at
 	`
 
 	old, err := scanRefreshSession(tx.QueryRow(consumeQuery, oldHash, now))
@@ -62,9 +63,9 @@ func (r *PostgresRefreshTokenRepository) Rotate(oldHash, newHash string, newExpi
 
 	const createQuery = `
 		INSERT INTO refresh_tokens (
-			user_id, token_hash, user_agent, ip_address, expires_at, last_used_at, created_at
+			user_id, token_hash, user_agent, ip_address, mfa_authenticated, expires_at, last_used_at, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 	`
 	if _, err := tx.Exec(
 		createQuery,
@@ -72,6 +73,7 @@ func (r *PostgresRefreshTokenRepository) Rotate(oldHash, newHash string, newExpi
 		newHash,
 		old.UserAgent,
 		old.IPAddress,
+		old.MFAAuthenticated,
 		newExpiresAt,
 		now,
 	); err != nil {
@@ -95,7 +97,7 @@ func (r *PostgresRefreshTokenRepository) Revoke(tokenHash string, now time.Time)
 
 func (r *PostgresRefreshTokenRepository) ListActive(userID int64, now time.Time) ([]model.RefreshSession, error) {
 	rows, err := r.db.Query(`
-		SELECT id, user_id, token_hash, user_agent, ip_address, expires_at, last_used_at, revoked_at, created_at
+		SELECT id, user_id, token_hash, user_agent, ip_address, mfa_authenticated, expires_at, last_used_at, revoked_at, created_at
 		FROM refresh_tokens
 		WHERE user_id = $1
 		  AND revoked_at IS NULL
@@ -159,6 +161,7 @@ func scanRefreshSession(scanner refreshSessionScanner) (model.RefreshSession, er
 		&session.TokenHash,
 		&session.UserAgent,
 		&session.IPAddress,
+		&session.MFAAuthenticated,
 		&session.ExpiresAt,
 		&session.LastUsedAt,
 		&session.RevokedAt,

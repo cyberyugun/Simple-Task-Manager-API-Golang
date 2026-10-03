@@ -126,6 +126,25 @@ func (h *AuthHandler) Sessions(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: sessions})
 }
 
+func (h *AuthHandler) SessionRisks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		unauthorized(w)
+		return
+	}
+
+	items, err := h.service.SessionRisks(userID, sessionMetadata(r))
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: items})
+}
+
 func (h *AuthHandler) SessionByID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		methodNotAllowed(w)
@@ -294,6 +313,8 @@ func (h *AuthHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, repository.ErrEmailExists):
 		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrInvalidCredentials),
+		errors.Is(err, service.ErrMFARequired),
+		errors.Is(err, service.ErrInvalidMFA),
 		errors.Is(err, service.ErrInvalidRefreshToken),
 		errors.Is(err, service.ErrInvalidCurrentPassword),
 		errors.Is(err, service.ErrInvalidActionToken):
