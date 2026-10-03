@@ -99,7 +99,14 @@ func (r *InMemoryNotificationRepository) GetNotification(notificationID int64) (
 }
 func (r *InMemoryNotificationRepository) ListNotifications(userID int64, limit int) ([]model.Notification,error) {
 	r.mu.Lock();defer r.mu.Unlock();out:=[]model.Notification{}
-	for _,v:=range r.notifications{if v.UserID==userID{out=append(out,v)}}
+	for _,v:=range r.notifications{
+		if v.UserID!=userID{continue}
+		visible:=false
+		for _,d:=range r.deliveries{
+			if d.NotificationID==v.ID&&d.Channel==model.NotificationChannelInApp&&d.Status!=model.NotificationDeliverySuppressed{visible=true;break}
+		}
+		if visible{out=append(out,v)}
+	}
 	sort.Slice(out,func(i,j int)bool{return out[i].CreatedAt.After(out[j].CreatedAt)})
 	if limit>0&&len(out)>limit{out=out[:limit]};return out,nil
 }
