@@ -20,7 +20,14 @@ var (
 	ErrInvalidCurrentPassword = errors.New("current password is incorrect")
 	ErrInvalidNewPassword     = errors.New("new password must be at least 8 characters")
 	ErrInvalidActionToken     = errors.New("invalid or expired action token")
+	ErrMFARequired            = errors.New("mfa code is required")
+	ErrInvalidMFA             = errors.New("invalid mfa code")
 )
+
+type MFAVerifier interface {
+	Enabled(userID int64) (bool, error)
+	Verify(userID int64, code string) (bool, error)
+}
 
 type AuthService struct {
 	users            repository.UserRepository
@@ -31,6 +38,7 @@ type AuthService struct {
 	refreshTTL       time.Duration
 	passwordResetTTL time.Duration
 	emailVerifyTTL   time.Duration
+	mfa              MFAVerifier
 }
 
 func NewAuthService(
@@ -53,6 +61,10 @@ func NewAuthService(
 		passwordResetTTL: passwordResetTTL,
 		emailVerifyTTL:   emailVerifyTTL,
 	}
+}
+
+func (s *AuthService) SetMFAVerifier(verifier MFAVerifier) {
+	s.mfa = verifier
 }
 
 func (s *AuthService) Register(req model.RegisterRequest, meta model.SessionMetadata) (model.AuthResult, error) {
@@ -79,7 +91,7 @@ func (s *AuthService) Register(req model.RegisterRequest, meta model.SessionMeta
 		return model.AuthResult{}, err
 	}
 
-	return s.issueSession(user, meta)
+	return s.issueSession(user, meta, false)
 }
 
 func (s *AuthService) Login(req model.LoginRequest, meta model.SessionMetadata) (model.AuthResult, error) {
@@ -136,7 +148,7 @@ func (s *AuthService) Refresh(req model.RefreshRequest) (model.AuthResult, error
 		return model.AuthResult{}, err
 	}
 
-	return s.authResult(user, newRaw)
+	return s.authResult(user, newRaw, old.MFAAuthenticated)
 }
 
 func (s *AuthService) Logout(req model.LogoutRequest) error {
@@ -311,7 +323,7 @@ func (s *AuthService) issueActionToken(userID int64, purpose string, ttl time.Du
 	return raw, nil
 }
 
-func (s *AuthService) issueSession(user model.User, meta model.SessionMetadata) (model.AuthResult, error) {
+func (s *AuthService) issueSession(user model.User, meta model.SessionMetadata, mfaAuthenticated bool) (model.AuthResult, error) {
 	raw, hash, err := auth.GenerateRefreshToken()
 	if err != nil {
 		return model.AuthResult{}, err
@@ -322,7 +334,8 @@ func (s *AuthService) issueSession(user model.User, meta model.SessionMetadata) 
 		UserID:     user.ID,
 		TokenHash:  hash,
 		UserAgent:  strings.TrimSpace(meta.UserAgent),
-		IPAddress:  strings.TrimSpace(meta.IPAddress),
+		IPAddress:        strings.TrimSpace(meta.IPAddress),
+		MFAAuthenticated: mfaAuthenticated,
 		ExpiresAt:  now.Add(s.refreshTTL),
 		LastUsedAt: now,
 		CreatedAt:  now,
@@ -330,11 +343,11 @@ func (s *AuthService) issueSession(user model.User, meta model.SessionMetadata) 
 		return model.AuthResult{}, err
 	}
 
-	return s.authResult(user, raw)
+	return s.authResult(user, raw, mfaAuthenticated)
 }
 
-func (s *AuthService) authResult(user model.User, refreshToken string) (model.AuthResult, error) {
-	token, err := s.tokens.Generate(user.ID, user.Email)
+func (s *AuthService) authResult(user model.User, refreshToken string, mfaAuthenticated bool) (model.AuthResult, error) {
+	token, err := s.tokens.GenerateUserWithMFA(user.ID, user.Email, nil, 0, mfaAuthenticated)
 	if err != nil {
 		return model.AuthResult{}, err
 	}
