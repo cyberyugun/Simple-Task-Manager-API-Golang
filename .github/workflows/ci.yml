@@ -102,6 +102,7 @@ jobs:
           if [ -n "$files" ]; then
             echo "The following files need gofmt:"
             echo "$files"
+            gofmt -d $files
             exit 1
           fi
 
