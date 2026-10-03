@@ -36,6 +36,8 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Workspace RBAC and multi-tenant task isolation
 - Personal workspace fallback for backward-compatible task clients
 - Owner/admin/member workspace membership controls and audit trail
+- Transactional outbox and durable background worker
+- Signed tenant-aware webhooks with retry, dead-letter, replay, and idempotency headers
 - Task CRUD and complete action
 - Pagination, search, filtering, sorting, and ordering
 - In-memory and PostgreSQL repositories
@@ -77,6 +79,11 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 | `REDIS_DIAL_TIMEOUT` | No | `5s` | Redis connection dial timeout |
 | `REDIS_READ_TIMEOUT` | No | `3s` | Redis read timeout |
 | `REDIS_WRITE_TIMEOUT` | No | `3s` | Redis write timeout |
+| `WORKER_BATCH_SIZE` | No | `25` | Outbox/delivery rows claimed per worker iteration |
+| `WORKER_POLL_INTERVAL` | No | `1s` | Worker polling interval |
+| `WEBHOOK_REQUEST_TIMEOUT` | No | `10s` | Per-webhook HTTP timeout |
+| `WEBHOOK_MAX_ATTEMPTS` | No | `8` | Delivery attempts before dead-letter |
+| `WEBHOOK_BASE_BACKOFF` | No | `1s` | Exponential retry base delay |
 
 ## Run locally
 
@@ -167,7 +174,7 @@ docker build \
   -t simple-task-manager-api .
 ```
 
-The Dockerfile uses Go 1.26.8 in a multi-stage build, produces stripped API and migration binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs the migration job to completion, then starts the API.
+The Dockerfile uses Go 1.26.8 in a multi-stage build, produces stripped API, migration, worker, and event-control binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs the migration job to completion, then starts the API and durable worker.
 
 ## PostgreSQL migrations
 
@@ -194,6 +201,8 @@ Swagger UI supports the Bearer JWT security scheme. Register/login, copy the ret
 The public contract is compatibility line `v1`. Responses advertise `X-API-Version: v1` and `API-Supported-Versions: v1`. OpenAPI governance, backward-compatibility checks, consumer expectations, generated TypeScript SDK validation, and deprecation policy are documented in [`docs/api-versioning.md`](docs/api-versioning.md). Public contract changes are tracked in [`docs/api-changelog.md`](docs/api-changelog.md), with examples in [`docs/api-examples.md`](docs/api-examples.md).
 
 Workspace tenancy, RBAC permissions, tenant-selection headers, rollout compatibility, and audit behavior are documented in [`docs/authorization-multitenancy.md`](docs/authorization-multitenancy.md).
+
+Transactional outbox behavior, event schemas, webhook signing, retry/DLQ handling, replay, SSRF controls, and worker operations are documented in [`docs/event-driven-processing.md`](docs/event-driven-processing.md).
 
 ## Public endpoints
 
@@ -336,9 +345,27 @@ GET /ready    -> PostgreSQL + Redis readiness when configured
 GET /metrics  -> Prometheus text exposition
 ```
 
-The metrics endpoint exports bounded route/method/status-class request counters and latency histograms, in-flight requests, recovered panics, rate-limit rejections, readiness/dependency gauges, trace exporter failures, PostgreSQL pool statistics, and Redis pool statistics. Dynamic task/session IDs are normalized to route templates to prevent high-cardinality metrics. Production requests also propagate W3C trace context and export OTLP/HTTP traces when the collector endpoint is configured.
+The metrics endpoint exports bounded route/method/status-class request counters and latency histograms, in-flight requests, recovered panics, rate-limit rejections, readiness/dependency gauges, trace exporter failures, PostgreSQL/Redis pool statistics, and durable outbox/webhook queue gauges. Dynamic task/session IDs are normalized to route templates to prevent high-cardinality metrics. Production requests also propagate W3C trace context and export OTLP/HTTP traces when the collector endpoint is configured.
 
 Panic recovery is centralized in HTTP middleware. Recovered panics return HTTP 500, increment the panic metric, and emit a structured error log with the request ID and stack trace.
+
+## Event-driven processing
+
+Task writes to PostgreSQL also write a versioned outbox event in the same transaction. A separate worker process fans events out to workspace webhook subscriptions with HMAC-SHA256 signatures, exponential retry, dead-letter handling, crash recovery, and per-event idempotency headers.
+
+Protected async administration endpoints:
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/webhooks` | List webhook subscriptions |
+| `POST` | `/api/webhooks` | Create webhook subscription |
+| `DELETE` | `/api/webhooks/{id}` | Delete webhook subscription |
+| `GET` | `/api/events/stats` | Queue/dead-letter statistics |
+| `POST` | `/api/events/replay` | Replay dead-letter work |
+
+Only workspace owners/admins can administer these endpoints. Shared workspaces use `X-Workspace-ID`.
+
+See [`docs/event-driven-processing.md`](docs/event-driven-processing.md) for event schemas, signature verification, SSRF controls, replay tooling, and delivery semantics.
 
 ## Kubernetes deployment
 
@@ -351,9 +378,11 @@ deploy/k8s/
 │   ├── serviceaccount.yaml
 │   ├── configmap.yaml
 │   ├── deployment.yaml
+│   ├── worker-deployment.yaml
 │   ├── service.yaml
 │   ├── hpa.yaml
 │   ├── pdb.yaml
+│   ├── worker-pdb.yaml
 │   ├── networkpolicy.yaml
 │   ├── migration-job.yaml
 │   ├── secret.example.yaml
