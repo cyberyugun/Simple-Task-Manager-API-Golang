@@ -46,7 +46,7 @@ func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		h.list(w, r, access.ID)
 	case http.MethodPost:
-		h.create(w, r, userID, access.ID)
+		h.create(w, r, userID, access)
 	default:
 		response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
 	}
@@ -145,7 +145,7 @@ func parseTaskQuery(r *http.Request) (model.TaskQuery, error) {
 	return query, nil
 }
 
-func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID, workspaceID int64) {
+func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID int64, access model.WorkspaceAccess) {
 	defer r.Body.Close()
 
 	var req model.CreateTaskRequest
@@ -154,7 +154,7 @@ func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID, wor
 		return
 	}
 
-	task, err := h.service.Create(userID, workspaceID, req)
+	task, err := h.service.Create(userID, access, req)
 	if err != nil {
 		h.handleError(w, err)
 		return
