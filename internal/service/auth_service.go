@@ -94,22 +94,37 @@ func (s *AuthService) Register(req model.RegisterRequest, meta model.SessionMeta
 	return s.issueSession(user, meta, false)
 }
 
-func (s *AuthService) Login(req model.LoginRequest, meta model.SessionMetadata) (model.AuthResult, error) {
-	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if email == "" || req.Password == "" {
-		return model.AuthResult{}, ErrInvalidCredentials
+func (s *AuthService) ValidatePassword(email, password string) (model.User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" || password == "" {
+		return model.User{}, ErrInvalidCredentials
 	}
 
 	user, err := s.users.FindByEmail(email)
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
-			return model.AuthResult{}, ErrInvalidCredentials
+			return model.User{}, ErrInvalidCredentials
 		}
+		return model.User{}, err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		return model.User{}, ErrInvalidCredentials
+	}
+	return user, nil
+}
+
+func (s *AuthService) IssueMFASession(userID int64, meta model.SessionMetadata) (model.AuthResult, error) {
+	user, err := s.users.FindByID(userID)
+	if err != nil {
 		return model.AuthResult{}, err
 	}
+	return s.issueSession(user, meta, true)
+}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		return model.AuthResult{}, ErrInvalidCredentials
+func (s *AuthService) Login(req model.LoginRequest, meta model.SessionMetadata) (model.AuthResult, error) {
+	user, err := s.ValidatePassword(req.Email, req.Password)
+	if err != nil {
+		return model.AuthResult{}, err
 	}
 
 	mfaAuthenticated := false
