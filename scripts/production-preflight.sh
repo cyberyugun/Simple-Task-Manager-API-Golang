@@ -69,18 +69,29 @@ else
   fail "namespace does not exist: $KUBE_NAMESPACE"
 fi
 
-for crd in clusterissuers.cert-manager.io certificates.cert-manager.io certificaterequests.cert-manager.io; do
-  if "$KUBECTL_BIN" get crd "$crd" >/dev/null 2>&1; then
-    pass "cert-manager CRD installed: $crd"
+cert_manager_resources="$("$KUBECTL_BIN" api-resources --api-group=cert-manager.io -o name 2>/dev/null || true)"
+for resource in clusterissuers.cert-manager.io certificates.cert-manager.io certificaterequests.cert-manager.io; do
+  if printf '%s\n' "$cert_manager_resources" | grep -qx "$resource"; then
+    pass "cert-manager API resource is available: $resource"
   else
-    fail "cert-manager CRD missing: $crd"
+    fail "cert-manager API resource is missing: $resource"
   fi
 done
 
-if "$KUBECTL_BIN" -n cert-manager get deployment cert-manager >/dev/null 2>&1; then
-  pass "cert-manager controller deployment is installed"
+if "$KUBECTL_BIN" get --raw /apis/cert-manager.io/v1 >/dev/null 2>&1; then
+  pass "cert-manager v1 API is served"
 else
-  fail "cert-manager controller deployment not found in namespace cert-manager"
+  fail "cert-manager v1 API is unavailable"
+fi
+
+if "$KUBECTL_BIN" auth can-i get deployments.apps -n cert-manager | grep -qx "yes"; then
+  if "$KUBECTL_BIN" -n cert-manager get deployment cert-manager >/dev/null 2>&1; then
+    pass "cert-manager controller deployment is visible"
+  else
+    fail "cert-manager controller deployment not found in namespace cert-manager"
+  fi
+else
+  warn "RBAC cannot inspect the cert-manager namespace; API discovery passed but controller deployment health was not directly verified"
 fi
 
 if "$KUBECTL_BIN" get ingressclass nginx >/dev/null 2>&1; then
@@ -115,8 +126,11 @@ else
 fi
 
 check_can_i get secrets
+check_can_i create configmaps
+check_can_i get jobs.batch
 check_can_i create jobs.batch
 check_can_i delete jobs.batch
+check_can_i get deployments.apps
 check_can_i create deployments.apps
 check_can_i patch deployments.apps
 check_can_i create services
