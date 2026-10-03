@@ -111,6 +111,7 @@ func TestProcessorDeliversSignedWebhook(t *testing.T) {
 		}},
 	}
 	processor := New(repo, Config{BatchSize: 10, MaxAttempts: 3}, slog.Default())
+	processor.client = server.Client()
 	if err := processor.Once(context.Background()); err != nil {
 		t.Fatalf("Once() error = %v", err)
 	}
@@ -173,6 +174,7 @@ func TestProcessorMovesExhaustedDeliveryToDeadLetter(t *testing.T) {
 		}},
 	}
 	processor := New(repo, Config{BatchSize: 10, MaxAttempts: 3, BaseBackoff: time.Millisecond}, slog.Default())
+	processor.client = server.Client()
 	if err := processor.Once(context.Background()); err != nil {
 		t.Fatalf("Once() error = %v", err)
 	}
