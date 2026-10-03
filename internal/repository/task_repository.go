@@ -37,6 +37,7 @@ func NewInMemoryTaskRepository() *InMemoryTaskRepository {
 }
 
 func (r *InMemoryTaskRepository) Create(task model.Task) (model.Task, error) {
+	task = normalizeTaskDefaults(task)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	task.ID = r.nextID
@@ -213,6 +214,7 @@ func (r *InMemoryTaskRepository) FindByID(workspaceID, id int64) (model.Task, er
 }
 
 func (r *InMemoryTaskRepository) Update(task model.Task) (model.Task, error) {
+	task = normalizeTaskDefaults(task)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	existing, ok := r.tasks[task.ID]
@@ -294,4 +296,19 @@ func (r *InMemoryTaskRepository) Delete(workspaceID, id int64) error {
 	}
 	delete(r.tasks, id)
 	return nil
+}
+
+
+func normalizeTaskDefaults(task model.Task) model.Task {
+	if task.Status == "" {
+		if task.Completed {
+			task.Status = model.TaskStatusDone
+		} else {
+			task.Status = model.TaskStatusTodo
+		}
+	}
+	if task.Priority == "" {
+		task.Priority = model.TaskPriorityMedium
+	}
+	return task
 }
