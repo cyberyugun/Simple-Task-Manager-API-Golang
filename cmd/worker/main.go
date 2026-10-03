@@ -135,7 +135,6 @@ func main() {
 	)
 	workflowService.SetNotificationEmitter(notificationService)
 	billingService.SetNotificationEmitter(notificationService)
-	automationService.SetNotificationEmitter(notificationService)
 	go runNotificationDeliveries(ctx, notificationService, notificationPoll, logger)
 	go runNotificationReminders(ctx, notificationService, reminderPoll, logger)
 
