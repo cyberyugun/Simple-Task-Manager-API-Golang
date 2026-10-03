@@ -38,6 +38,7 @@ type Config struct {
 	DatabaseURL           string
 	RedisURL              string
 	JWTSecret             string
+	WebhookSigningKey     string
 	LogLevel              string
 	ShutdownTimeout       time.Duration
 	ReadinessTimeout      time.Duration
@@ -70,6 +71,7 @@ func Load() (Config, error) {
 		DatabaseURL:           strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		RedisURL:              strings.TrimSpace(os.Getenv("REDIS_URL")),
 		JWTSecret:             os.Getenv("JWT_SECRET"),
+		WebhookSigningKey:     os.Getenv("WEBHOOK_SIGNING_KEY"),
 		LogLevel:              strings.TrimSpace(os.Getenv("LOG_LEVEL")),
 		ShutdownTimeout:       defaultShutdownTimeout,
 		ReadinessTimeout:      defaultReadinessTimeout,
