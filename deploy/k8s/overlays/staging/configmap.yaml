@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-api-config
+  namespace: task-manager
+data:
+  APP_ENV: "staging"
+  OTEL_SERVICE_NAME: "task-api-staging"
+  AUTH_RATE_LIMIT_REQUESTS: "1000"
+  DB_MAX_OPEN_CONNS: "5"
+  DB_MAX_IDLE_CONNS: "2"
+  REDIS_POOL_SIZE: "10"
+  REDIS_MIN_IDLE_CONNS: "2"

@@ -1,0 +1,14 @@
+# Phase 21 staging profile.
+# Initialize this stack with a staging-specific GCS state prefix.
+environment  = "staging"
+network_cidr = "10.130.0.0/20"
+
+gke_node_count = 1
+
+postgres_tier             = "db-custom-1-3840"
+postgres_retained_backups = 7
+
+redis_memory_size_gb = 1
+
+# Required project-specific value:
+# project_id = "your-staging-gcp-project"

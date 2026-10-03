@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: task-manager-staging
+  labels:
+    app.kubernetes.io/part-of: simple-task-manager
+    app.kubernetes.io/environment: staging

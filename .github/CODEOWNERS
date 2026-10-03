@@ -18,3 +18,8 @@
 /deploy/k8s/progressive/ @cyberyugun
 /docs/release-engineering.md @cyberyugun
 /docs/production-release-checklist.md @cyberyugun
+/deploy/k8s/overlays/staging/ @cyberyugun
+/docs/staging-promotion.md @cyberyugun
+/infra/terraform/aws/staging.tfvars.example @cyberyugun
+/infra/terraform/azure/staging.tfvars.example @cyberyugun
+/infra/terraform/gcp/staging.tfvars.example @cyberyugun

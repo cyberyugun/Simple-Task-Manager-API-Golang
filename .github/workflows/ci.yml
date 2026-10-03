@@ -28,7 +28,9 @@ jobs:
           bash -n scripts/progressive-deploy.sh
           bash -n scripts/release-policy-check.sh
           bash -n scripts/rollback-drill.sh
+          bash -n scripts/staging-preflight.sh
           python3 -m py_compile scripts/check-migration-compatibility.py
+          python3 -m py_compile scripts/promotion-evidence.py
           bash scripts/dr-readiness-check.sh
           bash scripts/performance-policy-check.sh
           bash scripts/release-policy-check.sh
@@ -45,6 +47,13 @@ jobs:
 
           if CANARY_WEIGHT=75 bash scripts/release-policy-check.sh; then
             echo "invalid canary weight unexpectedly passed release policy"
+            exit 1
+          fi
+
+          python3 scripts/promotion-evidence.py create             --output /tmp/promotion-evidence.json             --commit test-commit             --image-digest sha256:test             --run-id 123             --source-ref refs/tags/v-test             --staging-url https://staging.example.com
+          python3 scripts/promotion-evidence.py verify             --file /tmp/promotion-evidence.json             --commit test-commit             --image-digest sha256:test             --run-id 123
+          if python3 scripts/promotion-evidence.py verify             --file /tmp/promotion-evidence.json             --commit wrong-commit             --image-digest sha256:test             --run-id 123; then
+            echo "mismatched promotion evidence unexpectedly passed"
             exit 1
           fi
 
@@ -162,7 +171,9 @@ jobs:
       - name: Render production manifests
         run: |
           kubectl kustomize deploy/k8s/overlays/production > /tmp/kubernetes.yaml
+          kubectl kustomize deploy/k8s/overlays/staging > /tmp/staging-kubernetes.yaml
           test -s /tmp/kubernetes.yaml
+          test -s /tmp/staging-kubernetes.yaml
           grep -q '^kind: Deployment$' /tmp/kubernetes.yaml
           grep -q '^kind: Service$' /tmp/kubernetes.yaml
           grep -q '^kind: HorizontalPodAutoscaler$' /tmp/kubernetes.yaml
@@ -172,6 +183,10 @@ jobs:
           grep -q '^kind: ClusterIssuer$' /tmp/kubernetes.yaml
           grep -q '^kind: ServiceMonitor$' /tmp/kubernetes.yaml
           grep -q '^kind: PrometheusRule$' /tmp/kubernetes.yaml
+          grep -q 'namespace: task-manager-staging' /tmp/staging-kubernetes.yaml
+          grep -q 'APP_ENV: staging' /tmp/staging-kubernetes.yaml
+          grep -q 'name: task-api-staging' /tmp/staging-kubernetes.yaml
+          grep -q 'staging-task-api.example.com' /tmp/staging-kubernetes.yaml
 
       - name: Validate manifest YAML structure
         run: |
@@ -186,7 +201,14 @@ jobs:
             "deploy/k8s/optional/cert-manager-clusterissuer.example.yaml",
             "deploy/k8s/progressive/canary-deployment.yaml",
             "deploy/k8s/progressive/canary-service.yaml",
-            "deploy/k8s/progressive/canary-ingress.yaml"
+            "deploy/k8s/progressive/canary-ingress.yaml",
+            "deploy/k8s/overlays/staging/namespace.yaml",
+            "deploy/k8s/overlays/staging/namespace-delete.yaml",
+            "deploy/k8s/overlays/staging/configmap.yaml",
+            "deploy/k8s/overlays/staging/ingress.yaml",
+            "deploy/k8s/overlays/staging/deployment-patch.yaml",
+            "deploy/k8s/overlays/staging/hpa-patch.yaml",
+            "deploy/k8s/overlays/staging/servicemonitor.yaml"
           ]
 
           paths.each do |path|

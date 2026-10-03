@@ -242,3 +242,23 @@ Before enabling production progressive delivery:
 - exercise `scripts/rollback-drill.sh` in staging before relying on emergency rollback procedures
 
 See `docs/release-engineering.md` and `docs/production-release-checklist.md`.
+
+## Staging promotion readiness
+
+Production promotion now depends on the same immutable digest passing staging.
+
+Before the first release:
+
+- create a GitHub Environment named `staging`
+- configure environment-scoped Kubernetes/cloud OIDC credentials
+- configure staging `KUBE_INGRESS_HOST`
+- provision an isolated PostgreSQL database and Redis service
+- create `task-api-secrets` in `task-manager-staging`
+- ensure staging DNS/TLS is reachable from the Actions runner
+- keep staging and production Terraform state keys/prefixes separate
+- run the staging overlay and k6 acceptance gate successfully
+- verify `staging-promotion-evidence.json` is produced
+
+Production must not bypass the `needs: [build, staging]` workflow dependency.
+
+See `docs/staging-promotion.md`.
