@@ -54,12 +54,12 @@ type ServiceAPIKey struct {
 }
 
 type EnterpriseSecurityPolicy struct {
-	WorkspaceID          int64    `json:"workspace_id"`
-	RequireMFA           bool     `json:"require_mfa"`
-	AllowServiceAccounts bool     `json:"allow_service_accounts"`
-	AllowedEmailDomains  []string `json:"allowed_email_domains"`
-	MaxSessionAgeMinutes int      `json:"max_session_age_minutes"`
-	UpdatedByUserID      int64    `json:"updated_by_user_id"`
+	WorkspaceID          int64     `json:"workspace_id"`
+	RequireMFA           bool      `json:"require_mfa"`
+	AllowServiceAccounts bool      `json:"allow_service_accounts"`
+	AllowedEmailDomains  []string  `json:"allowed_email_domains"`
+	MaxSessionAgeMinutes int       `json:"max_session_age_minutes"`
+	UpdatedByUserID      int64     `json:"updated_by_user_id"`
 	UpdatedAt            time.Time `json:"updated_at"`
 }
 
