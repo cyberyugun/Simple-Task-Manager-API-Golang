@@ -88,8 +88,8 @@ func (s *AutomationService) CreatePolicy(actorUserID, organizationID int64, req 
 	created, err := s.repo.CreateAutomationPolicy(item)
 	if err == nil {
 		s.audit(organizationID, &actorUserID, "automation.policy.created", "automation_policy", fmt.Sprint(created.ID), map[string]any{
-			"trigger_type": created.TriggerType,
-			"action_type": created.ActionType,
+			"trigger_type":  created.TriggerType,
+			"action_type":   created.ActionType,
 			"approval_mode": created.ApprovalMode,
 		})
 	}
@@ -122,7 +122,7 @@ func (s *AutomationService) UpdatePolicy(actorUserID, organizationID, policyID i
 	updated, err := s.repo.UpdateAutomationPolicy(existing)
 	if err == nil {
 		s.audit(organizationID, &actorUserID, "automation.policy.updated", "automation_policy", fmt.Sprint(policyID), map[string]any{
-			"enabled": updated.Enabled,
+			"enabled":       updated.Enabled,
 			"approval_mode": updated.ApprovalMode,
 		})
 	}
@@ -236,7 +236,7 @@ func (s *AutomationService) evaluatePolicies(policies []model.AutomationPolicy, 
 			return nil, err
 		}
 		s.audit(policy.OrganizationID, actorUserID, "automation.execution.requested", "automation_execution", fmt.Sprint(execution.ID), map[string]any{
-			"policy_id": policy.ID,
+			"policy_id":     policy.ID,
 			"approval_mode": policy.ApprovalMode,
 		})
 		if policy.ApprovalMode == model.AutomationApprovalAutomatic {
@@ -265,11 +265,11 @@ func (s *AutomationService) matchPolicy(policy model.AutomationPolicy, now time.
 				continue
 			}
 			return map[string]any{
-				"trigger_type": "operations_alert",
-				"alert_id": alert.ID,
-				"alert_type": alert.Type,
-				"metric": alert.Metric,
-				"current_value": alert.CurrentValue,
+				"trigger_type":    "operations_alert",
+				"alert_id":        alert.ID,
+				"alert_type":      alert.Type,
+				"metric":          alert.Metric,
+				"current_value":   alert.CurrentValue,
 				"threshold_value": alert.ThresholdValue,
 			}, fmt.Sprintf("policy:%d:alert:%d", policy.ID, alert.ID), true, nil
 		}
@@ -303,10 +303,10 @@ func (s *AutomationService) matchPolicy(policy model.AutomationPolicy, now time.
 		bucketSeconds := int64(policy.CooldownMinutes * 60)
 		bucket := now.Unix() / bucketSeconds
 		return map[string]any{
-			"trigger_type": "billing_usage_percent",
-			"metric": policy.TriggerKey,
-			"quantity": quantity,
-			"limit": limit,
+			"trigger_type":        "billing_usage_percent",
+			"metric":              policy.TriggerKey,
+			"quantity":            quantity,
+			"limit":               limit,
 			"utilization_percent": utilization,
 		}, fmt.Sprintf("policy:%d:billing:%s:%d", policy.ID, policy.TriggerKey, bucket), true, nil
 	default:
@@ -356,7 +356,7 @@ func (s *AutomationService) execute(execution model.AutomationExecution, actionA
 		actor = &actionActorUserID
 	}
 	s.audit(execution.OrganizationID, actor, "automation.execution.completed", "automation_execution", fmt.Sprint(execution.ID), map[string]any{
-		"status": updated.Status,
+		"status":      updated.Status,
 		"action_type": policy.ActionType,
 	})
 	return updated, nil
@@ -388,8 +388,8 @@ func (s *AutomationService) openIncident(policy model.AutomationPolicy, actorUse
 	}
 	return map[string]any{
 		"incident_id": incident.ID,
-		"severity": incident.Severity,
-		"status": incident.Status,
+		"severity":    incident.Severity,
+		"status":      incident.Status,
 	}, nil
 }
 
