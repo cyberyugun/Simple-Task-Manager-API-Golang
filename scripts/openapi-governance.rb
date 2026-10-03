@@ -28,7 +28,7 @@ spec.fetch("paths", {}).each do |path, item|
     responses = operation.fetch("responses", {})
     failures << "#{id}: missing 2xx response" unless responses.keys.any? { |code| code.to_s.match?(/\A2\d\d\z/) }
 
-    protected_path = path.start_with?("/api/tasks") || path.start_with?("/api/workspaces") || %w[
+    protected_path = path.start_with?("/api/tasks") || path.start_with?("/api/workspaces") || path.start_with?("/api/webhooks") || %w[
       /api/auth/change-password
       /api/auth/logout-all
       /api/auth/sessions
