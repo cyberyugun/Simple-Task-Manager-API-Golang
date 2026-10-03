@@ -319,7 +319,7 @@ GET /ready    -> PostgreSQL + Redis readiness when configured
 GET /metrics  -> Prometheus text exposition
 ```
 
-The metrics endpoint currently exports aggregate request count/duration, in-flight requests, recovered panics, rate-limit rejections, readiness checks, and readiness failures. It deliberately avoids raw URL-path labels to prevent high-cardinality metrics from task IDs.
+The metrics endpoint exports bounded route/method/status-class request counters and latency histograms, in-flight requests, recovered panics, rate-limit rejections, readiness/dependency gauges, trace exporter failures, PostgreSQL pool statistics, and Redis pool statistics. Dynamic task/session IDs are normalized to route templates to prevent high-cardinality metrics. Production requests also propagate W3C trace context and export OTLP/HTTP traces when the collector endpoint is configured.
 
 Panic recovery is centralized in HTTP middleware. Recovered panics return HTTP 500, increment the panic metric, and emit a structured error log with the request ID and stack trace.
 
@@ -440,6 +440,8 @@ Before the first production rollout, follow the full readiness runbook in [`docs
 Production infrastructure can be provisioned from the Terraform stacks under `infra/terraform/`. See [`docs/infrastructure-as-code.md`](docs/infrastructure-as-code.md) for AWS, Azure, GCP, remote-state, private-runner, and platform bootstrap guidance.
 
 Terraform plan/apply promotion, encrypted plan artifacts, remote-state bootstrap, OIDC-only infrastructure auth, and drift detection are documented in [`docs/terraform-delivery.md`](docs/terraform-delivery.md).
+
+Production metrics, traces, logs, SLOs, synthetic probes, restore drills, and incident response are documented in [`docs/observability-sre.md`](docs/observability-sre.md) and [`docs/sre-incident-runbook.md`](docs/sre-incident-runbook.md).
 
 ## Security and software supply chain
 
