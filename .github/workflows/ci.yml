@@ -24,7 +24,9 @@ jobs:
           bash -n scripts/postgres-backup-restore-check.sh
           bash -n scripts/dr-readiness-check.sh
           bash -n scripts/resilience-smoke.sh
+          bash -n scripts/performance-policy-check.sh
           bash scripts/dr-readiness-check.sh
+          bash scripts/performance-policy-check.sh
 
       - name: Validate Terraform delivery helpers
         run: |
