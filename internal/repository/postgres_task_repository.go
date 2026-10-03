@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"go-simple-task-api/internal/model"
 )
@@ -24,11 +25,17 @@ func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 		RETURNING id, workspace_id, created_by_user_id, title, description, completed, created_at, updated_at
 	`
 
+	tx, err := r.db.Begin()
+	if err != nil {
+		return model.Task{}, err
+	}
+	defer tx.Rollback()
+
 	var legacyUserID any
 	if task.PersonalWorkspace {
 		legacyUserID = task.UserID
 	}
-	return scanTask(r.db.QueryRow(
+	created, err := scanTask(tx.QueryRow(
 		query,
 		task.WorkspaceID,
 		legacyUserID,
@@ -39,6 +46,24 @@ func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 		task.CreatedAt,
 		task.UpdatedAt,
 	))
+	if err != nil {
+		return model.Task{}, err
+	}
+	if err := insertOutbox(
+		tx,
+		created.WorkspaceID,
+		model.EventTaskCreated,
+		"task",
+		fmt.Sprintf("%d", created.ID),
+		created,
+		created.CreatedAt,
+	); err != nil {
+		return model.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Task{}, err
+	}
+	return created, nil
 }
 
 func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuery) (model.TaskPage, error) {
@@ -175,7 +200,13 @@ func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 		RETURNING id, workspace_id, COALESCE(created_by_user_id, user_id), title, description, completed, created_at, updated_at
 	`
 
-	updated, err := scanTask(r.db.QueryRow(
+	tx, err := r.db.Begin()
+	if err != nil {
+		return model.Task{}, err
+	}
+	defer tx.Rollback()
+
+	updated, err := scanTask(tx.QueryRow(
 		query,
 		task.ID,
 		task.WorkspaceID,
@@ -187,11 +218,59 @@ func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Task{}, ErrTaskNotFound
 	}
-	return updated, err
+	if err != nil {
+		return model.Task{}, err
+	}
+	if err := insertOutbox(
+		tx,
+		updated.WorkspaceID,
+		model.EventTaskUpdated,
+		"task",
+		fmt.Sprintf("%d", updated.ID),
+		updated,
+		updated.UpdatedAt,
+	); err != nil {
+		return model.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Task{}, err
+	}
+	return updated, nil
 }
 
 func (r *PostgresTaskRepository) Delete(workspaceID, id int64) error {
-	result, err := r.db.Exec(`
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	task, err := scanTask(tx.QueryRow(`
+		SELECT id, COALESCE(workspace_id, $2), COALESCE(created_by_user_id, user_id),
+		       title, description, completed, created_at, updated_at
+		FROM tasks
+		WHERE id = $1
+		  AND (
+		    workspace_id = $2
+		    OR (
+		      workspace_id IS NULL
+		      AND user_id IN (
+		        SELECT created_by_user_id
+		        FROM workspaces
+		        WHERE id = $2 AND is_personal = TRUE
+		      )
+		    )
+		  )
+		FOR UPDATE
+	`, id, workspaceID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrTaskNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	result, err := tx.Exec(`
 		DELETE FROM tasks
 		WHERE id = $1
 		  AND (
@@ -209,7 +288,6 @@ func (r *PostgresTaskRepository) Delete(workspaceID, id int64) error {
 	if err != nil {
 		return err
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return err
@@ -217,7 +295,19 @@ func (r *PostgresTaskRepository) Delete(workspaceID, id int64) error {
 	if rowsAffected == 0 {
 		return ErrTaskNotFound
 	}
-	return nil
+
+	if err := insertOutbox(
+		tx,
+		task.WorkspaceID,
+		model.EventTaskDeleted,
+		"task",
+		fmt.Sprintf("%d", task.ID),
+		task,
+		time.Now(),
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 type taskScanner interface {

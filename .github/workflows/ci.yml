@@ -182,6 +182,7 @@ jobs:
           test -s /tmp/kubernetes.yaml
           test -s /tmp/staging-kubernetes.yaml
           grep -q '^kind: Deployment$' /tmp/kubernetes.yaml
+          grep -q 'name: task-worker' /tmp/kubernetes.yaml
           grep -q '^kind: Service$' /tmp/kubernetes.yaml
           grep -q '^kind: HorizontalPodAutoscaler$' /tmp/kubernetes.yaml
           grep -q '^kind: PodDisruptionBudget$' /tmp/kubernetes.yaml
@@ -203,6 +204,7 @@ jobs:
           paths = [
             "/tmp/kubernetes.yaml",
             "deploy/k8s/base/migration-job.yaml",
+            "deploy/k8s/base/worker-deployment.yaml",
             "deploy/k8s/base/secret.example.yaml",
             "deploy/k8s/optional/external-secret.example.yaml",
             "deploy/k8s/optional/cert-manager-clusterissuer.example.yaml",
@@ -344,10 +346,49 @@ jobs:
             -d "{\"refresh_token\":\"$new_refresh\"}")"
           test "$logout_all_refresh_status" = "401"
 
+      - name: Smoke test idempotent task and outbox worker
+        run: |
+          login_response="$(curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          idempotency_key="ci-task-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          first="$(mktemp)"
+          second="$(mktemp)"
+          curl --fail --silent -D /tmp/first-headers \
+            -X POST http://localhost:8080/api/tasks \
+            -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' \
+            -H "X-Idempotency-Key: $idempotency_key" \
+            -d '{"title":"Idempotent task","description":"outbox smoke"}' > "$first"
+          curl --fail --silent -D /tmp/second-headers \
+            -X POST http://localhost:8080/api/tasks \
+            -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' \
+            -H "X-Idempotency-Key: $idempotency_key" \
+            -d '{"title":"Idempotent task","description":"outbox smoke"}' > "$second"
+
+          cmp "$first" "$second"
+          grep -qi '^Idempotent-Replayed: true' /tmp/second-headers
+
+          pending="1"
+          for attempt in $(seq 1 20); do
+            pending="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc \
+              "SELECT COUNT(*) FROM outbox_events WHERE processed_at IS NULL AND dead_lettered_at IS NULL")"
+            if [ "$pending" = "0" ]; then
+              break
+            fi
+            sleep 1
+          done
+          test "$pending" = "0"
+          docker compose logs worker | grep '"msg":"event_worker_started"'
+
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "7"
+          test "$migration_count" = "8"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"

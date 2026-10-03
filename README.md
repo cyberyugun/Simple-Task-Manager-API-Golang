@@ -36,6 +36,10 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Workspace RBAC and multi-tenant task isolation
 - Personal workspace fallback for backward-compatible task clients
 - Owner/admin/member workspace membership controls and audit trail
+- Transactional outbox for task domain events
+- Dedicated background workers with retry, dead-letter, and replay
+- Signed tenant-aware webhook subscriptions
+- Workspace-scoped idempotency keys for task creation
 - Task CRUD and complete action
 - Pagination, search, filtering, sorting, and ordering
 - In-memory and PostgreSQL repositories
@@ -77,6 +81,11 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 | `REDIS_DIAL_TIMEOUT` | No | `5s` | Redis connection dial timeout |
 | `REDIS_READ_TIMEOUT` | No | `3s` | Redis read timeout |
 | `REDIS_WRITE_TIMEOUT` | No | `3s` | Redis write timeout |
+| `IDEMPOTENCY_TTL` | No | `24h` | Retention window for task-create idempotency records |
+| `WEBHOOK_ALLOW_INSECURE_HTTP` | No | `false` | Allow plain HTTP webhook destinations for local testing only |
+| `WORKER_POLL_INTERVAL` | No | `2s` | Background worker polling interval |
+| `WORKER_BATCH_SIZE` | No | `50` | Maximum outbox events claimed per worker iteration |
+| `WEBHOOK_TIMEOUT` | No | `10s` | Webhook HTTP request timeout |
 
 ## Run locally
 
@@ -167,7 +176,7 @@ docker build \
   -t simple-task-manager-api .
 ```
 
-The Dockerfile uses Go 1.26.8 in a multi-stage build, produces stripped API and migration binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs the migration job to completion, then starts the API.
+The Dockerfile uses Go 1.26.8 in a multi-stage build, produces stripped API, migration, event-worker, and event-replay binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs migrations, then starts both the API and background worker.
 
 ## PostgreSQL migrations
 
@@ -194,6 +203,8 @@ Swagger UI supports the Bearer JWT security scheme. Register/login, copy the ret
 The public contract is compatibility line `v1`. Responses advertise `X-API-Version: v1` and `API-Supported-Versions: v1`. OpenAPI governance, backward-compatibility checks, consumer expectations, generated TypeScript SDK validation, and deprecation policy are documented in [`docs/api-versioning.md`](docs/api-versioning.md). Public contract changes are tracked in [`docs/api-changelog.md`](docs/api-changelog.md), with examples in [`docs/api-examples.md`](docs/api-examples.md).
 
 Workspace tenancy, RBAC permissions, tenant-selection headers, rollout compatibility, and audit behavior are documented in [`docs/authorization-multitenancy.md`](docs/authorization-multitenancy.md).
+
+Transactional outbox semantics, webhook signatures, retries/dead letters, replay, SSRF controls, and task idempotency are documented in [`docs/event-driven-processing.md`](docs/event-driven-processing.md).
 
 ## Public endpoints
 
@@ -351,6 +362,7 @@ deploy/k8s/
 │   ├── serviceaccount.yaml
 │   ├── configmap.yaml
 │   ├── deployment.yaml
+│   ├── worker-deployment.yaml
 │   ├── service.yaml
 │   ├── hpa.yaml
 │   ├── pdb.yaml

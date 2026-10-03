@@ -35,6 +35,8 @@ func setValidEnv(t *testing.T) {
 		"REDIS_DIAL_TIMEOUT",
 		"REDIS_READ_TIMEOUT",
 		"REDIS_WRITE_TIMEOUT",
+		"IDEMPOTENCY_TTL",
+		"WEBHOOK_ALLOW_INSECURE_HTTP",
 	} {
 		t.Setenv(name, "")
 	}
@@ -78,6 +80,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RedisPoolSize != 20 || cfg.RedisMinIdleConns != 5 || cfg.RedisPoolTimeout != 4*time.Second {
 		t.Fatalf("unexpected redis pool defaults: %+v", cfg)
 	}
+	if cfg.IdempotencyTTL != 24*time.Hour || cfg.WebhookAllowInsecure {
+		t.Fatalf("unexpected async defaults: %+v", cfg)
+	}
 }
 
 func TestLoadCustomValues(t *testing.T) {
@@ -109,6 +114,8 @@ func TestLoadCustomValues(t *testing.T) {
 	t.Setenv("REDIS_DIAL_TIMEOUT", "6s")
 	t.Setenv("REDIS_READ_TIMEOUT", "4s")
 	t.Setenv("REDIS_WRITE_TIMEOUT", "4s")
+	t.Setenv("IDEMPOTENCY_TTL", "12h")
+	t.Setenv("WEBHOOK_ALLOW_INSECURE_HTTP", "true")
 
 	cfg, err := Load()
 	if err != nil {
@@ -138,6 +145,9 @@ func TestLoadCustomValues(t *testing.T) {
 	if cfg.DBMaxOpenConns != 24 || cfg.DBMaxIdleConns != 12 || cfg.RedisPoolSize != 40 || cfg.RedisMinIdleConns != 10 {
 		t.Fatalf("unexpected pool config: %+v", cfg)
 	}
+	if cfg.IdempotencyTTL != 12*time.Hour || !cfg.WebhookAllowInsecure {
+		t.Fatalf("unexpected async config: %+v", cfg)
+	}
 }
 
 func TestLoadRejectsInvalidValues(t *testing.T) {
@@ -165,6 +175,8 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{name: "invalid redis pool", envName: "REDIS_POOL_SIZE", value: "0"},
 		{name: "invalid redis min idle", envName: "REDIS_MIN_IDLE_CONNS", value: "-1"},
 		{name: "invalid redis timeout", envName: "REDIS_POOL_TIMEOUT", value: "0s"},
+		{name: "invalid idempotency ttl", envName: "IDEMPOTENCY_TTL", value: "0s"},
+		{name: "invalid insecure webhook flag", envName: "WEBHOOK_ALLOW_INSECURE_HTTP", value: "sometimes"},
 	}
 
 	for _, tt := range tests {

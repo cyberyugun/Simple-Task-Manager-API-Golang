@@ -1,0 +1,92 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	appdb "go-simple-task-api/internal/database"
+	"go-simple-task-api/internal/events"
+	"go-simple-task-api/internal/observability"
+	"go-simple-task-api/internal/repository"
+)
+
+func main() {
+	logger := observability.NewJSONLogger(os.Getenv("LOG_LEVEL"))
+	slog.SetDefault(logger)
+
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		logger.Error("event_worker_configuration_failed", "error", "DATABASE_URL is required")
+		os.Exit(1)
+	}
+	db, err := appdb.OpenPostgres(databaseURL)
+	if err != nil {
+		logger.Error("event_worker_database_failed", "error", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	poll, err := durationEnv("WORKER_POLL_INTERVAL", 2*time.Second)
+	if err != nil {
+		logger.Error("event_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	timeout, err := durationEnv("WEBHOOK_TIMEOUT", 10*time.Second)
+	if err != nil {
+		logger.Error("event_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	batch, err := intEnv("WORKER_BATCH_SIZE", 50)
+	if err != nil {
+		logger.Error("event_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	allowInsecure, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("WEBHOOK_ALLOW_INSECURE_HTTP")))
+	host, _ := os.Hostname()
+	workerID := fmt.Sprintf("%s-%d", host, os.Getpid())
+
+	worker := events.NewWorker(repository.NewPostgresEventRepository(db), events.WorkerOptions{
+		WorkerID: workerID, BatchSize: batch, PollInterval: poll,
+		HTTPTimeout: timeout, AllowInsecure: allowInsecure, Logger: logger,
+	})
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	logger.Info("event_worker_started", "worker_id", workerID, "batch_size", batch, "poll_interval", poll)
+	if err := worker.Run(ctx); err != nil && ctx.Err() == nil {
+		logger.Error("event_worker_stopped", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("event_worker_stopped")
+}
+
+func durationEnv(name string, fallback time.Duration) (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive duration", name)
+	}
+	return value, nil
+}
+
+func intEnv(name string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", name)
+	}
+	return value, nil
+}

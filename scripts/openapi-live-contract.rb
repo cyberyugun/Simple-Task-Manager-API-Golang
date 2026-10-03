@@ -75,9 +75,24 @@ token = registered.fetch("data").fetch("access_token")
 res = request(base, "get", "/api/tasks", token: token)
 validate_response!(spec, res, "/api/tasks", "get", 200)
 
-res = request(base, "post", "/api/tasks", body: {title: "Contract task", description: "OpenAPI validation"}, token: token)
+idempotency_headers = {"X-Idempotency-Key" => "contract-create-#{Time.now.to_i}-#{Process.pid}"}
+task_body = {title: "Contract task", description: "OpenAPI validation"}
+res = request(base, "post", "/api/tasks", body: task_body, token: token, headers: idempotency_headers)
 created = validate_response!(spec, res, "/api/tasks", "post", 201)
 id = created.fetch("data").fetch("id")
+
+replayed = request(base, "post", "/api/tasks", body: task_body, token: token, headers: idempotency_headers)
+replayed_body = validate_response!(spec, replayed, "/api/tasks", "post", 201)
+raise "idempotent replay did not advertise replay" unless replayed["Idempotent-Replayed"] == "true"
+raise "idempotent replay created a different task" unless replayed_body.fetch("data").fetch("id") == id
+
+conflict = request(
+  base, "post", "/api/tasks",
+  body: {title: "Different request"},
+  token: token,
+  headers: idempotency_headers
+)
+raise "idempotency hash conflict should return 409, got #{conflict.code}" unless conflict.code.to_i == 409
 
 [
   ["get", "/api/tasks/#{id}", "/api/tasks/{id}", 200],
@@ -136,4 +151,24 @@ raise "member audit access should be forbidden, got #{res.code}" unless res.code
 res = request(base, "get", "/api/workspaces/#{workspace_id}/audit", token: token)
 validate_response!(spec, res, "/api/workspaces/{id}/audit", "get", 200)
 
-puts "Live OpenAPI contract PASSED, including multi-tenant RBAC isolation."
+res = request(
+  base,
+  "post",
+  "/api/workspaces/#{workspace_id}/webhooks",
+  body: {url: "https://webhook.example.invalid/task-hook", event_types: ["task.created", "task.updated"]},
+  token: token
+)
+webhook = validate_response!(spec, res, "/api/workspaces/{id}/webhooks", "post", 201)
+subscription_id = webhook.fetch("data").fetch("id")
+raise "webhook signing secret missing from creation response" if webhook.fetch("data").fetch("signing_secret", "").empty?
+
+res = request(base, "get", "/api/workspaces/#{workspace_id}/webhooks", token: token)
+listed = validate_response!(spec, res, "/api/workspaces/{id}/webhooks", "get", 200)
+listed_item = listed.fetch("data").find { |item| item["id"] == subscription_id }
+raise "created webhook missing from list" unless listed_item
+raise "webhook signing secret leaked in list" if listed_item.key?("signing_secret")
+
+res = request(base, "delete", "/api/workspaces/#{workspace_id}/webhooks/#{subscription_id}", token: token)
+validate_response!(spec, res, "/api/workspaces/{id}/webhooks/{subscription_id}", "delete", 200)
+
+puts "Live OpenAPI contract PASSED, including RBAC, idempotency, and webhook management."

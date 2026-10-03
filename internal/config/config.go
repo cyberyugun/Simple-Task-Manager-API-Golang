@@ -31,6 +31,7 @@ const (
 	defaultRedisDialTimeout      = 5 * time.Second
 	defaultRedisReadTimeout      = 3 * time.Second
 	defaultRedisWriteTimeout     = 3 * time.Second
+	defaultIdempotencyTTL        = 24 * time.Hour
 )
 
 type Config struct {
@@ -62,6 +63,8 @@ type Config struct {
 	RedisDialTimeout      time.Duration
 	RedisReadTimeout      time.Duration
 	RedisWriteTimeout     time.Duration
+	IdempotencyTTL        time.Duration
+	WebhookAllowInsecure  bool
 }
 
 func Load() (Config, error) {
@@ -93,6 +96,7 @@ func Load() (Config, error) {
 		RedisDialTimeout:      defaultRedisDialTimeout,
 		RedisReadTimeout:      defaultRedisReadTimeout,
 		RedisWriteTimeout:     defaultRedisWriteTimeout,
+		IdempotencyTTL:        defaultIdempotencyTTL,
 	}
 
 	var err error
@@ -144,6 +148,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.RedisWriteTimeout, err = parsePositiveDuration("REDIS_WRITE_TIMEOUT", cfg.RedisWriteTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.IdempotencyTTL, err = parsePositiveDuration("IDEMPOTENCY_TTL", cfg.IdempotencyTTL); err != nil {
 		return Config{}, err
 	}
 
@@ -202,6 +209,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.ExposeAuthTokens, err = parseBool("EXPOSE_AUTH_TOKENS", false); err != nil {
+		return Config{}, err
+	}
+	if cfg.WebhookAllowInsecure, err = parseBool("WEBHOOK_ALLOW_INSECURE_HTTP", false); err != nil {
 		return Config{}, err
 	}
 

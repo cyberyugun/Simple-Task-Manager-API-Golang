@@ -63,6 +63,7 @@ func main() {
 	var refreshRepo repository.RefreshTokenRepository
 	var actionRepo repository.AuthActionTokenRepository
 	var workspaceRepo repository.WorkspaceRepository
+	var eventRepo repository.EventRepository
 
 	if cfg.DatabaseURL != "" {
 		db, err = appdb.OpenPostgres(cfg.DatabaseURL, appdb.Options{
@@ -82,6 +83,7 @@ func main() {
 		refreshRepo = repository.NewPostgresRefreshTokenRepository(db)
 		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
 		workspaceRepo = repository.NewPostgresWorkspaceRepository(db)
+		eventRepo = repository.NewPostgresEventRepository(db)
 		logger.Info(
 			"storage_configured",
 			"backend", "postgresql",
@@ -94,6 +96,7 @@ func main() {
 		refreshRepo = repository.NewInMemoryRefreshTokenRepository()
 		actionRepo = repository.NewInMemoryAuthActionTokenRepository()
 		workspaceRepo = repository.NewInMemoryWorkspaceRepository()
+		eventRepo = repository.NewInMemoryEventRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
 	}
 
@@ -131,11 +134,14 @@ func main() {
 	)
 	taskService := service.NewTaskService(taskRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
+	webhookService := service.NewWebhookService(workspaceRepo, eventRepo, cfg.WebhookAllowInsecure)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
+	webhookHandler := handler.NewWebhookHandler(webhookService)
 	authMiddleware := middleware.Auth(tokenManager)
 	workspaceMiddleware := middleware.WorkspaceScope(workspaceRepo)
+	idempotencyMiddleware := middleware.Idempotency(eventRepo, cfg.IdempotencyTTL)
 
 	var authRateLimiter middleware.AuthRateLimiter
 	if redisClient != nil {
@@ -168,6 +174,9 @@ func main() {
 	}
 	protectedWorkspace := func(h http.HandlerFunc) http.Handler {
 		return authMiddleware(workspaceMiddleware(http.HandlerFunc(h)))
+	}
+	protectedWorkspaceIdempotent := func(h http.HandlerFunc) http.Handler {
+		return authMiddleware(workspaceMiddleware(idempotencyMiddleware(http.HandlerFunc(h))))
 	}
 
 	ready := readiness.New(db, redisClient, cfg.ReadinessTimeout, metrics)
@@ -206,9 +215,11 @@ func main() {
 	mux.Handle("/api/auth/email-verification/request", protectedRateLimited(authHandler.RequestEmailVerification))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
+	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
+	mux.Handle("/api/workspaces/{id}/webhooks/{subscription_id}", protected(webhookHandler.SubscriptionByID))
 	mux.Handle("/api/workspaces/", protected(workspaceHandler.WorkspaceByID))
 
-	mux.Handle("/api/tasks", protectedWorkspace(taskHandler.Tasks))
+	mux.Handle("/api/tasks", protectedWorkspaceIdempotent(taskHandler.Tasks))
 	mux.Handle("/api/tasks/", protectedWorkspace(taskHandler.TaskByID))
 
 	var root http.Handler = mux

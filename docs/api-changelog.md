@@ -1,5 +1,21 @@
 # API Changelog
 
+## 1.5.0 — Phase 24
+
+Compatibility line: **v1**.
+
+Additive asynchronous-processing release:
+
+- adds optional `X-Idempotency-Key` on `POST /api/tasks`
+- adds workspace webhook subscription list/create/delete endpoints
+- adds signing-secret-on-create behavior
+- adds task domain events `task.created`, `task.updated`, and `task.deleted`
+- adds transactional PostgreSQL outbox and background delivery workers
+- adds retry, dead-letter, and replay semantics
+- preserves existing task behavior when no idempotency key is supplied
+- preserves all existing v1 paths, operation IDs, required request properties, and response fields
+
+
 ## 1.4.0 — Phase 23
 
 Compatibility line: **v1**.
