@@ -141,6 +141,32 @@ func TestNotificationPreferenceQuietHoursAndChannelEnforcement(t *testing.T) {
 	}
 }
 
+func TestNotificationWebhookSigningSecretIsReturnedOnce(t *testing.T) {
+	svc, users, _, _, _, _ := newNotificationTestService(t)
+	now := time.Now().UTC()
+	user, err := users.Create(model.User{Name: "Webhook User", Email: "webhook@example.com", PasswordHash: "hash", CreatedAt: now, UpdatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := svc.CreateEndpoint(user.ID, model.CreateNotificationEndpointRequest{
+		Channel: model.NotificationChannelWebhook,
+		Address: "https://example.com/notifications",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.SigningSecret) != 64 || created.Secret != "" {
+		t.Fatalf("created endpoint should expose one-time signing secret: %+v", created)
+	}
+	items, err := svc.Endpoints(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].SigningSecret != "" || items[0].Secret != "" {
+		t.Fatalf("listed endpoints must not expose signing secrets: %+v", items)
+	}
+}
+
 func TestNotificationTemplateVersioningPublish(t *testing.T) {
 	svc, users, _, _, _, orgs := newNotificationTestService(t)
 	now := time.Now().UTC()
