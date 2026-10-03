@@ -365,16 +365,36 @@ func (s *LifecycleService) findPrivacyRequest(workspaceID, requestID int64) (mod
 
 func (s *LifecycleService) collectTasks(workspaceID int64) ([]model.Task, error) {
 	items := make([]model.Task, 0)
-	for page := 1; ; page++ {
-		result, err := s.tasks.FindAll(workspaceID, model.TaskQuery{
-			Page: page, Limit: 100, Sort: "created_at", Order: "asc",
-		})
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, result.Items...)
-		if page >= result.Pagination.TotalPages || len(result.Items) == 0 {
-			break
+	seen := make(map[int64]bool)
+	states := []struct {
+		archived bool
+		deleted  bool
+	}{
+		{archived: false, deleted: false},
+		{archived: true, deleted: false},
+		{archived: false, deleted: true},
+		{archived: true, deleted: true},
+	}
+	for _, state := range states {
+		archived := state.archived
+		deleted := state.deleted
+		for page := 1; ; page++ {
+			result, err := s.tasks.FindAll(workspaceID, model.TaskQuery{
+				Page: page, Limit: 100, Sort: "created_at", Order: "asc",
+				Archived: &archived, Deleted: &deleted,
+			})
+			if err != nil {
+				return nil, err
+			}
+			for _, task := range result.Items {
+				if !seen[task.ID] {
+					items = append(items, task)
+					seen[task.ID] = true
+				}
+			}
+			if page >= result.Pagination.TotalPages || len(result.Items) == 0 {
+				break
+			}
 		}
 	}
 	return items, nil

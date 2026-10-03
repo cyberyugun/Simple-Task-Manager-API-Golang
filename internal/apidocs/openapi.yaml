@@ -17,6 +17,7 @@ tags:
   - name: System
   - name: Authentication
   - name: Tasks
+  - name: Task Collaboration
   - name: Workspaces
   - name: Webhooks
   - name: Enterprise Identity
@@ -2422,6 +2423,315 @@ paths:
       responses:
         '200':
           description: Inbound integration event history
+
+
+  /api/task-projects:
+    get:
+      tags: [Task Collaboration]
+      summary: List task projects
+      operationId: listTaskProjects
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Task projects }
+    post:
+      tags: [Task Collaboration]
+      summary: Create a task project
+      operationId: createTaskProject
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Task project created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/task-projects/{project_id}:
+    patch:
+      tags: [Task Collaboration]
+      summary: Archive or restore a task project
+      operationId: archiveTaskProject
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: project_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Task project updated }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/task-lists:
+    get:
+      tags: [Task Collaboration]
+      summary: List task lists
+      operationId: listTaskLists
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Task lists }
+    post:
+      tags: [Task Collaboration]
+      summary: Create a task list
+      operationId: createTaskList
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Task list created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/task-lists/{list_id}:
+    patch:
+      tags: [Task Collaboration]
+      summary: Archive or restore a task list
+      operationId: archiveTaskList
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: list_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Task list updated }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/task-labels:
+    get:
+      tags: [Task Collaboration]
+      summary: List workspace task labels
+      operationId: listTaskLabels
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Labels }
+    post:
+      tags: [Task Collaboration]
+      summary: Create a task label
+      operationId: createTaskLabel
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Label created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/task-custom-fields:
+    get:
+      tags: [Task Collaboration]
+      summary: List task custom field definitions
+      operationId: listTaskCustomFields
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Custom field definitions }
+    post:
+      tags: [Task Collaboration]
+      summary: Create a task custom field definition
+      operationId: createTaskCustomField
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Custom field created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/tasks/{id}/labels:
+    get:
+      tags: [Task Collaboration]
+      summary: List labels attached to a task
+      operationId: listTaskAttachedLabels
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Attached labels }
+    post:
+      tags: [Task Collaboration]
+      summary: Attach a label to a task
+      operationId: attachTaskLabel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '201': { description: Label attached }
+  /api/tasks/{id}/labels/{label_id}:
+    delete:
+      tags: [Task Collaboration]
+      summary: Remove a label from a task
+      operationId: removeTaskLabel
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: label_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Label removed }
+  /api/tasks/{id}/assignees:
+    get:
+      tags: [Task Collaboration]
+      summary: List task assignees
+      operationId: listTaskAssignees
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Assignee user IDs }
+    post:
+      tags: [Task Collaboration]
+      summary: Assign a workspace member to a task
+      operationId: addTaskAssignee
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '201': { description: Assignee added }
+  /api/tasks/{id}/assignees/{user_id}:
+    delete:
+      tags: [Task Collaboration]
+      summary: Remove a task assignee
+      operationId: removeTaskAssignee
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: user_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Assignee removed }
+  /api/tasks/{id}/watchers:
+    get:
+      tags: [Task Collaboration]
+      summary: List task watchers
+      operationId: listTaskWatchers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Watcher user IDs }
+    post:
+      tags: [Task Collaboration]
+      summary: Add a workspace member as task watcher
+      operationId: addTaskWatcher
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '201': { description: Watcher added }
+  /api/tasks/{id}/watchers/{user_id}:
+    delete:
+      tags: [Task Collaboration]
+      summary: Remove a task watcher
+      operationId: removeTaskWatcher
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: user_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Watcher removed }
+  /api/tasks/{id}/comments:
+    get:
+      tags: [Task Collaboration]
+      summary: List task comments
+      operationId: listTaskComments
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Task comments }
+    post:
+      tags: [Task Collaboration]
+      summary: Create a task comment
+      operationId: createTaskComment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '201': { description: Comment created }
+  /api/tasks/{id}/comments/{comment_id}:
+    put:
+      tags: [Task Collaboration]
+      summary: Update an owned task comment
+      operationId: updateTaskComment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: comment_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Comment updated }
+    delete:
+      tags: [Task Collaboration]
+      summary: Soft-delete an owned task comment
+      operationId: deleteTaskComment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: comment_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Comment deleted }
+  /api/tasks/{id}/dependencies:
+    get:
+      tags: [Task Collaboration]
+      summary: List dependencies for a task
+      operationId: listTaskDependencies
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Task dependencies }
+    post:
+      tags: [Task Collaboration]
+      summary: Add a task dependency with cycle prevention
+      operationId: createTaskDependency
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '201': { description: Dependency created }
+        '409': { description: Dependency would create a cycle }
+  /api/tasks/{id}/dependencies/{depends_on_id}:
+    delete:
+      tags: [Task Collaboration]
+      summary: Remove a task dependency
+      operationId: removeTaskDependency
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: depends_on_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Dependency removed }
+  /api/tasks/{id}/recurrence:
+    get:
+      tags: [Task Collaboration]
+      summary: Get task recurrence configuration
+      operationId: getTaskRecurrence
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Recurrence rule }
+    put:
+      tags: [Task Collaboration]
+      summary: Configure task recurrence
+      operationId: setTaskRecurrence
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Recurrence configured }
+    delete:
+      tags: [Task Collaboration]
+      summary: Remove task recurrence
+      operationId: deleteTaskRecurrence
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Recurrence removed }
+  /api/tasks/{id}/activity:
+    get:
+      tags: [Task Collaboration]
+      summary: Get the task activity timeline
+      operationId: listTaskActivity
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Activity timeline }
+  /api/tasks/{id}/custom-fields:
+    get:
+      tags: [Task Collaboration]
+      summary: List custom field values for a task
+      operationId: listTaskCustomFieldValues
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Custom field values }
+  /api/tasks/{id}/custom-fields/{field_id}:
+    put:
+      tags: [Task Collaboration]
+      summary: Set a task custom field value
+      operationId: setTaskCustomFieldValue
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: field_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Custom field value updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
 
 components:
   securitySchemes:

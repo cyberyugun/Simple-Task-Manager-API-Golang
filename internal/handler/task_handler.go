@@ -56,7 +56,7 @@ func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
-	_, access, ok := requestScope(w, r)
+	userID, access, ok := requestScope(w, r)
 	if !ok {
 		return
 	}
@@ -77,13 +77,30 @@ func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "complete" {
-		if r.Method != http.MethodPatch {
-			response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
+	if len(parts) == 2 {
+		switch parts[1] {
+		case "complete":
+			if r.Method != http.MethodPatch {
+				response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
+				return
+			}
+			h.complete(w, access.ID, id, userID)
+			return
+		case "archive":
+			if r.Method != http.MethodPatch {
+				response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
+				return
+			}
+			h.archive(w, access.ID, id, userID)
+			return
+		case "restore":
+			if r.Method != http.MethodPatch {
+				response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
+				return
+			}
+			h.restore(w, access.ID, id, userID)
 			return
 		}
-		h.complete(w, access.ID, id)
-		return
 	}
 
 	if len(parts) != 1 {
@@ -95,9 +112,9 @@ func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		h.get(w, access.ID, id)
 	case http.MethodPut:
-		h.update(w, r, access.ID, id)
+		h.update(w, r, access.ID, id, userID)
 	case http.MethodDelete:
-		h.delete(w, access.ID, id)
+		h.delete(w, access.ID, id, userID)
 	default:
 		response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
 	}
@@ -147,6 +164,34 @@ func parseTaskQuery(r *http.Request) (model.TaskQuery, error) {
 		completed := value == "true"
 		query.Completed = &completed
 	}
+	query.Status = values.Get("status")
+	query.Priority = values.Get("priority")
+	for key, target := range map[string]**int64{
+		"project_id":  &query.ProjectID,
+		"list_id":     &query.ListID,
+		"assignee_id": &query.AssigneeID,
+		"label_id":    &query.LabelID,
+	} {
+		if value := values.Get(key); value != "" {
+			id, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || id <= 0 {
+				return model.TaskQuery{}, errors.New(key + " must be a positive integer")
+			}
+			*target = &id
+		}
+	}
+	for key, target := range map[string]**bool{
+		"archived": &query.Archived,
+		"deleted":  &query.Deleted,
+	} {
+		if value := values.Get(key); value != "" {
+			if value != "true" && value != "false" {
+				return model.TaskQuery{}, errors.New(key + " must be true or false")
+			}
+			flag := value == "true"
+			*target = &flag
+		}
+	}
 
 	return query, nil
 }
@@ -177,7 +222,7 @@ func (h *TaskHandler) get(w http.ResponseWriter, workspaceID, id int64) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, workspaceID, id int64) {
+func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, workspaceID, id, userID int64) {
 	defer r.Body.Close()
 
 	var req model.UpdateTaskRequest
@@ -186,7 +231,7 @@ func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, workspaceID
 		return
 	}
 
-	task, err := h.service.Update(workspaceID, id, req)
+	task, err := h.service.Update(workspaceID, id, userID, req)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -194,8 +239,8 @@ func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, workspaceID
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) complete(w http.ResponseWriter, workspaceID, id int64) {
-	task, err := h.service.Complete(workspaceID, id)
+func (h *TaskHandler) complete(w http.ResponseWriter, workspaceID, id, userID int64) {
+	task, err := h.service.Complete(workspaceID, id, userID)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -203,12 +248,30 @@ func (h *TaskHandler) complete(w http.ResponseWriter, workspaceID, id int64) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) delete(w http.ResponseWriter, workspaceID, id int64) {
-	if err := h.service.Delete(workspaceID, id); err != nil {
+func (h *TaskHandler) delete(w http.ResponseWriter, workspaceID, id, userID int64) {
+	if err := h.service.Delete(workspaceID, id, userID); err != nil {
 		h.handleError(w, err)
 		return
 	}
-	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "task deleted"})
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "task moved to trash"})
+}
+
+func (h *TaskHandler) archive(w http.ResponseWriter, workspaceID, id, userID int64) {
+	task, err := h.service.Archive(workspaceID, id, userID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
+}
+
+func (h *TaskHandler) restore(w http.ResponseWriter, workspaceID, id, userID int64) {
+	task, err := h.service.Restore(workspaceID, id, userID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
 func requireTaskScope(w http.ResponseWriter, r *http.Request) bool {
@@ -227,7 +290,10 @@ func (h *TaskHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, repository.ErrTaskNotFound):
 		response.JSON(w, http.StatusNotFound, response.Envelope{Success: false, Message: err.Error()})
-	case errors.Is(err, service.ErrInvalidTask), errors.Is(err, service.ErrInvalidTaskQuery):
+	case errors.Is(err, repository.ErrTaskVersionConflict):
+		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: err.Error()})
+	case errors.Is(err, service.ErrInvalidTask), errors.Is(err, service.ErrInvalidTaskQuery),
+		errors.Is(err, service.ErrInvalidTaskProject), errors.Is(err, service.ErrInvalidTaskList):
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 	default:
 		response.JSON(w, http.StatusInternalServerError, response.Envelope{Success: false, Message: "internal server error"})

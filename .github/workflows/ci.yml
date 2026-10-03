@@ -474,6 +474,69 @@ jobs:
           connections="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/integrations/connections" -H "Authorization: Bearer $token")"
           printf '%s' "$connections" | SENDER_ID="$sender_id" python3 -c 'import json,os,sys; sid=int(os.environ["SENDER_ID"]); items=json.load(sys.stdin)["data"]; sender=next(x for x in items if x["id"]==sid); assert sender["health_status"]=="healthy"; assert "credentials" not in sender'
 
+      - name: Smoke test task management 2 collaboration
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          workspaces="$(curl --fail --silent http://localhost:8080/api/workspaces -H "Authorization: Bearer $token")"
+          owner_id="$(printf '%s' "$workspaces" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; personal=next(x for x in items if x["is_personal"]); print(personal["created_by_user_id"])')"
+
+          project="$(curl --fail --silent -X POST http://localhost:8080/api/task-projects -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 33","description":"task collaboration smoke"}')"
+          project_id="$(printf '%s' "$project" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          list_payload="$(python3 -c 'import json,sys; print(json.dumps({"project_id":int(sys.argv[1]),"name":"In Progress","position":10}))' "$project_id")"
+          list="$(curl --fail --silent -X POST http://localhost:8080/api/task-lists -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$list_payload")"
+          list_id="$(printf '%s' "$list" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          due="$(python3 -c 'import datetime; print((datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=2)).isoformat().replace("+00:00","Z"))')"
+          task_payload="$(python3 -c 'import json,sys; print(json.dumps({"title":"Phase 33 parent","description":"collaboration smoke","status":"IN_PROGRESS","priority":"HIGH","project_id":int(sys.argv[1]),"list_id":int(sys.argv[2]),"due_at":sys.argv[3]}))' "$project_id" "$list_id" "$due")"
+          task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$task_payload")"
+          task_id="$(printf '%s' "$task" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="IN_PROGRESS"; assert d["priority"]=="HIGH"; assert d["completed"] is False; print(d["id"])')"
+
+          child_payload="$(python3 -c 'import json,sys; print(json.dumps({"title":"Phase 33 child","parent_task_id":int(sys.argv[1]),"project_id":int(sys.argv[2]),"list_id":int(sys.argv[3])}))' "$task_id" "$project_id" "$list_id")"
+          child="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$child_payload")"
+          child_id="$(printf '%s' "$child" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="TODO"; assert d["priority"]=="MEDIUM"; print(d["id"])')"
+
+          user_payload="$(python3 -c 'import json,sys; print(json.dumps({"user_id":int(sys.argv[1])}))' "$owner_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/tasks/$task_id/assignees" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$user_payload" >/dev/null
+          curl --fail --silent -X POST "http://localhost:8080/api/tasks/$task_id/watchers" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$user_payload" >/dev/null
+
+          label="$(curl --fail --silent -X POST http://localhost:8080/api/task-labels -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI","color":"#336699"}')"
+          label_id="$(printf '%s' "$label" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          label_payload="$(python3 -c 'import json,sys; print(json.dumps({"label_id":int(sys.argv[1])}))' "$label_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/tasks/$task_id/labels" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$label_payload" >/dev/null
+
+          comment="$(curl --fail --silent -X POST "http://localhost:8080/api/tasks/$task_id/comments" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"body":"Phase 33 runtime collaboration"}')"
+          printf '%s' "$comment" | python3 -c 'import json,sys; assert json.load(sys.stdin)["data"]["body"]=="Phase 33 runtime collaboration"'
+
+          dependency_payload="$(python3 -c 'import json,sys; print(json.dumps({"depends_on_task_id":int(sys.argv[1])}))' "$task_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/tasks/$child_id/dependencies" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$dependency_payload" >/dev/null
+          cycle_payload="$(python3 -c 'import json,sys; print(json.dumps({"depends_on_task_id":int(sys.argv[1])}))' "$child_id")"
+          cycle_status="$(curl --silent -o /tmp/phase33-cycle -w '%{http_code}' -X POST "http://localhost:8080/api/tasks/$task_id/dependencies" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$cycle_payload")"
+          test "$cycle_status" = "409"
+
+          recurrence="$(curl --fail --silent -X PUT "http://localhost:8080/api/tasks/$task_id/recurrence" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"frequency":"weekly","interval_count":1,"timezone":"UTC","active":true}')"
+          printf '%s' "$recurrence" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["frequency"]=="weekly"; assert d["next_run_at"]'
+
+          field="$(curl --fail --silent -X POST http://localhost:8080/api/task-custom-fields -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"Story Points","field_type":"number","required":false}')"
+          field_id="$(printf '%s' "$field" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          curl --fail --silent -X PUT "http://localhost:8080/api/tasks/$task_id/custom-fields/$field_id" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"value":8}' >/dev/null
+
+          filtered="$(curl --fail --silent "http://localhost:8080/api/tasks?project_id=$project_id&assignee_id=$owner_id&status=IN_PROGRESS" -H "Authorization: Bearer $token")"
+          printf '%s' "$filtered" | TASK_ID="$task_id" python3 -c 'import json,os,sys; d=json.load(sys.stdin)["data"]; assert d["pagination"]["total"]==1; assert d["items"][0]["id"]==int(os.environ["TASK_ID"])'
+
+          activity="$(curl --fail --silent "http://localhost:8080/api/tasks/$task_id/activity" -H "Authorization: Bearer $token")"
+          printf '%s' "$activity" | python3 -c 'import json,sys; actions={x["action"] for x in json.load(sys.stdin)["data"]}; assert "task.assigned" in actions; assert "task.comment.created" in actions; assert "task.recurrence.updated" in actions'
+
+          curl --fail --silent -X PATCH "http://localhost:8080/api/tasks/$task_id/archive" -H "Authorization: Bearer $token" >/dev/null
+          curl --fail --silent -X DELETE "http://localhost:8080/api/tasks/$task_id" -H "Authorization: Bearer $token" >/dev/null
+          deleted_status="$(curl --silent -o /tmp/phase33-deleted -w '%{http_code}' "http://localhost:8080/api/tasks/$task_id" -H "Authorization: Bearer $token")"
+          test "$deleted_status" = "404"
+
+          restored="$(curl --fail --silent -X PATCH "http://localhost:8080/api/tasks/$task_id/restore" -H "Authorization: Bearer $token")"
+          printf '%s' "$restored" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d.get("deleted_at") is None; assert d.get("archived_at") is None; assert d["status"]=="TODO"'
+
       - name: Smoke test idempotent task and outbox worker
         run: |
           login_response="$(curl --fail --silent \
@@ -517,7 +580,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "17"
+          test "$migration_count" = "18"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
