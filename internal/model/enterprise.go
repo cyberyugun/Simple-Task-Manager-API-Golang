@@ -68,6 +68,7 @@ type OIDCConnection struct {
 	IssuerURL       string    `json:"issuer_url"`
 	ClientID        string    `json:"client_id"`
 	ClientSecretRef string    `json:"client_secret_ref,omitempty"`
+	RedirectURI     string    `json:"redirect_uri"`
 	Scopes          []string  `json:"scopes"`
 	Enabled         bool      `json:"enabled"`
 	UpdatedByUserID int64     `json:"updated_by_user_id"`
@@ -151,6 +152,7 @@ type ConfigureOIDCRequest struct {
 	IssuerURL       string   `json:"issuer_url"`
 	ClientID        string   `json:"client_id"`
 	ClientSecretRef string   `json:"client_secret_ref,omitempty"`
+	RedirectURI     string   `json:"redirect_uri"`
 	Scopes          []string `json:"scopes"`
 	Enabled         bool     `json:"enabled"`
 }
@@ -167,4 +169,25 @@ type UpdateEnterprisePolicyRequest struct {
 	AllowServiceAccounts bool     `json:"allow_service_accounts"`
 	AllowedEmailDomains  []string `json:"allowed_email_domains"`
 	MaxSessionAgeMinutes int      `json:"max_session_age_minutes"`
+}
+
+type OIDCLoginSession struct {
+	WorkspaceID            int64     `json:"workspace_id"`
+	Nonce                  string    `json:"-"`
+	CodeVerifierCiphertext string    `json:"-"`
+	ExpiresAt              time.Time `json:"expires_at"`
+	CreatedAt              time.Time `json:"created_at"`
+}
+
+type OIDCBeginResult struct {
+	AuthorizationURL string `json:"authorization_url"`
+	ExpiresIn        int64  `json:"expires_in"`
+}
+
+type OIDCIdentity struct {
+	Subject       string   `json:"sub"`
+	Email         string   `json:"email"`
+	EmailVerified bool     `json:"email_verified"`
+	Name          string   `json:"name,omitempty"`
+	AMR           []string `json:"amr,omitempty"`
 }
