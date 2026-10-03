@@ -22,7 +22,7 @@ func NewTaskService(repo repository.TaskRepository) *TaskService {
 	return &TaskService{repo: repo}
 }
 
-func (s *TaskService) Create(userID, workspaceID int64, req model.CreateTaskRequest) (model.Task, error) {
+func (s *TaskService) Create(userID int64, access model.WorkspaceAccess, req model.CreateTaskRequest) (model.Task, error) {
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		return model.Task{}, ErrInvalidTask
@@ -30,8 +30,9 @@ func (s *TaskService) Create(userID, workspaceID int64, req model.CreateTaskRequ
 
 	now := time.Now()
 	task := model.Task{
-		WorkspaceID: workspaceID,
-		UserID:      userID,
+		WorkspaceID:       access.ID,
+		UserID:            userID,
+		PersonalWorkspace: access.IsPersonal,
 		Title:       title,
 		Description: strings.TrimSpace(req.Description),
 		Completed:   false,
