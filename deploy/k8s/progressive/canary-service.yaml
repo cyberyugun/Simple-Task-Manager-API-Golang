@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: task-api-canary
+  namespace: task-manager
+  labels:
+    app.kubernetes.io/name: task-api-canary
+    app.kubernetes.io/part-of: simple-task-manager
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: task-api-canary
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

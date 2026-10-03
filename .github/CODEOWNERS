@@ -15,3 +15,6 @@
 /docs/dr-game-day-checklist.md @cyberyugun
 /tests/performance/ @cyberyugun
 /docs/performance-scalability.md @cyberyugun
+/deploy/k8s/progressive/ @cyberyugun
+/docs/release-engineering.md @cyberyugun
+/docs/production-release-checklist.md @cyberyugun
