@@ -846,14 +846,20 @@ func workflowTriggerMatches(graph model.WorkflowGraph, triggerType, triggerKey s
 	if node == nil {
 		return false
 	}
-	source := normalizeWorkflowTrigger(fmt.Sprint(node.Config["source"]))
-	if source == "" {
-		source = model.WorkflowTriggerManual
+	source := model.WorkflowTriggerManual
+	if raw, ok := node.Config["source"]; ok && raw != nil {
+		if normalized := normalizeWorkflowTrigger(fmt.Sprint(raw)); normalized != "" {
+			source = normalized
+		}
 	}
 	if source != normalizeWorkflowTrigger(triggerType) {
 		return false
 	}
-	key := strings.TrimSpace(fmt.Sprint(node.Config["key"]))
+	rawKey, ok := node.Config["key"]
+	if !ok || rawKey == nil {
+		return true
+	}
+	key := strings.TrimSpace(fmt.Sprint(rawKey))
 	if key == "" || key == "*" {
 		return true
 	}
