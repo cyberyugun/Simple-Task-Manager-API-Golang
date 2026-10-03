@@ -63,12 +63,11 @@ func AccessLog(logger *slog.Logger, metrics *observability.Metrics, next http.Ha
 		next.ServeHTTP(recorder, r)
 
 		duration := time.Since(start)
-		metrics.ObserveHTTPRequest(r.Method, routeTemplate(r.URL.Path), status, duration)
-
 		status := recorder.status
 		if status == 0 {
 			status = http.StatusOK
 		}
+		metrics.ObserveHTTPRequest(r.Method, routeTemplate(r.URL.Path), status, duration)
 		logger.InfoContext(
 			r.Context(),
 			"http_request",
