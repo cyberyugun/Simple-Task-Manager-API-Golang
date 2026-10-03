@@ -226,3 +226,19 @@ Before declaring production business-continuity ready:
 - use `docs/dr-game-day-checklist.md` for regional recovery exercises
 
 Repository-level HA does not by itself prove regional DR. Regional recovery must be exercised in the actual selected cloud account.
+
+## Progressive release readiness
+
+Before enabling production progressive delivery:
+
+- ensure NGINX Ingress supports canary annotations
+- ensure the public production hostname is reachable from the GitHub Actions runner
+- keep `maxUnavailable: 0` on the stable Deployment
+- configure `CANARY_WEIGHT` (default `10`) and `CANARY_OBSERVATION_SECONDS` (default `60`) when different values are required
+- use `DEPLOYMENT_FREEZE=true` during an approved freeze window
+- confirm all SQL migrations pass `scripts/check-migration-compatibility.py`
+- use expand/contract database changes so the old stable version and new canary can run simultaneously
+- retain the release evidence artifact for audit and incident review
+- exercise `scripts/rollback-drill.sh` in staging before relying on emergency rollback procedures
+
+See `docs/release-engineering.md` and `docs/production-release-checklist.md`.

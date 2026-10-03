@@ -27,6 +27,7 @@ jobs:
           bash -n scripts/performance-policy-check.sh
           bash -n scripts/progressive-deploy.sh
           bash -n scripts/release-policy-check.sh
+          bash -n scripts/rollback-drill.sh
           python3 -m py_compile scripts/check-migration-compatibility.py
           bash scripts/dr-readiness-check.sh
           bash scripts/performance-policy-check.sh

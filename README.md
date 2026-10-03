@@ -457,6 +457,8 @@ High availability, RPO/RTO targets, regional rebuild/restore procedures, automat
 
 Load/spike/soak testing, connection-pool tuning, query-plan validation, HPA capacity guidance, and performance regression policy are documented in [`docs/performance-scalability.md`](docs/performance-scalability.md).
 
+Progressive canary delivery, deployment freezes, expand/contract migration safety, automatic image rollback, immutable release evidence, and release/rollback procedures are documented in [`docs/release-engineering.md`](docs/release-engineering.md) and [`docs/production-release-checklist.md`](docs/production-release-checklist.md).
+
 ## Security and software supply chain
 
 Security automation lives in `.github/workflows/security.yml` and runs on pushes to `main`, pull requests, manual dispatches, and a weekly schedule.
