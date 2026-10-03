@@ -5,6 +5,8 @@ resources:
   - serviceaccount.yaml
   - configmap.yaml
   - deployment.yaml
+  - worker-deployment.yaml
+  - worker-service.yaml
   - service.yaml
   - hpa.yaml
   - pdb.yaml
