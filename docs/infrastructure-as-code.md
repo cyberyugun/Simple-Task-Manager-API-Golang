@@ -108,6 +108,8 @@ Bootstrap the remote-state storage separately, then initialize the selected stac
 
 Sensitive data can still exist in Terraform state even when variables and outputs are marked sensitive. Restrict state access as if it were a production secret.
 
+Phase 16.1 adds concrete backend bootstrap stacks under `infra/terraform/bootstrap/` plus protected plan/apply promotion. See [Terraform Delivery and Environment Promotion](terraform-delivery.md).
+
 ## Validation
 
 Every IaC pull request runs:
