@@ -14,11 +14,11 @@ func newTestService() *TaskService {
 
 func TestTaskServiceCreate(t *testing.T) {
 	service := newTestService()
-	task, err := service.Create(1, model.CreateTaskRequest{Title: "  Learn Golang  ", Description: "  Build API  "})
+	task, err := service.Create(1, 10, model.CreateTaskRequest{Title: "  Learn Golang  ", Description: "  Build API  "})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if task.UserID != 1 || task.Title != "Learn Golang" || task.Description != "Build API" || task.Completed {
+	if task.UserID != 1 || task.WorkspaceID != 10 || task.Title != "Learn Golang" || task.Description != "Build API" || task.Completed {
 		t.Fatalf("Create() returned unexpected task: %+v", task)
 	}
 }
@@ -26,12 +26,12 @@ func TestTaskServiceCreate(t *testing.T) {
 func TestTaskServiceFindAllDefaultsAndValidation(t *testing.T) {
 	service := newTestService()
 	for _, title := range []string{"C task", "A task", "B task"} {
-		if _, err := service.Create(1, model.CreateTaskRequest{Title: title}); err != nil {
+		if _, err := service.Create(1, 10, model.CreateTaskRequest{Title: title}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	page, err := service.FindAll(1, model.TaskQuery{Sort: "title", Order: "asc"})
+	page, err := service.FindAll(10, model.TaskQuery{Sort: "title", Order: "asc"})
 	if err != nil {
 		t.Fatalf("FindAll() error = %v", err)
 	}
@@ -49,19 +49,19 @@ func TestTaskServiceFindAllDefaultsAndValidation(t *testing.T) {
 		{Order: "sideways"},
 	}
 	for _, query := range invalid {
-		if _, err := service.FindAll(1, query); !errors.Is(err, ErrInvalidTaskQuery) {
+		if _, err := service.FindAll(10, query); !errors.Is(err, ErrInvalidTaskQuery) {
 			t.Fatalf("FindAll(%+v) error = %v, want ErrInvalidTaskQuery", query, err)
 		}
 	}
 }
 
-func TestTaskServiceOwnership(t *testing.T) {
+func TestTaskServiceWorkspaceIsolation(t *testing.T) {
 	service := newTestService()
-	created, err := service.Create(1, model.CreateTaskRequest{Title: "Private Task"})
+	created, err := service.Create(1, 10, model.CreateTaskRequest{Title: "Private Task"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.FindByID(2, created.ID); !errors.Is(err, repository.ErrTaskNotFound) {
-		t.Fatalf("FindByID(other user) error = %v", err)
+	if _, err := service.FindByID(20, created.ID); !errors.Is(err, repository.ErrTaskNotFound) {
+		t.Fatalf("FindByID(other workspace) error = %v", err)
 	}
 }
