@@ -7,7 +7,7 @@ require "yaml"
 
 base = URI(ARGV.fetch(0, "http://127.0.0.1:8080"))
 spec_path = ARGV.fetch(1, "internal/apidocs/openapi.yaml")
-spec = YAML.load_file(spec_path)
+spec = YAML.unsafe_load_file(spec_path)
 
 def resolve_ref(spec, ref)
   ref.delete_prefix("#/").split("/").reduce(spec) { |node, key| node.fetch(key) }
