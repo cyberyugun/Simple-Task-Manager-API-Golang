@@ -65,6 +65,7 @@ func main() {
 	var workspaceRepo repository.WorkspaceRepository
 	var eventRepo repository.EventRepository
 	var enterpriseRepo repository.EnterpriseIdentityRepository
+	var mfaRepo repository.MFARepository
 
 	if cfg.DatabaseURL != "" {
 		db, err = appdb.OpenPostgres(cfg.DatabaseURL, appdb.Options{
@@ -86,6 +87,7 @@ func main() {
 		workspaceRepo = repository.NewPostgresWorkspaceRepository(db)
 		eventRepo = repository.NewPostgresEventRepository(db)
 		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
+		mfaRepo = repository.NewPostgresMFARepository(db)
 		logger.Info(
 			"storage_configured",
 			"backend", "postgresql",
@@ -100,6 +102,7 @@ func main() {
 		workspaceRepo = repository.NewInMemoryWorkspaceRepository()
 		eventRepo = repository.NewInMemoryEventRepository()
 		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
+		mfaRepo = repository.NewInMemoryMFARepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
 	}
 
@@ -125,6 +128,11 @@ func main() {
 	}
 
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
+	mfaCipher, err := auth.NewSecretCipher(cfg.JWTSecret)
+	if err != nil {
+		logger.Error("mfa_cipher_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	authService := service.NewAuthService(
 		userRepo,
 		refreshRepo,
@@ -135,6 +143,8 @@ func main() {
 		cfg.PasswordResetTTL,
 		cfg.EmailVerificationTTL,
 	)
+	mfaService := service.NewMFAService(mfaRepo, userRepo, mfaCipher, "Simple Task Manager")
+	authService.SetMFAVerifier(mfaService)
 	taskService := service.NewTaskService(taskRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
 	webhookService := service.NewWebhookService(workspaceRepo, eventRepo, cfg.WebhookAllowInsecure)
@@ -144,9 +154,11 @@ func main() {
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
 	webhookHandler := handler.NewWebhookHandler(webhookService)
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
+	mfaHandler := handler.NewMFAHandler(mfaService)
 	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
 	serviceAuthMiddleware := middleware.EnterpriseAuth(tokenManager, enterpriseRepo)
 	workspaceMiddleware := middleware.WorkspaceScope(workspaceRepo)
+	enterprisePolicyMiddleware := middleware.EnterpriseWorkspacePolicy(enterpriseRepo)
 	idempotencyMiddleware := middleware.Idempotency(eventRepo, cfg.IdempotencyTTL)
 
 	var authRateLimiter middleware.AuthRateLimiter
@@ -179,10 +191,10 @@ func main() {
 		return authMiddleware(authRateLimiter.Handler(http.HandlerFunc(h)))
 	}
 	protectedWorkspace := func(h http.HandlerFunc) http.Handler {
-		return serviceAuthMiddleware(workspaceMiddleware(http.HandlerFunc(h)))
+		return serviceAuthMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(http.HandlerFunc(h))))
 	}
 	protectedWorkspaceIdempotent := func(h http.HandlerFunc) http.Handler {
-		return serviceAuthMiddleware(workspaceMiddleware(idempotencyMiddleware(http.HandlerFunc(h))))
+		return serviceAuthMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(idempotencyMiddleware(http.HandlerFunc(h)))))
 	}
 
 	ready := readiness.New(db, redisClient, cfg.ReadinessTimeout, metrics)
@@ -223,6 +235,10 @@ func main() {
 	mux.Handle("/api/auth/email-verification/request", protectedRateLimited(authHandler.RequestEmailVerification))
 	mux.Handle("/api/auth/token/introspect", protected(enterpriseHandler.Introspect))
 	mux.Handle("/api/auth/token/revoke", protected(enterpriseHandler.RevokeToken))
+	mux.Handle("/api/auth/mfa/status", protected(mfaHandler.Status))
+	mux.Handle("/api/auth/mfa/totp/enroll", protected(mfaHandler.EnrollTOTP))
+	mux.Handle("/api/auth/mfa/totp/confirm", protected(mfaHandler.ConfirmTOTP))
+	mux.Handle("/api/auth/mfa/totp/disable", protected(mfaHandler.DisableTOTP))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
