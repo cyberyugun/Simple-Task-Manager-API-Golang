@@ -310,12 +310,13 @@ func assertPerformanceIndexes(t *testing.T, db *sql.DB) {
 		t.Fatal("pg_trgm extension is not installed")
 	}
 
-	expected := map[string]bool{
-		"idx_tasks_user_title_trgm":             false,
-		"idx_tasks_user_description_trgm":       false,
-		"idx_tasks_user_completed_created_at":   false,
-		"idx_refresh_tokens_user_active_last_used": false,
+	expectedNames := []string{
+		"idx_tasks_user_title_trgm",
+		"idx_tasks_user_description_trgm",
+		"idx_tasks_user_completed_created_at",
+		"idx_refresh_tokens_user_active_last_used",
 	}
+	foundIndexes := make(map[string]bool, len(expectedNames))
 
 	rows, err := db.Query(`
 		SELECT indexname
@@ -338,13 +339,13 @@ func assertPerformanceIndexes(t *testing.T, db *sql.DB) {
 		if err := rows.Scan(&name); err != nil {
 			t.Fatalf("scan performance index: %v", err)
 		}
-		expected[name] = true
+		foundIndexes[name] = true
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate performance indexes: %v", err)
 	}
-	for name, found := range expected {
-		if !found {
+	for _, name := range expectedNames {
+		if !foundIndexes[name] {
 			t.Fatalf("performance index %s is missing", name)
 		}
 	}
