@@ -169,7 +169,7 @@ func (s *NotificationService) deliverNotificationWebhook(ctx context.Context, de
 	request.Header.Set("X-Notification-Timestamp", timestamp)
 	request.Header.Set("X-Notification-Signature", "v1="+signature)
 
-	client := &http.Client{Timeout: s.config.HTTPTimeout}
+	client := eventdelivery.NewWebhookHTTPClient(s.config.HTTPTimeout, s.config.AllowInsecure)
 	response, err := client.Do(request)
 	if err != nil {
 		return err
