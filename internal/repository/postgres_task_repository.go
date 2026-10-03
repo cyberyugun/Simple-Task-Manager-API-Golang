@@ -26,6 +26,7 @@ const taskColumns = `
 `
 
 func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
+	task = normalizeTaskDefaults(task)
 	tx, err := r.db.Begin()
 	if err != nil {
 		return model.Task{}, err
@@ -205,6 +206,7 @@ func (r *PostgresTaskRepository) FindByID(workspaceID, id int64) (model.Task, er
 }
 
 func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
+	task = normalizeTaskDefaults(task)
 	tx, err := r.db.Begin()
 	if err != nil {
 		return model.Task{}, err
