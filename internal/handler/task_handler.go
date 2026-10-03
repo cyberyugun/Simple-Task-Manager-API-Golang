@@ -22,27 +22,39 @@ func NewTaskHandler(service *service.TaskService) *TaskHandler {
 	return &TaskHandler{service: service}
 }
 
-func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
+func requestScope(w http.ResponseWriter, r *http.Request) (int64, model.WorkspaceAccess, bool) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
 		response.JSON(w, http.StatusUnauthorized, response.Envelope{Success: false, Message: "authentication required"})
+		return 0, model.WorkspaceAccess{}, false
+	}
+	access, ok := middleware.WorkspaceAccessFromContext(r.Context())
+	if !ok {
+		response.JSON(w, http.StatusInternalServerError, response.Envelope{Success: false, Message: "workspace scope is missing"})
+		return 0, model.WorkspaceAccess{}, false
+	}
+	return userID, access, true
+}
+
+func (h *TaskHandler) Tasks(w http.ResponseWriter, r *http.Request) {
+	userID, access, ok := requestScope(w, r)
+	if !ok {
 		return
 	}
 
 	switch r.Method {
 	case http.MethodGet:
-		h.list(w, r, userID)
+		h.list(w, r, access.ID)
 	case http.MethodPost:
-		h.create(w, r, userID)
+		h.create(w, r, userID, access.ID)
 	default:
 		response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
 	}
 }
 
 func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
+	_, access, ok := requestScope(w, r)
 	if !ok {
-		response.JSON(w, http.StatusUnauthorized, response.Envelope{Success: false, Message: "authentication required"})
 		return
 	}
 
@@ -64,7 +76,7 @@ func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 			response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
 			return
 		}
-		h.complete(w, userID, id)
+		h.complete(w, access.ID, id)
 		return
 	}
 
@@ -75,24 +87,24 @@ func (h *TaskHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		h.get(w, userID, id)
+		h.get(w, access.ID, id)
 	case http.MethodPut:
-		h.update(w, r, userID, id)
+		h.update(w, r, access.ID, id)
 	case http.MethodDelete:
-		h.delete(w, userID, id)
+		h.delete(w, access.ID, id)
 	default:
 		response.JSON(w, http.StatusMethodNotAllowed, response.Envelope{Success: false, Message: "method not allowed"})
 	}
 }
 
-func (h *TaskHandler) list(w http.ResponseWriter, r *http.Request, userID int64) {
+func (h *TaskHandler) list(w http.ResponseWriter, r *http.Request, workspaceID int64) {
 	query, err := parseTaskQuery(r)
 	if err != nil {
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 		return
 	}
 
-	result, err := h.service.FindAll(userID, query)
+	result, err := h.service.FindAll(workspaceID, query)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -133,7 +145,7 @@ func parseTaskQuery(r *http.Request) (model.TaskQuery, error) {
 	return query, nil
 }
 
-func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID int64) {
+func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID, workspaceID int64) {
 	defer r.Body.Close()
 
 	var req model.CreateTaskRequest
@@ -142,7 +154,7 @@ func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID int6
 		return
 	}
 
-	task, err := h.service.Create(userID, req)
+	task, err := h.service.Create(userID, workspaceID, req)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -150,8 +162,8 @@ func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID int6
 	response.JSON(w, http.StatusCreated, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) get(w http.ResponseWriter, userID, id int64) {
-	task, err := h.service.FindByID(userID, id)
+func (h *TaskHandler) get(w http.ResponseWriter, workspaceID, id int64) {
+	task, err := h.service.FindByID(workspaceID, id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -159,7 +171,7 @@ func (h *TaskHandler) get(w http.ResponseWriter, userID, id int64) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, userID, id int64) {
+func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, workspaceID, id int64) {
 	defer r.Body.Close()
 
 	var req model.UpdateTaskRequest
@@ -168,7 +180,7 @@ func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, userID, id 
 		return
 	}
 
-	task, err := h.service.Update(userID, id, req)
+	task, err := h.service.Update(workspaceID, id, req)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -176,8 +188,8 @@ func (h *TaskHandler) update(w http.ResponseWriter, r *http.Request, userID, id 
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) complete(w http.ResponseWriter, userID, id int64) {
-	task, err := h.service.Complete(userID, id)
+func (h *TaskHandler) complete(w http.ResponseWriter, workspaceID, id int64) {
+	task, err := h.service.Complete(workspaceID, id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -185,8 +197,8 @@ func (h *TaskHandler) complete(w http.ResponseWriter, userID, id int64) {
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: task})
 }
 
-func (h *TaskHandler) delete(w http.ResponseWriter, userID, id int64) {
-	if err := h.service.Delete(userID, id); err != nil {
+func (h *TaskHandler) delete(w http.ResponseWriter, workspaceID, id int64) {
+	if err := h.service.Delete(workspaceID, id); err != nil {
 		h.handleError(w, err)
 		return
 	}
