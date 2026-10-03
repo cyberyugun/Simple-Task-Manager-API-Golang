@@ -675,3 +675,7 @@ See [docs/task-management-2-collaboration.md](docs/task-management-2-collaborati
 ## Enterprise workflow builder and event-driven orchestration
 
 Phase 34 adds organization-scoped, versioned workflow DAGs with draft/publish/activate lifecycle, deterministic published snapshots, manual/event/scheduled/connector/internal triggers, condition/transform/approval/action/delay/branch/parallel/join/subworkflow nodes, variable mappings, durable checkpoints, worker-driven resume, retries/timeouts, cancellation, manual retry, compensation, dry-run execution, and execution history. Runtime actions are restricted to an allowlisted executor registry; arbitrary shell/code execution is not supported. Set `WORKFLOW_POLL_INTERVAL` to tune delayed/retry resumption. See [docs/enterprise-workflow-builder.md](docs/enterprise-workflow-builder.md).
+
+## Notification, reminder & communication platform
+
+Phase 35 adds preference-aware in-app/email/push/webhook notification routing, organization-scoped preference fallback, timezone/quiet-hours scheduling, immediate/hourly/daily cadence, task due/overdue reminders, assignment and mention notifications, workflow approval/incident/billing notifications, delivery retry/dead-letter state, deduplication, versioned localized templates, suppression rules, audit history, and notification analytics. Worker cadence can be tuned with `NOTIFICATION_POLL_INTERVAL` and `NOTIFICATION_REMINDER_POLL_INTERVAL`. See [docs/notification-reminder-communication-platform.md](docs/notification-reminder-communication-platform.md).

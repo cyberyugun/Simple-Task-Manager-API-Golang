@@ -28,6 +28,7 @@ type OperationsService struct {
 	orgs         repository.OrganizationRepository
 	billing      repository.BillingRepository
 	entitlements OperationsEntitlementProvider
+	notifier     NotificationEmitter
 }
 
 func NewOperationsService(
@@ -37,6 +38,10 @@ func NewOperationsService(
 	entitlements OperationsEntitlementProvider,
 ) *OperationsService {
 	return &OperationsService{repo: repo, orgs: orgs, billing: billing, entitlements: entitlements}
+}
+
+func (s *OperationsService) SetNotificationEmitter(notifier NotificationEmitter) {
+	s.notifier = notifier
 }
 
 func (s *OperationsService) Policy(actorUserID, organizationID int64) (model.OperationsPolicy, error) {
@@ -234,6 +239,16 @@ func (s *OperationsService) CreateIncident(actorUserID, organizationID int64, re
 		s.audit(organizationID, actorUserID, "operations.incident.created", "operational_incident", fmt.Sprint(item.ID), map[string]any{
 			"severity": severity, "started_at": startedAt,
 		})
+		if s.notifier != nil {
+			_ = s.notifier.EmitOrganizationAdminsSignal(
+				organizationID,
+				model.NotificationEventIncidentCreated,
+				"Operational incident: "+item.Title,
+				item.Summary,
+				fmt.Sprintf("incident:%d", item.ID),
+				map[string]any{"incident_id": item.ID, "severity": item.Severity, "status": item.Status},
+			)
+		}
 	}
 	return item, err
 }

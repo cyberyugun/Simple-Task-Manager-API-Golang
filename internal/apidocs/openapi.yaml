@@ -27,6 +27,7 @@ tags:
   - name: Enterprise Operations
   - name: Enterprise Automation
   - name: Enterprise Workflows
+  - name: Notifications
   - name: Enterprise Integrations
 
 paths:
@@ -2470,6 +2471,76 @@ paths:
         '200': { description: Approval decision applied and execution resumed or failed }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: List the authenticated user's notification inbox
+      operationId: listNotifications
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200': { description: Notification inbox }
+
+  /api/notifications/{notification_id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark a notification as read
+      operationId: markNotificationRead
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: notification_id
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200': { description: Notification marked read }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: Get global or organization-scoped notification preferences
+      operationId: getNotificationPreference
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: organization_id
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200': { description: Effective notification preference }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Notifications]
+      summary: Update global or organization-scoped notification preferences
+      operationId: updateNotificationPreference
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: organization_id
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200': { description: Notification preference updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/notifications/stats:
+    get:
+      tags: [Notifications]
+      summary: Get notification and delivery analytics for the authenticated user
+      operationId: getNotificationStats
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: organization_id
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200': { description: Notification analytics }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/integrations/connectors:
     get:

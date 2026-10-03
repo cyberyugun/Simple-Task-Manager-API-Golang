@@ -29,10 +29,15 @@ type WorkflowService struct {
 	repo      repository.WorkflowRepository
 	orgs      repository.OrganizationRepository
 	executors *WorkflowExecutorRegistry
+	notifier  NotificationEmitter
 }
 
 func NewWorkflowService(repo repository.WorkflowRepository, orgs repository.OrganizationRepository, executors *WorkflowExecutorRegistry) *WorkflowService {
 	return &WorkflowService{repo: repo, orgs: orgs, executors: executors}
+}
+
+func (s *WorkflowService) SetNotificationEmitter(notifier NotificationEmitter) {
+	s.notifier = notifier
 }
 
 func (s *WorkflowService) NodeSchemas(actorUserID, organizationID int64) ([]model.WorkflowNodeSchema, error) {

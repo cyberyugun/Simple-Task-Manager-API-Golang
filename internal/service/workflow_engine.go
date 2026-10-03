@@ -228,6 +228,16 @@ func (s *WorkflowService) executeWorkflowNode(execution *model.WorkflowExecution
 			execution.Status = model.WorkflowExecutionWaitingApproval
 			execution.ResumeAt = nil
 			s.workflowAudit(execution.OrganizationID, optionalWorkflowActor(actorUserID), "workflow.approval.requested", "workflow_approval", fmt.Sprint(approval.ID), map[string]any{"execution_id": execution.ID, "node_id": node.ID})
+			if s.notifier != nil {
+				_ = s.notifier.EmitOrganizationAdminsSignal(
+					execution.OrganizationID,
+					model.NotificationEventWorkflowApproval,
+					"Workflow approval required",
+					fmt.Sprintf("Workflow execution %d is waiting for approval at node %s", execution.ID, node.ID),
+					fmt.Sprintf("workflow-approval:%d:%s", execution.ID, node.ID),
+					map[string]any{"execution_id": execution.ID, "workflow_id": execution.WorkflowID, "node_id": node.ID, "approval_id": approval.ID},
+				)
+			}
 			return nil, true, false, nil
 		}
 		if err != nil {

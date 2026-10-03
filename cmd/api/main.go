@@ -74,6 +74,7 @@ func main() {
 	var operationsRepo repository.OperationsRepository
 	var automationRepo repository.AutomationRepository
 	var workflowRepo repository.WorkflowRepository
+	var notificationRepo repository.NotificationRepository
 	var integrationRepo repository.IntegrationRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
@@ -106,6 +107,7 @@ func main() {
 		operationsRepo = repository.NewPostgresOperationsRepository(db)
 		automationRepo = repository.NewPostgresAutomationRepository(db)
 		workflowRepo = repository.NewPostgresWorkflowRepository(db)
+		notificationRepo = repository.NewPostgresNotificationRepository(db)
 		integrationRepo = repository.NewPostgresIntegrationRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
@@ -131,6 +133,7 @@ func main() {
 		operationsRepo = repository.NewInMemoryOperationsRepository()
 		automationRepo = repository.NewInMemoryAutomationRepository()
 		workflowRepo = repository.NewInMemoryWorkflowRepository()
+		notificationRepo = repository.NewInMemoryNotificationRepository()
 		integrationRepo = repository.NewInMemoryIntegrationRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
@@ -202,6 +205,19 @@ func main() {
 	automationService := service.NewAutomationService(automationRepo, organizationRepo, operationsRepo, billingRepo, billingService)
 	workflowExecutors := service.NewWorkflowExecutorRegistry(taskRepo, operationsRepo)
 	workflowService := service.NewWorkflowService(workflowRepo, organizationRepo, workflowExecutors)
+	notificationService := service.NewNotificationService(
+		notificationRepo,
+		userRepo,
+		organizationRepo,
+		service.NewLogNotificationSender(model.NotificationChannelInApp, logger),
+		service.NewLogNotificationSender(model.NotificationChannelEmail, logger),
+		service.NewLogNotificationSender(model.NotificationChannelPush, logger),
+		service.NewLogNotificationSender(model.NotificationChannelWebhook, logger),
+	)
+	taskCollaborationService.SetNotificationEmitter(notificationService)
+	billingService.SetNotificationEmitter(notificationService)
+	operationsService.SetNotificationEmitter(notificationService)
+	workflowService.SetNotificationEmitter(notificationService)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {
 		logger.Error("integration_cipher_configuration_failed", "error", err)
@@ -223,6 +239,7 @@ func main() {
 	operationsHandler := handler.NewOperationsHandler(operationsService)
 	automationHandler := handler.NewAutomationHandler(automationService)
 	workflowHandler := handler.NewWorkflowHandler(workflowService)
+	notificationHandler := handler.NewNotificationHandler(notificationService)
 	integrationHandler := handler.NewIntegrationHandler(integrationService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
@@ -381,6 +398,10 @@ func main() {
 	mux.Handle("/api/organizations/{id}/workflow-executions/{execution_id}/cancel", protectedFirstParty(workflowHandler.Cancel))
 	mux.Handle("/api/organizations/{id}/workflow-executions/{execution_id}/retry", protectedFirstParty(workflowHandler.Retry))
 	mux.Handle("/api/organizations/{id}/workflow-approvals/{approval_id}/decision", protectedFirstParty(workflowHandler.DecideApproval))
+	mux.Handle("/api/notifications", protected(notificationHandler.Inbox))
+	mux.Handle("/api/notifications/{notification_id}/read", protected(notificationHandler.NotificationByID))
+	mux.Handle("/api/notifications/preferences", protected(notificationHandler.Preference))
+	mux.Handle("/api/notifications/stats", protected(notificationHandler.Stats))
 	mux.Handle("/api/organizations/{id}/integrations/connections", protectedFirstParty(integrationHandler.Connections))
 	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}", protectedFirstParty(integrationHandler.ConnectionByID))
 	mux.Handle("/api/organizations/{id}/integrations/deliveries", protectedFirstParty(integrationHandler.Deliveries))
