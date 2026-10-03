@@ -15,11 +15,11 @@ import (
 )
 
 var (
-	ErrLifecycleUnavailable     = errors.New("data lifecycle service is unavailable")
-	ErrPrivacyExportType        = errors.New("privacy request must be access or export")
-	ErrPrivacyEraseType         = errors.New("privacy request must be a pending delete request")
-	ErrPrivacyLegalHold         = errors.New("privacy erasure is blocked by an active legal hold")
-	ErrInvalidConsent           = errors.New("invalid consent record")
+	ErrLifecycleUnavailable = errors.New("data lifecycle service is unavailable")
+	ErrPrivacyExportType    = errors.New("privacy request must be access or export")
+	ErrPrivacyEraseType     = errors.New("privacy request must be a pending delete request")
+	ErrPrivacyLegalHold     = errors.New("privacy erasure is blocked by an active legal hold")
+	ErrInvalidConsent       = errors.New("invalid consent record")
 )
 
 type LifecycleService struct {
@@ -118,14 +118,14 @@ func (s *LifecycleService) run(workspaceID int64, actorUserID *int64) (model.Lif
 	})
 	if actorUserID != nil {
 		_, _ = s.governance.CreateComplianceEvidence(model.ComplianceEvidence{
-			WorkspaceID: workspaceID,
-			Framework: "INTERNAL",
-			Control: "DATA-LIFECYCLE",
-			EvidenceType: "automated_run",
-			Description: "Data lifecycle retention run completed",
-			Metadata: map[string]any{"run_id": finished.ID, "archived_count": archived, "purged_count": purged},
+			WorkspaceID:     workspaceID,
+			Framework:       "INTERNAL",
+			Control:         "DATA-LIFECYCLE",
+			EvidenceType:    "automated_run",
+			Description:     "Data lifecycle retention run completed",
+			Metadata:        map[string]any{"run_id": finished.ID, "archived_count": archived, "purged_count": purged},
 			CreatedByUserID: *actorUserID,
-			CreatedAt: time.Now(),
+			CreatedAt:       time.Now(),
 		})
 	}
 	return finished, nil
@@ -168,8 +168,8 @@ func (s *LifecycleService) ExportPrivacyRequest(actorUserID, workspaceID, reques
 	payload := map[string]any{
 		"privacy_request": request,
 		"subject_user_id": request.SubjectUserID,
-		"tasks": tasks,
-		"generated_at": generatedAt,
+		"tasks":           tasks,
+		"generated_at":    generatedAt,
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -177,9 +177,13 @@ func (s *LifecycleService) ExportPrivacyRequest(actorUserID, workspaceID, reques
 	}
 	sum := sha256.Sum256(raw)
 	pkg, err := s.repo.SavePrivacyExport(model.PrivacyExportPackage{
-		WorkspaceID: workspaceID, PrivacyRequestID: request.ID, SubjectUserID: request.SubjectUserID,
-		ChecksumSHA256: hex.EncodeToString(sum[:]), Payload: payload,
-		CreatedByUserID: actorUserID, CreatedAt: generatedAt,
+		WorkspaceID:      workspaceID,
+		PrivacyRequestID: request.ID,
+		SubjectUserID:    request.SubjectUserID,
+		ChecksumSHA256:   hex.EncodeToString(sum[:]),
+		Payload:          payload,
+		CreatedByUserID:  actorUserID,
+		CreatedAt:        generatedAt,
 	})
 	if err == nil {
 		s.auditSystem(workspaceID, &actorUserID, "governance.privacy_export.created", "privacy_export", strconv.FormatInt(pkg.ID, 10), map[string]any{
@@ -249,9 +253,14 @@ func (s *LifecycleService) AddConsent(actorUserID, workspaceID int64, req model.
 		return model.ConsentRecord{}, ErrInvalidConsent
 	}
 	item, err := s.repo.AddConsent(model.ConsentRecord{
-		WorkspaceID: workspaceID, SubjectUserID: req.SubjectUserID, Purpose: purpose,
-		Status: status, PolicyVersion: version, Source: source,
-		RecordedByUserID: actorUserID, RecordedAt: time.Now(),
+		WorkspaceID:      workspaceID,
+		SubjectUserID:    req.SubjectUserID,
+		Purpose:          purpose,
+		Status:           status,
+		PolicyVersion:    version,
+		Source:           source,
+		RecordedByUserID: actorUserID,
+		RecordedAt:       time.Now(),
 	})
 	if err == nil {
 		s.auditSystem(workspaceID, &actorUserID, "governance.consent.recorded", "consent", strconv.FormatInt(item.ID, 10), map[string]any{
@@ -302,13 +311,13 @@ func (s *LifecycleService) Report(actorUserID, workspaceID int64) (model.Governa
 	}
 	now := time.Now()
 	report := model.GovernanceReport{
-		WorkspaceID: workspaceID,
-		DefaultClassification: policy.DefaultClassification,
+		WorkspaceID:              workspaceID,
+		DefaultClassification:    policy.DefaultClassification,
 		OperationalRetentionDays: policy.OperationalRetentionDays,
-		DataInventoryEntries: len(inventory),
-		ActiveLegalHolds: len(holds),
-		ConsentRecords: len(consents),
-		GeneratedAt: now,
+		DataInventoryEntries:     len(inventory),
+		ActiveLegalHolds:         len(holds),
+		ConsentRecords:           len(consents),
+		GeneratedAt:              now,
 	}
 	for _, entry := range inventory {
 		if entry.ContainsPersonalData {
