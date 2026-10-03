@@ -663,3 +663,10 @@ Phase 31 adds structured policy-as-code automation across billing and operations
 ## Enterprise integration hub and workflow federation
 
 Phase 32 adds a provider-neutral integration hub with a connector catalog for Slack, Microsoft Teams, Jira, GitHub, and generic webhooks. Organization connections keep credentials AES-GCM encrypted at rest and never return credentials through list/update responses. Outbound events use a persisted worker queue with exponential retry, dead-letter state, replay, stale-lock recovery, connection health, and rate-limit metadata. Inbound federation is HMAC-SHA256 signed and deduplicated by provider event ID. Set `INTEGRATION_POLL_INTERVAL` and `INTEGRATION_BATCH_SIZE` to tune dispatcher behavior. See [docs/enterprise-integration-hub.md](docs/enterprise-integration-hub.md).
+
+
+## Task Management 2.0 & Collaboration
+
+Phase 33 upgrades the core product domain from simple completed/not-completed tasks to a collaborative work-management model. Tasks now support lifecycle status, priority, start/due/completed timestamps, projects and lists, parent/subtask hierarchy, estimates and actual time, optimistic versions, archive/trash/restore, assignees, watchers, labels, comments, dependencies with cycle prevention, recurrence configuration, custom fields, and an activity timeline. Legacy `completed` remains compatible: `DONE` maps to `completed=true`, and the existing `/api/tasks/{id}/complete` endpoint is retained.
+
+See [docs/task-management-2-collaboration.md](docs/task-management-2-collaboration.md).
