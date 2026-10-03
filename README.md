@@ -459,6 +459,8 @@ Load/spike/soak testing, connection-pool tuning, query-plan validation, HPA capa
 
 Progressive canary delivery, deployment freezes, expand/contract migration safety, automatic image rollback, immutable release evidence, and release/rollback procedures are documented in [`docs/release-engineering.md`](docs/release-engineering.md) and [`docs/production-release-checklist.md`](docs/production-release-checklist.md).
 
+Mandatory staging validation, isolated staging PostgreSQL/Redis guidance, exact-digest promotion evidence, and the staging→production gate are documented in [`docs/staging-promotion.md`](docs/staging-promotion.md).
+
 ## Security and software supply chain
 
 Security automation lives in `.github/workflows/security.yml` and runs on pushes to `main`, pull requests, manual dispatches, and a weekly schedule.
