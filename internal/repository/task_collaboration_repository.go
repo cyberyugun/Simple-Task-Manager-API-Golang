@@ -50,7 +50,7 @@ type TaskCollaborationRepository interface {
 	DeleteComment(workspaceID, taskID, commentID, userID int64, at time.Time) (model.TaskComment, error)
 	ListComments(workspaceID, taskID int64) ([]model.TaskComment, error)
 
-	CreateDependency(dependency model.TaskDependency) (model.TaskDependency, error)
+	CreateDependency(workspaceID int64, dependency model.TaskDependency) (model.TaskDependency, error)
 	DeleteDependency(workspaceID, taskID, dependsOnTaskID int64) error
 	ListDependencies(workspaceID, taskID int64) ([]model.TaskDependency, error)
 
@@ -383,7 +383,7 @@ func (r *InMemoryTaskCollaborationRepository) ListComments(workspaceID, taskID i
 	return items, nil
 }
 
-func (r *InMemoryTaskCollaborationRepository) CreateDependency(dependency model.TaskDependency) (model.TaskDependency, error) {
+func (r *InMemoryTaskCollaborationRepository) CreateDependency(workspaceID int64, dependency model.TaskDependency) (model.TaskDependency, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.dependencies[dependency.TaskID] == nil {
