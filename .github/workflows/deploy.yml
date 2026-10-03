@@ -152,11 +152,219 @@ jobs:
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/deploy.yml@refs/(heads/main|tags/v.*)$"
 
+  staging:
+    name: Deploy and Validate Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    environment: staging
+    outputs:
+      promoted-digest: ${{ steps.evidence.outputs.image_digest }}
+      promoted-commit: ${{ steps.evidence.outputs.commit }}
+      evidence-status: ${{ steps.evidence.outputs.status }}
+      evidence-run-id: ${{ steps.evidence.outputs.run_id }}
+    env:
+      IMAGE_DIGEST: ${{ needs.build.outputs.image-digest }}
+      KUBE_NAMESPACE: task-manager-staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify signed candidate
+        run: |
+          test -n "$IMAGE_DIGEST"
+          cosign verify "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/deploy.yml@refs/(heads/main|tags/v.*)$"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+      - name: Validate staging cluster authentication mode
+        env:
+          KUBE_AUTH_MODE: ${{ vars.KUBE_AUTH_MODE }}
+        run: |
+          case "${KUBE_AUTH_MODE:-kubeconfig}" in
+            aws-eks|azure-aks|gke|kubeconfig) ;;
+            *)
+              echo "::error::KUBE_AUTH_MODE must be one of: aws-eks, azure-aks, gke, kubeconfig."
+              exit 1
+              ;;
+          esac
+
+      - name: Authenticate to AWS with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-staging-${{ github.run_id }}
+
+      - name: Configure EKS staging cluster
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+        run: |
+          test -n "$AWS_REGION" || { echo "::error::AWS_REGION is required."; exit 1; }
+          test -n "$EKS_CLUSTER_NAME" || { echo "::error::EKS_CLUSTER_NAME is required."; exit 1; }
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Authenticate to Azure with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure AKS staging cluster
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/aks-set-context@c7eb093e5a5d47caa333f64974d5fd1cd4bf069d # v4.0.3
+        with:
+          resource-group: ${{ vars.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
+          admin: false
+
+      - name: Authenticate to Google Cloud with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure GKE staging cluster
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
+          location: ${{ vars.GKE_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure staging cluster from kubeconfig fallback
+        if: vars.KUBE_AUTH_MODE == '' || vars.KUBE_AUTH_MODE == 'kubeconfig'
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG_B64 }}
+        run: |
+          test -n "$KUBE_CONFIG_B64" || { echo "::error::KUBE_CONFIG_B64 is required."; exit 1; }
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG_B64" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Verify staging cluster access
+        run: kubectl cluster-info
+
+      - name: Prepare staging namespace
+        run: kubectl apply -f deploy/k8s/overlays/staging/namespace.yaml
+
+      - name: Staging readiness preflight
+        env:
+          REQUIRE_DATA_ISOLATION: ${{ vars.REQUIRE_DATA_ISOLATION || 'true' }}
+        run: bash scripts/staging-preflight.sh
+
+      - name: Run staging migration from signed digest
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" delete job task-api-migrate --ignore-not-found --wait=true
+          sed \
+            -e "s/namespace: task-manager/namespace: $KUBE_NAMESPACE/" \
+            -e "s|image: task-api:latest|image: $IMAGE_REPOSITORY@$IMAGE_DIGEST|" \
+            deploy/k8s/base/migration-job.yaml >/tmp/staging-migration-job.yaml
+          kubectl apply -f /tmp/staging-migration-job.yaml
+          if ! kubectl -n "$KUBE_NAMESPACE" wait --for=condition=complete job/task-api-migrate --timeout=5m; then
+            kubectl -n "$KUBE_NAMESPACE" logs job/task-api-migrate --all-containers=true || true
+            exit 1
+          fi
+
+      - name: Deploy exact digest to staging
+        env:
+          STAGING_HOST: ${{ vars.KUBE_INGRESS_HOST }}
+        run: |
+          test -n "$STAGING_HOST" || { echo "::error::staging KUBE_INGRESS_HOST is required."; exit 1; }
+          sed -i "s/staging-task-api.example.com/$STAGING_HOST/g" deploy/k8s/overlays/staging/ingress.yaml
+          sed -i "s/newTag: latest/digest: $IMAGE_DIGEST/" deploy/k8s/overlays/staging/kustomization.yaml
+          kubectl apply -k deploy/k8s/overlays/staging
+          kubectl -n "$KUBE_NAMESPACE" rollout status deployment/task-api --timeout=5m
+
+      - name: Validate staging system endpoints
+        env:
+          STAGING_HOST: ${{ vars.KUBE_INGRESS_HOST }}
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "https://$STAGING_HOST/version" >/tmp/staging-version.json; then
+              break
+            fi
+            sleep 2
+          done
+          curl --fail --silent --show-error "https://$STAGING_HOST/health" >/tmp/staging-health.json
+          curl --fail --silent --show-error "https://$STAGING_HOST/ready" >/tmp/staging-ready.json
+          python3 - <<'PY'
+          import json
+          import os
+          with open("/tmp/staging-version.json", "r", encoding="utf-8") as handle:
+              actual = json.load(handle)["data"]["commit"]
+          expected = os.environ["GITHUB_SHA"]
+          if actual != expected:
+              raise SystemExit(f"staging commit {actual!r} does not match {expected!r}")
+          PY
+
+      - name: Run staging acceptance and performance smoke
+        env:
+          STAGING_HOST: ${{ vars.KUBE_INGRESS_HOST }}
+        run: |
+          docker run --rm --network host \
+            -v "$PWD:/work" \
+            -w /work \
+            grafana/k6:2.3.0 run \
+            -e BASE_URL="https://$STAGING_HOST" \
+            -e PROFILE=smoke \
+            -e RUN_ID="staging-${{ github.run_id }}" \
+            tests/performance/task-api.js
+
+      - name: Create staging promotion evidence
+        id: evidence
+        env:
+          STAGING_HOST: ${{ vars.KUBE_INGRESS_HOST }}
+        run: |
+          python3 scripts/promotion-evidence.py create \
+            --output staging-promotion-evidence.json \
+            --commit "$GITHUB_SHA" \
+            --image-digest "$IMAGE_DIGEST" \
+            --run-id "$GITHUB_RUN_ID" \
+            --source-ref "$GITHUB_REF" \
+            --staging-url "https://$STAGING_HOST"
+          echo "image_digest=$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "status=passed" >> "$GITHUB_OUTPUT"
+          echo "run_id=$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Upload staging promotion evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: staging-promotion-evidence-${{ github.sha }}
+          path: staging-promotion-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+
+
   deploy:
     name: Deploy Production
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: build
+    needs: [build, staging]
     environment: production
     env:
       IMAGE_DIGEST: ${{ needs.build.outputs.image-digest }}
@@ -189,6 +397,42 @@ jobs:
           bash -n scripts/release-policy-check.sh
           python3 -m py_compile scripts/check-migration-compatibility.py
           bash scripts/release-policy-check.sh
+
+      - name: Verify staging promotion gate
+        env:
+          STAGING_DIGEST: ${{ needs.staging.outputs.promoted-digest }}
+          STAGING_COMMIT: ${{ needs.staging.outputs.promoted-commit }}
+          STAGING_STATUS: ${{ needs.staging.outputs.evidence-status }}
+          STAGING_RUN_ID: ${{ needs.staging.outputs.evidence-run-id }}
+        run: |
+          test "$STAGING_STATUS" = "passed"
+          test "$STAGING_DIGEST" = "$IMAGE_DIGEST"
+          test "$STAGING_COMMIT" = "$GITHUB_SHA"
+          test "$STAGING_RUN_ID" = "$GITHUB_RUN_ID"
+          cat > /tmp/staging-promotion-evidence.json <<EOF
+          {
+            "status": "$STAGING_STATUS",
+            "environment": "staging",
+            "commit": "$STAGING_COMMIT",
+            "image_digest": "$STAGING_DIGEST",
+            "workflow_run_id": "$STAGING_RUN_ID",
+            "checks": [
+              "signed-image-verified",
+              "staging-readiness",
+              "migration",
+              "rollout",
+              "health",
+              "readiness",
+              "version",
+              "k6-smoke"
+            ]
+          }
+          EOF
+          python3 scripts/promotion-evidence.py verify \
+            --file /tmp/staging-promotion-evidence.json \
+            --commit "$GITHUB_SHA" \
+            --image-digest "$IMAGE_DIGEST" \
+            --run-id "$GITHUB_RUN_ID"
 
       - name: Log in to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
