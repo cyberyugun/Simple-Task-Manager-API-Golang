@@ -131,6 +131,7 @@ if "$KUBECTL_BIN" -n "$KUBE_NAMESPACE" get secret task-api-secrets >/dev/null 2>
   check_secret_key task-api-secrets DATABASE_URL
   check_secret_key task-api-secrets REDIS_URL
   check_secret_key task-api-secrets JWT_SECRET
+  check_secret_key task-api-secrets WEBHOOK_SIGNING_KEY
 else
   fail "required secret task-api-secrets is missing"
 fi
