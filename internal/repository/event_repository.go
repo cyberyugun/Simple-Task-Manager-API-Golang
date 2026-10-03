@@ -144,7 +144,10 @@ func (r *PostgresEventRepository) ClaimOutbox(limit int, now time.Time) ([]model
 		       event_type, schema_version, payload, status, attempts,
 		       available_at, created_at
 		FROM outbox_events
-		WHERE status = 'pending'
+		WHERE (
+		    status = 'pending'
+		    OR (status = 'processing' AND locked_at < $1 - INTERVAL '5 minutes')
+		  )
 		  AND available_at <= $1
 		ORDER BY id
 		FOR UPDATE SKIP LOCKED
@@ -285,7 +288,10 @@ func (r *PostgresEventRepository) ClaimDeliveries(limit int, now time.Time) ([]m
 		FROM webhook_deliveries d
 		JOIN webhook_subscriptions s ON s.id = d.subscription_id
 		JOIN outbox_events e ON e.event_id = d.event_id
-		WHERE d.status = 'pending'
+		WHERE (
+		    d.status = 'pending'
+		    OR (d.status = 'processing' AND d.locked_at < $1 - INTERVAL '5 minutes')
+		  )
 		  AND d.available_at <= $1
 		  AND s.active = TRUE
 		ORDER BY d.id
