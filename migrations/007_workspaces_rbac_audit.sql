@@ -26,6 +26,13 @@ CREATE INDEX IF NOT EXISTS idx_workspace_members_user
 ALTER TABLE tasks
     ADD COLUMN IF NOT EXISTS workspace_id BIGINT REFERENCES workspaces(id) ON DELETE CASCADE;
 
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL;
+
+UPDATE tasks
+SET created_by_user_id = user_id
+WHERE created_by_user_id IS NULL;
+
 INSERT INTO workspaces (name, created_by_user_id, is_personal, created_at, updated_at)
 SELECT 'Personal Workspace', u.id, TRUE, NOW(), NOW()
 FROM users u
@@ -51,6 +58,9 @@ WHERE t.workspace_id IS NULL
 
 CREATE INDEX IF NOT EXISTS idx_tasks_workspace_id
     ON tasks (workspace_id);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_created_by_user_id
+    ON tasks (created_by_user_id);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_workspace_completed_created_at
     ON tasks (workspace_id, completed, created_at DESC, id DESC);
