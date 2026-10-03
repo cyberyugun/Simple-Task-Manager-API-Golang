@@ -273,7 +273,7 @@ func (s *TaskCollaborationService) AddDependency(actorUserID, workspaceID, taskI
 	if cyclic {
 		return model.TaskDependency{}, ErrTaskDependencyCycle
 	}
-	item, err := s.repo.CreateDependency(model.TaskDependency{
+	item, err := s.repo.CreateDependency(workspaceID, model.TaskDependency{
 		TaskID: taskID, DependsOnTaskID: req.DependsOnTaskID,
 		CreatedByUserID: actorUserID, CreatedAt: time.Now().UTC(),
 	})
