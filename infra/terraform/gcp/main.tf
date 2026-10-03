@@ -119,8 +119,8 @@ resource "google_container_cluster" "main" {
   initial_node_count       = 1
   deletion_protection      = true
 
-  networking_mode          = "VPC_NATIVE"
-  enable_shielded_nodes    = true
+  networking_mode             = "VPC_NATIVE"
+  enable_shielded_nodes       = true
   enable_intranode_visibility = true
 
   release_channel {
@@ -179,6 +179,10 @@ resource "google_container_node_pool" "main" {
     service_account = google_service_account.gke_nodes.email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
 
+    metadata = {
+      "disable-legacy-endpoints" = "true"
+    }
+
     shielded_instance_config {
       enable_secure_boot          = true
       enable_integrity_monitoring = true
@@ -201,9 +205,9 @@ resource "random_password" "postgres" {
 }
 
 resource "google_sql_database_instance" "postgres" {
-  name             = "${local.name}-postgres"
-  region           = var.region
-  database_version = var.postgres_database_version
+  name                = "${local.name}-postgres"
+  region              = var.region
+  database_version    = var.postgres_database_version
   deletion_protection = true
 
   settings {
@@ -224,6 +228,7 @@ resource "google_sql_database_instance" "postgres" {
       ipv4_enabled                                  = false
       private_network                               = google_compute_network.main.id
       enable_private_path_for_google_cloud_services = true
+      ssl_mode                                      = "ENCRYPTED_ONLY"
     }
 
     insights_config {
@@ -289,8 +294,8 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 
   attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.repository" = "assertion.repository"
+    "google.subject"        = "assertion.sub"
+    "attribute.repository"  = "assertion.repository"
     "attribute.environment" = "assertion.environment"
   }
 
