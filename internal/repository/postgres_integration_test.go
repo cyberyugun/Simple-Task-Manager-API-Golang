@@ -431,6 +431,8 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"006_performance_indexes.sql",
 		"007_workspaces_rbac_audit.sql",
 		"008_event_delivery.sql",
+		"009_enterprise_identity.sql",
+		"010_mfa_device_security.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {
