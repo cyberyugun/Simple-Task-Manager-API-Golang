@@ -38,32 +38,43 @@ func NewPostgresEventRepository(db *sql.DB) *PostgresEventRepository {
 }
 
 func (r *PostgresEventRepository) CreateSubscription(subscription model.WebhookSubscription, secret string) (model.WebhookSubscription, error) {
-	err := r.db.QueryRow(`
+	eventTypes, err := json.Marshal(subscription.EventTypes)
+	if err != nil {
+		return model.WebhookSubscription{}, err
+	}
+	var raw []byte
+	err = r.db.QueryRow(`
 		INSERT INTO webhook_subscriptions (
 			workspace_id, url, signing_secret, event_types, active,
 			created_by_user_id, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, TRUE, $5, $6, $6)
+		VALUES ($1, $2, $3, $4::jsonb, TRUE, $5, $6, $6)
 		RETURNING id, workspace_id, url, event_types, active,
 		          created_by_user_id, created_at, updated_at
 	`,
 		subscription.WorkspaceID,
 		subscription.URL,
 		secret,
-		pqStringArray(subscription.EventTypes),
+		string(eventTypes),
 		subscription.CreatedByUserID,
 		subscription.CreatedAt,
 	).Scan(
 		&subscription.ID,
 		&subscription.WorkspaceID,
 		&subscription.URL,
-		pqStringArrayScan(&subscription.EventTypes),
+		&raw,
 		&subscription.Active,
 		&subscription.CreatedByUserID,
 		&subscription.CreatedAt,
 		&subscription.UpdatedAt,
 	)
-	return subscription, err
+	if err != nil {
+		return model.WebhookSubscription{}, err
+	}
+	if err := json.Unmarshal(raw, &subscription.EventTypes); err != nil {
+		return model.WebhookSubscription{}, err
+	}
+	return subscription, nil
 }
 
 func (r *PostgresEventRepository) ListSubscriptions(workspaceID int64) ([]model.WebhookSubscription, error) {
@@ -82,16 +93,20 @@ func (r *PostgresEventRepository) ListSubscriptions(workspaceID int64) ([]model.
 	items := make([]model.WebhookSubscription, 0)
 	for rows.Next() {
 		var item model.WebhookSubscription
+		var raw []byte
 		if err := rows.Scan(
 			&item.ID,
 			&item.WorkspaceID,
 			&item.URL,
-			pqStringArrayScan(&item.EventTypes),
+			&raw,
 			&item.Active,
 			&item.CreatedByUserID,
 			&item.CreatedAt,
 			&item.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(raw, &item.EventTypes); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -141,24 +156,22 @@ func (r *PostgresEventRepository) ClaimOutbox(limit int, now time.Time) ([]model
 	defer rows.Close()
 
 	items := make([]model.DomainEvent, 0)
-	ids := make([]int64, 0)
 	for rows.Next() {
 		item, err := scanDomainEvent(rows)
 		if err != nil {
 			return nil, err
 		}
 		items = append(items, item)
-		ids = append(ids, item.ID)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	for _, id := range ids {
+	for _, item := range items {
 		if _, err := tx.Exec(`
 			UPDATE outbox_events
 			SET status = 'processing', locked_at = $2, attempts = attempts + 1
 			WHERE id = $1
-		`, id, now); err != nil {
+		`, item.ID, now); err != nil {
 			return nil, err
 		}
 	}
@@ -196,7 +209,11 @@ func (r *PostgresEventRepository) FanOutEvent(event model.DomainEvent, now time.
 	subs := make([]subscription, 0)
 	for rows.Next() {
 		var sub subscription
-		if err := rows.Scan(&sub.id, pqStringArrayScan(&sub.eventTypes)); err != nil {
+		var raw []byte
+		if err := rows.Scan(&sub.id, &raw); err != nil {
+			return err
+		}
+		if err := json.Unmarshal(raw, &sub.eventTypes); err != nil {
 			return err
 		}
 		if matchesEvent(sub.eventTypes, event.EventType) {
@@ -281,17 +298,17 @@ func (r *PostgresEventRepository) ClaimDeliveries(limit int, now time.Time) ([]m
 	defer rows.Close()
 
 	items := make([]model.WebhookDelivery, 0)
-	ids := make([]int64, 0)
 	for rows.Next() {
 		var item model.WebhookDelivery
-		var raw []byte
+		var eventTypesRaw []byte
+		var payloadRaw []byte
 		if err := rows.Scan(
 			&item.ID,
 			&item.SubscriptionID,
 			&item.EventID,
 			&item.URL,
 			&item.SigningSecret,
-			pqStringArrayScan(&item.EventTypes),
+			&eventTypesRaw,
 			&item.Event.ID,
 			&item.Event.EventID,
 			&item.Event.WorkspaceID,
@@ -299,7 +316,7 @@ func (r *PostgresEventRepository) ClaimDeliveries(limit int, now time.Time) ([]m
 			&item.Event.AggregateID,
 			&item.Event.EventType,
 			&item.Event.SchemaVersion,
-			&raw,
+			&payloadRaw,
 			&item.Event.Status,
 			&item.Event.Attempts,
 			&item.Event.AvailableAt,
@@ -308,21 +325,23 @@ func (r *PostgresEventRepository) ClaimDeliveries(limit int, now time.Time) ([]m
 		); err != nil {
 			return nil, err
 		}
-		if err := json.Unmarshal(raw, &item.Event.Payload); err != nil {
+		if err := json.Unmarshal(eventTypesRaw, &item.EventTypes); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(payloadRaw, &item.Event.Payload); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
-		ids = append(ids, item.ID)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	for _, id := range ids {
+	for _, item := range items {
 		if _, err := tx.Exec(`
 			UPDATE webhook_deliveries
 			SET status = 'processing', locked_at = $2, attempts = attempts + 1
 			WHERE id = $1
-		`, id, now); err != nil {
+		`, item.ID, now); err != nil {
 			return nil, err
 		}
 	}
@@ -475,62 +494,4 @@ func truncateError(value string) string {
 		return value[:max]
 	}
 	return value
-}
-
-type stringArrayValue []string
-
-func pqStringArray(values []string) any {
-	return stringArrayValue(values)
-}
-
-func (a stringArrayValue) Value() (driver.Value, error) {
-	if len(a) == 0 {
-		return "{}", nil
-	}
-	escaped := make([]string, len(a))
-	for i, value := range a {
-		value = strings.ReplaceAll(value, "\\", "\\\\")
-		value = strings.ReplaceAll(value, """, "\\"")
-		escaped[i] = """ + value + """
-	}
-	return "{" + strings.Join(escaped, ",") + "}", nil
-}
-
-type stringArrayScanner struct {
-	target *[]string
-}
-
-func pqStringArrayScan(target *[]string) sql.Scanner {
-	return &stringArrayScanner{target: target}
-}
-
-func (s *stringArrayScanner) Scan(src any) error {
-	if src == nil {
-		*s.target = nil
-		return nil
-	}
-	var raw string
-	switch value := src.(type) {
-	case string:
-		raw = value
-	case []byte:
-		raw = string(value)
-	default:
-		return fmt.Errorf("unsupported postgres array type %T", src)
-	}
-	raw = strings.TrimPrefix(strings.TrimSuffix(raw, "}"), "{")
-	if raw == "" {
-		*s.target = []string{}
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.Trim(part, """)
-		part = strings.ReplaceAll(part, "\\"", """)
-		part = strings.ReplaceAll(part, "\\\\", "\\")
-		out = append(out, part)
-	}
-	*s.target = out
-	return nil
 }
