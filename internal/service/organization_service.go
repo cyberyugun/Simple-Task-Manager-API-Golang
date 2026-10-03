@@ -576,8 +576,8 @@ func (s *OrganizationService) Dashboard(actorUserID, organizationID int64) (mode
 		Organization: org, MemberCount: memberCount, WorkspaceCount: workspaceCount,
 		PendingInvites: pending, TeamCount: len(teams), VerifiedDomains: verified,
 		WorkspaceCapacity: org.MaxWorkspaces - workspaceCount,
-		MemberCapacity: org.MaxMembers - memberCount,
-		GeneratedAt: now,
+		MemberCapacity:    org.MaxMembers - memberCount,
+		GeneratedAt:       now,
 	}, nil
 }
 
@@ -661,11 +661,11 @@ func randomOpaqueSecret() (string, string, error) {
 func (s *OrganizationService) audit(organizationID int64, actorUserID *int64, action, resourceType, resourceID string, metadata map[string]any) {
 	_ = s.repo.RecordAudit(model.OrganizationAuditEvent{
 		OrganizationID: organizationID,
-		ActorUserID: actorUserID,
-		Action: action,
-		ResourceType: resourceType,
-		ResourceID: resourceID,
-		Metadata: metadata,
-		CreatedAt: time.Now(),
+		ActorUserID:    actorUserID,
+		Action:         action,
+		ResourceType:   resourceType,
+		ResourceID:     resourceID,
+		Metadata:       metadata,
+		CreatedAt:      time.Now(),
 	})
 }
