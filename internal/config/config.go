@@ -19,6 +19,8 @@ const (
 	defaultAuthRateLimitRequests = 20
 	defaultAuthRateLimitWindow   = time.Minute
 	defaultLogLevel              = "info"
+	defaultAppEnv                = "development"
+	defaultOTELServiceName       = "task-api"
 )
 
 type Config struct {
@@ -37,6 +39,9 @@ type Config struct {
 	AuthRateLimitWindow   time.Duration
 	RateLimitFailOpen     bool
 	ExposeAuthTokens      bool
+	AppEnv                string
+	OTELExporterEndpoint  string
+	OTELServiceName       string
 }
 
 func Load() (Config, error) {
@@ -55,6 +60,9 @@ func Load() (Config, error) {
 		AuthRateLimitRequests: defaultAuthRateLimitRequests,
 		AuthRateLimitWindow:   defaultAuthRateLimitWindow,
 		RateLimitFailOpen:     true,
+		AppEnv:                strings.TrimSpace(os.Getenv("APP_ENV")),
+		OTELExporterEndpoint:  strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+		OTELServiceName:       strings.TrimSpace(os.Getenv("OTEL_SERVICE_NAME")),
 	}
 
 	if cfg.Port == "" {
@@ -62,6 +70,12 @@ func Load() (Config, error) {
 	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = defaultLogLevel
+	}
+	if cfg.AppEnv == "" {
+		cfg.AppEnv = defaultAppEnv
+	}
+	if cfg.OTELServiceName == "" {
+		cfg.OTELServiceName = defaultOTELServiceName
 	}
 
 	port, err := strconv.Atoi(cfg.Port)
