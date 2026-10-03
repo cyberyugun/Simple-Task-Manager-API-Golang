@@ -28,3 +28,11 @@
 /docs/api-versioning.md @cyberyugun
 /docs/api-changelog.md @cyberyugun
 /docs/api-examples.md @cyberyugun
+/migrations/ @cyberyugun
+/internal/model/workspace.go @cyberyugun
+/internal/repository/workspace_repository.go @cyberyugun
+/internal/repository/postgres_workspace_repository.go @cyberyugun
+/internal/middleware/workspace.go @cyberyugun
+/internal/service/workspace_service.go @cyberyugun
+/internal/handler/workspace_handler.go @cyberyugun
+/docs/authorization-multitenancy.md @cyberyugun
