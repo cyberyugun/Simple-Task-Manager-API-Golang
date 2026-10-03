@@ -95,6 +95,8 @@ func Load() (Config, error) {
 		RedisWriteTimeout:     defaultRedisWriteTimeout,
 	}
 
+	var err error
+
 	if cfg.Port == "" {
 		cfg.Port = defaultPort
 	}
