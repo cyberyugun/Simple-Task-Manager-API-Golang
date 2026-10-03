@@ -1069,6 +1069,70 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+
+  /api/auth/sessions/risk:
+    get:
+      tags: [Authentication]
+      summary: Assess active session and device risk
+      operationId: assessSessionRisk
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active sessions with risk levels and indicators
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/mfa/status:
+    get:
+      tags: [Authentication]
+      summary: Get MFA enrollment status
+      operationId: getMFAStatus
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: MFA status
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/mfa/totp/enroll:
+    post:
+      tags: [Authentication]
+      summary: Start TOTP enrollment
+      operationId: enrollTOTP
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: TOTP secret and otpauth URI
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/mfa/totp/confirm:
+    post:
+      tags: [Authentication]
+      summary: Confirm and enable TOTP MFA
+      operationId: confirmTOTP
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: TOTP MFA enabled
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/mfa/totp/disable:
+    post:
+      tags: [Authentication]
+      summary: Disable TOTP MFA after code verification
+      operationId: disableTOTP
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: TOTP MFA disabled
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1254,6 +1318,8 @@ components:
           type: string
         ip_address:
           type: string
+        mfa_authenticated:
+          type: boolean
         expires_at:
           type: string
           format: date-time
