@@ -155,7 +155,6 @@ func runLifecycleAutomation(ctx context.Context, lifecycle *service.LifecycleSer
 	}
 }
 
-
 func runAutomationPolicies(ctx context.Context, automation *service.AutomationService, poll time.Duration, logger *slog.Logger) {
 	run := func() {
 		executions, err := automation.EvaluateAllSystem()
