@@ -43,6 +43,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	})
 
 	applyMigrations(t, db)
+	assertPerformanceIndexes(t, db)
 
 	userRepo := repository.NewPostgresUserRepository(db)
 	taskRepo := repository.NewPostgresTaskRepository(db)
@@ -279,6 +280,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"003_task_list_indexes.sql",
 		"004_refresh_tokens.sql",
 		"005_account_security.sql",
+		"006_performance_indexes.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {
@@ -294,5 +296,106 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 				t.Fatalf("apply migration %s: %v", name, err)
 			}
 		}
+	}
+}
+
+func assertPerformanceIndexes(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	var extensionExists bool
+	if err := db.QueryRow("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')").Scan(&extensionExists); err != nil {
+		t.Fatalf("check pg_trgm extension: %v", err)
+	}
+	if !extensionExists {
+		t.Fatal("pg_trgm extension is not installed")
+	}
+
+	expected := map[string]bool{
+		"idx_tasks_user_title_trgm":             false,
+		"idx_tasks_user_description_trgm":       false,
+		"idx_tasks_user_completed_created_at":   false,
+		"idx_refresh_tokens_user_active_last_used": false,
+	}
+
+	rows, err := db.Query(`
+		SELECT indexname
+		FROM pg_indexes
+		WHERE schemaname = 'public'
+		  AND indexname IN (
+		    'idx_tasks_user_title_trgm',
+		    'idx_tasks_user_description_trgm',
+		    'idx_tasks_user_completed_created_at',
+		    'idx_refresh_tokens_user_active_last_used'
+		  )
+	`)
+	if err != nil {
+		t.Fatalf("list performance indexes: %v", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scan performance index: %v", err)
+		}
+		expected[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate performance indexes: %v", err)
+	}
+	for name, found := range expected {
+		if !found {
+			t.Fatalf("performance index %s is missing", name)
+		}
+	}
+
+	assertPlanUsesIndex(t, db, `
+		SELECT id, user_id, title, description, completed, created_at, updated_at
+		FROM tasks
+		WHERE user_id = 1 AND completed = false
+		ORDER BY created_at DESC, id DESC
+		LIMIT 20
+	`, "idx_tasks_user_completed_created_at")
+
+	assertPlanUsesIndex(t, db, `
+		SELECT id
+		FROM tasks
+		WHERE title ILIKE '%needle%'
+	`, "idx_tasks_user_title_trgm")
+}
+
+func assertPlanUsesIndex(t *testing.T, db *sql.DB, statement, indexName string) {
+	t.Helper()
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin explain transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("SET LOCAL enable_seqscan = off"); err != nil {
+		t.Fatalf("disable seqscan for explain: %v", err)
+	}
+
+	rows, err := tx.Query("EXPLAIN (COSTS OFF) " + statement)
+	if err != nil {
+		t.Fatalf("explain query: %v", err)
+	}
+	defer rows.Close()
+
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatalf("scan explain row: %v", err)
+		}
+		plan.WriteString(line)
+		plan.WriteByte('\n')
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate explain rows: %v", err)
+	}
+	if !strings.Contains(plan.String(), indexName) {
+		t.Fatalf("query plan does not use %s:\n%s", indexName, plan.String())
 	}
 }
