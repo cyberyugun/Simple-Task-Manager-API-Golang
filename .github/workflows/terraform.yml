@@ -58,12 +58,6 @@ jobs:
             directory: infra/terraform/bootstrap/azure
           - name: Bootstrap GCP
             directory: infra/terraform/bootstrap/gcp
-          - name: Bootstrap AWS
-            directory: infra/terraform/bootstrap/aws
-          - name: Bootstrap Azure
-            directory: infra/terraform/bootstrap/azure
-          - name: Bootstrap GCP
-            directory: infra/terraform/bootstrap/gcp
 
     steps:
       - name: Checkout
