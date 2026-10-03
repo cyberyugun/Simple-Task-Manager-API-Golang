@@ -112,7 +112,28 @@ func (s *AuthService) Login(req model.LoginRequest, meta model.SessionMetadata) 
 		return model.AuthResult{}, ErrInvalidCredentials
 	}
 
-	return s.issueSession(user, meta)
+	mfaAuthenticated := false
+	if s.mfa != nil {
+		enabled, err := s.mfa.Enabled(user.ID)
+		if err != nil {
+			return model.AuthResult{}, err
+		}
+		if enabled {
+			if strings.TrimSpace(req.MFACode) == "" {
+				return model.AuthResult{}, ErrMFARequired
+			}
+			verified, err := s.mfa.Verify(user.ID, req.MFACode)
+			if err != nil {
+				return model.AuthResult{}, err
+			}
+			if !verified {
+				return model.AuthResult{}, ErrInvalidMFA
+			}
+			mfaAuthenticated = true
+		}
+	}
+
+	return s.issueSession(user, meta, mfaAuthenticated)
 }
 
 func (s *AuthService) Refresh(req model.RefreshRequest) (model.AuthResult, error) {
