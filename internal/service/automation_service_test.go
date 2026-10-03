@@ -32,17 +32,17 @@ func TestAutomationBillingTriggerAutomaticRunbook(t *testing.T) {
 	}
 
 	policy, err := svc.CreatePolicy(42, org.ID, model.CreateAutomationPolicyRequest{
-		Name: "Open incident at 50% API capacity",
+		Name:        "Open incident at 50% API capacity",
 		TriggerType: model.AutomationTriggerBillingUsagePercent,
-		TriggerKey: "api_operations",
-		Comparator: model.AutomationComparatorGreaterOrEqual,
-		Threshold: 50,
-		ActionType: model.AutomationActionOpenIncident,
+		TriggerKey:  "api_operations",
+		Comparator:  model.AutomationComparatorGreaterOrEqual,
+		Threshold:   50,
+		ActionType:  model.AutomationActionOpenIncident,
 		ActionConfig: map[string]any{
 			"severity": model.IncidentSeverity3,
-			"title": "API capacity automation",
+			"title":    "API capacity automation",
 		},
-		ApprovalMode: model.AutomationApprovalAutomatic,
+		ApprovalMode:    model.AutomationApprovalAutomatic,
 		CooldownMinutes: 60,
 	})
 	if err != nil {
@@ -92,14 +92,14 @@ func TestAutomationApprovalAndSafetyGuardrail(t *testing.T) {
 	}
 
 	_, err = svc.CreatePolicy(7, org.ID, model.CreateAutomationPolicyRequest{
-		Name: "Unsafe auto SEV1",
-		TriggerType: model.AutomationTriggerOperationsAlert,
-		TriggerKey: "slo_breach",
-		Comparator: model.AutomationComparatorGreaterOrEqual,
-		Threshold: 1,
-		ActionType: model.AutomationActionOpenIncident,
-		ActionConfig: map[string]any{"severity": model.IncidentSeverity1},
-		ApprovalMode: model.AutomationApprovalAutomatic,
+		Name:            "Unsafe auto SEV1",
+		TriggerType:     model.AutomationTriggerOperationsAlert,
+		TriggerKey:      "slo_breach",
+		Comparator:      model.AutomationComparatorGreaterOrEqual,
+		Threshold:       1,
+		ActionType:      model.AutomationActionOpenIncident,
+		ActionConfig:    map[string]any{"severity": model.IncidentSeverity1},
+		ApprovalMode:    model.AutomationApprovalAutomatic,
 		CooldownMinutes: 30,
 	})
 	if !errors.Is(err, ErrInvalidAutomationPolicy) {
@@ -107,17 +107,17 @@ func TestAutomationApprovalAndSafetyGuardrail(t *testing.T) {
 	}
 
 	_, err = svc.CreatePolicy(7, org.ID, model.CreateAutomationPolicyRequest{
-		Name: "Approve SEV1 for SLO breach",
+		Name:        "Approve SEV1 for SLO breach",
 		TriggerType: model.AutomationTriggerOperationsAlert,
-		TriggerKey: "slo_breach",
-		Comparator: model.AutomationComparatorGreaterOrEqual,
-		Threshold: 9000,
-		ActionType: model.AutomationActionOpenIncident,
+		TriggerKey:  "slo_breach",
+		Comparator:  model.AutomationComparatorGreaterOrEqual,
+		Threshold:   9000,
+		ActionType:  model.AutomationActionOpenIncident,
 		ActionConfig: map[string]any{
 			"severity": model.IncidentSeverity1,
-			"title": "Approved SLO incident",
+			"title":    "Approved SLO incident",
 		},
-		ApprovalMode: model.AutomationApprovalRequired,
+		ApprovalMode:    model.AutomationApprovalRequired,
 		CooldownMinutes: 30,
 	})
 	if err != nil {
@@ -126,15 +126,15 @@ func TestAutomationApprovalAndSafetyGuardrail(t *testing.T) {
 
 	if _, err := operations.UpsertOperationalAlert(model.OperationalAlert{
 		OrganizationID: org.ID,
-		Fingerprint: "slo:test",
-		Type: "slo_breach",
-		Metric: "availability_basis_points",
-		Status: model.OperationalAlertOpen,
-		Message: "SLO below target",
-		CurrentValue: 9500,
+		Fingerprint:    "slo:test",
+		Type:           "slo_breach",
+		Metric:         "availability_basis_points",
+		Status:         model.OperationalAlertOpen,
+		Message:        "SLO below target",
+		CurrentValue:   9500,
 		ThresholdValue: 9990,
-		DetectedAt: now,
-		UpdatedAt: now,
+		DetectedAt:     now,
+		UpdatedAt:      now,
 	}); err != nil {
 		t.Fatal(err)
 	}
