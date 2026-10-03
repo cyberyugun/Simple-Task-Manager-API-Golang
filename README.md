@@ -36,6 +36,10 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Workspace RBAC and multi-tenant task isolation
 - Personal workspace fallback for backward-compatible task clients
 - Owner/admin/member workspace membership controls and audit trail
+- Transactional outbox and versioned task domain events
+- Retry-safe task creation with Idempotency-Key
+- Tenant-aware signed webhooks with retry, dead-letter, and replay
+- Dedicated async worker with health and Prometheus metrics
 - Task CRUD and complete action
 - Pagination, search, filtering, sorting, and ordering
 - In-memory and PostgreSQL repositories
@@ -56,6 +60,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 | `DATABASE_URL` | No | empty | PostgreSQL URL; empty uses in-memory storage |
 | `REDIS_URL` | No | empty | Redis URL; when set, auth rate limits are shared across API instances |
 | `JWT_SECRET` | Yes | none | JWT signing secret, minimum 32 characters |
+| `WEBHOOK_SIGNING_KEY` | For webhook delivery | empty | Separate webhook master signing key; production preflight requires at least a non-empty key |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, or `error` |
 | `READINESS_TIMEOUT` | No | `2s` | Timeout for dependency readiness probes |
 | `ACCESS_TOKEN_TTL` | No | `15m` | Access JWT lifetime |
@@ -127,6 +132,8 @@ Swagger UI:  http://localhost:8080/docs
 OpenAPI:     http://localhost:8080/openapi.yaml
 PostgreSQL:  localhost:5432
 Redis:       localhost:6379
+Worker:      http://localhost:9091/health
+Worker metrics: http://localhost:9091/metrics
 ```
 
 Check containers:
@@ -194,6 +201,8 @@ Swagger UI supports the Bearer JWT security scheme. Register/login, copy the ret
 The public contract is compatibility line `v1`. Responses advertise `X-API-Version: v1` and `API-Supported-Versions: v1`. OpenAPI governance, backward-compatibility checks, consumer expectations, generated TypeScript SDK validation, and deprecation policy are documented in [`docs/api-versioning.md`](docs/api-versioning.md). Public contract changes are tracked in [`docs/api-changelog.md`](docs/api-changelog.md), with examples in [`docs/api-examples.md`](docs/api-examples.md).
 
 Workspace tenancy, RBAC permissions, tenant-selection headers, rollout compatibility, and audit behavior are documented in [`docs/authorization-multitenancy.md`](docs/authorization-multitenancy.md).
+
+Transactional outbox semantics, webhook signatures, retries, dead-letter replay, task idempotency, and worker operations are documented in [`docs/event-driven-processing.md`](docs/event-driven-processing.md).
 
 ## Public endpoints
 
