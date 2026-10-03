@@ -41,6 +41,7 @@ Optional readiness variables:
 ```text
 REQUIRE_GHCR_PULL_SECRET=true
 REQUIRE_METRICS_SERVER=true
+REQUIRE_OBSERVABILITY=true
 ```
 
 `REQUIRE_METRICS_SERVER` defaults to `true`. Leave `REQUIRE_GHCR_PULL_SECRET` unset when the GHCR image is public.
@@ -111,6 +112,8 @@ Install these components before the first application deployment:
 1. cert-manager, including its CRDs and controller.
 2. an ingress controller that provides an IngressClass named `nginx`.
 3. Metrics Server, or another implementation that serves the `metrics.k8s.io` API.
+4. kube-prometheus-stack/Prometheus Operator with `ServiceMonitor` and `PrometheusRule` CRDs.
+5. the `monitoring` namespace and production observability stack before the application overlay.
 4. DNS that can point `KUBE_INGRESS_HOST` to the ingress load balancer.
 5. PostgreSQL and Redis endpoints reachable from the application namespace.
 
