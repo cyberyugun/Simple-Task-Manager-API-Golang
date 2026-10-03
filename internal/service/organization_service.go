@@ -25,12 +25,18 @@ var (
 	ErrInvalidOrganizationInvite   = errors.New("invalid or expired organization invitation")
 	ErrInvalidOrganizationDomain   = errors.New("invalid organization domain verification")
 	ErrInvalidOrganizationTeam     = errors.New("invalid organization team")
+	ErrOrganizationPlanLimit       = errors.New("organization quota exceeds active billing plan limits")
 )
 
+type OrganizationEntitlementProvider interface {
+	EffectiveLimits(organizationID int64, at time.Time) (model.BillingLimits, error)
+}
+
 type OrganizationService struct {
-	repo       repository.OrganizationRepository
-	users      repository.UserRepository
-	workspaces repository.WorkspaceRepository
+	repo         repository.OrganizationRepository
+	users        repository.UserRepository
+	workspaces   repository.WorkspaceRepository
+	entitlements OrganizationEntitlementProvider
 }
 
 func NewOrganizationService(
@@ -39,6 +45,10 @@ func NewOrganizationService(
 	workspaces repository.WorkspaceRepository,
 ) *OrganizationService {
 	return &OrganizationService{repo: repo, users: users, workspaces: workspaces}
+}
+
+func (s *OrganizationService) SetEntitlementProvider(provider OrganizationEntitlementProvider) {
+	s.entitlements = provider
 }
 
 func (s *OrganizationService) Create(actorUserID int64, req model.CreateOrganizationRequest) (model.Organization, error) {
@@ -138,6 +148,15 @@ func (s *OrganizationService) UpdateQuota(actorUserID, organizationID int64, req
 	if memberCount > req.MaxMembers || workspaceCount > req.MaxWorkspaces {
 		return model.Organization{}, ErrInvalidOrganization
 	}
+	if s.entitlements != nil {
+		limits, err := s.entitlements.EffectiveLimits(organizationID, time.Now().UTC())
+		if err != nil {
+			return model.Organization{}, err
+		}
+		if req.MaxMembers > limits.MaxMembers || req.MaxWorkspaces > limits.MaxWorkspaces {
+			return model.Organization{}, ErrOrganizationPlanLimit
+		}
+	}
 	item, err := s.repo.UpdateOrganizationQuota(organizationID, req.MaxWorkspaces, req.MaxMembers, time.Now())
 	if err == nil {
 		s.audit(organizationID, &actorUserID, "organization.quota.updated", "organization", fmt.Sprint(organizationID), map[string]any{
@@ -220,7 +239,11 @@ func (s *OrganizationService) BulkAddMembers(actorUserID, organizationID int64, 
 			unique[userID] = true
 		}
 	}
-	if count+len(unique) > org.MaxMembers {
+	maxMembers, _, err := s.effectiveOrganizationLimits(org)
+	if err != nil {
+		return nil, err
+	}
+	if count+len(unique) > maxMembers {
 		return nil, ErrOrganizationMemberQuota
 	}
 	now := time.Now()
@@ -284,7 +307,11 @@ func (s *OrganizationService) AttachWorkspace(actorUserID, organizationID int64,
 	if err != nil {
 		return model.OrganizationWorkspace{}, err
 	}
-	if count >= org.MaxWorkspaces {
+	_, maxWorkspaces, err := s.effectiveOrganizationLimits(org)
+	if err != nil {
+		return model.OrganizationWorkspace{}, err
+	}
+	if count >= maxWorkspaces {
 		return model.OrganizationWorkspace{}, ErrOrganizationWorkspaceQuota
 	}
 	item, err := s.repo.AttachWorkspace(model.OrganizationWorkspace{
@@ -332,7 +359,11 @@ func (s *OrganizationService) CreateInvitation(actorUserID, organizationID int64
 	if err != nil {
 		return model.OrganizationInvitationSecret{}, err
 	}
-	if count >= org.MaxMembers {
+	maxMembers, _, err := s.effectiveOrganizationLimits(org)
+	if err != nil {
+		return model.OrganizationInvitationSecret{}, err
+	}
+	if count >= maxMembers {
 		return model.OrganizationInvitationSecret{}, ErrOrganizationMemberQuota
 	}
 	hours := req.ExpiresInHours
@@ -407,7 +438,11 @@ func (s *OrganizationService) AcceptInvitation(actorUserID int64, req model.Acce
 	if err != nil {
 		return model.OrganizationMember{}, err
 	}
-	if _, existingErr := s.repo.GetMember(org.ID, actorUserID); errors.Is(existingErr, repository.ErrOrganizationMemberNotFound) && count >= org.MaxMembers {
+	maxMembers, _, err := s.effectiveOrganizationLimits(org)
+	if err != nil {
+		return model.OrganizationMember{}, err
+	}
+	if _, existingErr := s.repo.GetMember(org.ID, actorUserID); errors.Is(existingErr, repository.ErrOrganizationMemberNotFound) && count >= maxMembers {
 		return model.OrganizationMember{}, ErrOrganizationMemberQuota
 	}
 	now := time.Now()
@@ -572,11 +607,15 @@ func (s *OrganizationService) Dashboard(actorUserID, organizationID int64) (mode
 			verified++
 		}
 	}
+	maxMembers, maxWorkspaces, err := s.effectiveOrganizationLimits(org)
+	if err != nil {
+		return model.OrganizationDashboard{}, err
+	}
 	return model.OrganizationDashboard{
 		Organization: org, MemberCount: memberCount, WorkspaceCount: workspaceCount,
 		PendingInvites: pending, TeamCount: len(teams), VerifiedDomains: verified,
-		WorkspaceCapacity: org.MaxWorkspaces - workspaceCount,
-		MemberCapacity:    org.MaxMembers - memberCount,
+		WorkspaceCapacity: nonNegative(maxWorkspaces - workspaceCount),
+		MemberCapacity:    nonNegative(maxMembers - memberCount),
 		GeneratedAt:       now,
 	}, nil
 }
@@ -592,6 +631,25 @@ func (s *OrganizationService) Audit(actorUserID, organizationID int64, limit int
 		limit = 500
 	}
 	return s.repo.ListAudit(organizationID, limit)
+}
+
+func (s *OrganizationService) effectiveOrganizationLimits(org model.Organization) (int, int, error) {
+	maxMembers := org.MaxMembers
+	maxWorkspaces := org.MaxWorkspaces
+	if s.entitlements == nil {
+		return maxMembers, maxWorkspaces, nil
+	}
+	limits, err := s.entitlements.EffectiveLimits(org.ID, time.Now().UTC())
+	if err != nil {
+		return 0, 0, err
+	}
+	if limits.MaxMembers > 0 && limits.MaxMembers < maxMembers {
+		maxMembers = limits.MaxMembers
+	}
+	if limits.MaxWorkspaces > 0 && limits.MaxWorkspaces < maxWorkspaces {
+		maxWorkspaces = limits.MaxWorkspaces
+	}
+	return maxMembers, maxWorkspaces, nil
 }
 
 func (s *OrganizationService) requireOwner(userID, organizationID int64) (model.Organization, error) {
