@@ -193,11 +193,17 @@ func (r *PostgresNotificationRepository) GetNotification(notificationID int64) (
 	if err != nil {
 		return model.Notification{}, err
 	}
-	if org.Valid { value:=org.Int64; item.OrganizationID=&value }
-	if workspace.Valid { value:=workspace.Int64; item.WorkspaceID=&value }
-	item.Data=map[string]any{}
-	_ = json.Unmarshal(raw,&item.Data)
-	return item,nil
+	if org.Valid {
+		value := org.Int64
+		item.OrganizationID = &value
+	}
+	if workspace.Valid {
+		value := workspace.Int64
+		item.WorkspaceID = &value
+	}
+	item.Data = map[string]any{}
+	_ = json.Unmarshal(raw, &item.Data)
+	return item, nil
 }
 
 func (r *PostgresNotificationRepository) ListNotifications(userID int64, limit int) ([]model.Notification, error) {

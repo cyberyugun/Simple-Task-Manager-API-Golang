@@ -160,9 +160,9 @@ func (s *TaskCollaborationService) AddAssignee(actorUserID, workspaceID, taskID,
 		if err := s.notifier.EmitNotificationSignal(model.NotificationSignal{
 			UserIDs: []int64{userID}, WorkspaceID: &workspace,
 			EventType: model.NotificationEventTaskAssigned,
-			Title: "Task assigned", Body: "You were assigned to "+task.Title,
+			Title:     "Task assigned", Body: "You were assigned to " + task.Title,
 			DedupKey: fmt.Sprintf("task-assigned:%d:%d:%d", taskID, userID, now.UnixNano()),
-			Data: map[string]any{"task_id": taskID, "actor_user_id": actorUserID},
+			Data:     map[string]any{"task_id": taskID, "actor_user_id": actorUserID},
 		}); err != nil {
 			return err
 		}
@@ -256,10 +256,10 @@ func (s *TaskCollaborationService) CreateComment(actorUserID, workspaceID, taskI
 			if err := s.notifier.EmitNotificationSignal(model.NotificationSignal{
 				UserIDs: filtered, WorkspaceID: &workspace,
 				EventType: model.NotificationEventTaskMentioned,
-				Title: "Mentioned in a task comment",
-				Body: item.Body,
-				DedupKey: fmt.Sprintf("task-mention:%d:%d", taskID, item.ID),
-				Data: map[string]any{"task_id": taskID, "comment_id": item.ID, "actor_user_id": actorUserID},
+				Title:     "Mentioned in a task comment",
+				Body:      item.Body,
+				DedupKey:  fmt.Sprintf("task-mention:%d:%d", taskID, item.ID),
+				Data:      map[string]any{"task_id": taskID, "comment_id": item.ID, "actor_user_id": actorUserID},
 			}); err != nil {
 				return model.TaskComment{}, err
 			}
@@ -652,7 +652,6 @@ func taskTimeEqual(a, b *time.Time) bool {
 func formatTaskID(id int64) string {
 	return fmt.Sprint(id)
 }
-
 
 func extractMentionUserIDs(body string) []int64 {
 	seen := map[int64]bool{}

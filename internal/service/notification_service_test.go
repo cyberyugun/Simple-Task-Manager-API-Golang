@@ -61,7 +61,7 @@ func TestNotificationPreferenceRoutingDedupAndDelivery(t *testing.T) {
 	signal := model.NotificationSignal{
 		UserIDs: []int64{user.ID}, OrganizationID: &org.ID,
 		EventType: model.NotificationEventIncidentCreated,
-		Title: "Incident", Body: "Database degraded", DedupKey: "incident:1",
+		Title:     "Incident", Body: "Database degraded", DedupKey: "incident:1",
 	}
 	if err := svc.EmitNotificationSignal(signal); err != nil {
 		t.Fatal(err)

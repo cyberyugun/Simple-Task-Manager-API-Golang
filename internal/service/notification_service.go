@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	ErrInvalidNotificationPreference = errors.New("invalid notification preference")
-	ErrNotificationForbidden         = errors.New("notification action is forbidden")
+	ErrInvalidNotificationPreference  = errors.New("invalid notification preference")
+	ErrNotificationForbidden          = errors.New("notification action is forbidden")
 	ErrNotificationChannelUnavailable = errors.New("notification channel is unavailable")
 )
 
@@ -246,7 +246,7 @@ func (s *NotificationService) emitForUser(userID int64, signal model.Notificatio
 	}
 	channels := []struct {
 		name, destination string
-		enabled bool
+		enabled           bool
 	}{
 		{model.NotificationChannelInApp, "", pref.InAppEnabled},
 		{model.NotificationChannelEmail, user.Email, pref.EmailEnabled},
