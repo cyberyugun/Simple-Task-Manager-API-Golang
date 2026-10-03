@@ -67,6 +67,7 @@ func main() {
 	var eventRepo repository.EventRepository
 	var enterpriseRepo repository.EnterpriseIdentityRepository
 	var mfaRepo repository.MFARepository
+	var webAuthnRepo repository.WebAuthnRepository
 
 	if cfg.DatabaseURL != "" {
 		db, err = appdb.OpenPostgres(cfg.DatabaseURL, appdb.Options{
@@ -89,6 +90,7 @@ func main() {
 		eventRepo = repository.NewPostgresEventRepository(db)
 		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
+		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
 		logger.Info(
 			"storage_configured",
 			"backend", "postgresql",
@@ -104,6 +106,7 @@ func main() {
 		eventRepo = repository.NewInMemoryEventRepository()
 		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
+		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
 	}
 
@@ -145,6 +148,18 @@ func main() {
 		cfg.EmailVerificationTTL,
 	)
 	mfaService := service.NewMFAService(mfaRepo, userRepo, mfaCipher, "Simple Task Manager")
+	webAuthnService, err := service.NewWebAuthnService(
+		webAuthnRepo,
+		userRepo,
+		cfg.WebAuthnRPID,
+		cfg.WebAuthnRPOrigins,
+		cfg.WebAuthnRPDisplayName,
+	)
+	if err != nil {
+		logger.Error("webauthn_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	mfaService.SetWebAuthnCredentialChecker(webAuthnService)
 	authService.SetMFAVerifier(mfaService)
 	taskService := service.NewTaskService(taskRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
@@ -156,6 +171,7 @@ func main() {
 	webhookHandler := handler.NewWebhookHandler(webhookService)
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
+	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
 	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
 	serviceAuthMiddleware := middleware.EnterpriseAuth(tokenManager, enterpriseRepo)
 	workspaceMiddleware := middleware.WorkspaceScope(workspaceRepo)
@@ -234,6 +250,8 @@ func main() {
 	mux.Handle("/api/auth/email-verification/confirm", rateLimited(authHandler.VerifyEmail))
 	mux.Handle("/api/oauth/token", rateLimited(enterpriseHandler.OAuthToken))
 	mux.Handle("/api/oauth/api-key", rateLimited(enterpriseHandler.APIKeyExchange))
+	mux.Handle("/api/auth/mfa/webauthn/login/begin", rateLimited(webAuthnHandler.LoginBegin))
+	mux.Handle("/api/auth/mfa/webauthn/login/finish", rateLimited(webAuthnHandler.LoginFinish))
 
 	mux.Handle("/api/auth/change-password", protectedFirstPartyRateLimited(authHandler.ChangePassword))
 	mux.Handle("/api/auth/logout-all", protectedFirstParty(authHandler.LogoutAll))
@@ -247,6 +265,8 @@ func main() {
 	mux.Handle("/api/auth/mfa/totp/enroll", protectedFirstPartyRateLimited(mfaHandler.EnrollTOTP))
 	mux.Handle("/api/auth/mfa/totp/confirm", protectedFirstPartyRateLimited(mfaHandler.ConfirmTOTP))
 	mux.Handle("/api/auth/mfa/totp/disable", protectedFirstPartyRateLimited(mfaHandler.DisableTOTP))
+	mux.Handle("/api/auth/mfa/webauthn/register/begin", protectedFirstPartyRateLimited(webAuthnHandler.RegistrationBegin))
+	mux.Handle("/api/auth/mfa/webauthn/register/finish", protectedFirstPartyRateLimited(webAuthnHandler.RegistrationFinish))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
