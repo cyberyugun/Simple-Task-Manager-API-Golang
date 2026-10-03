@@ -5,3 +5,5 @@
 /go.mod @cyberyugun
 /go.sum @cyberyugun
 /SECURITY.md @cyberyugun
+/scripts/ @cyberyugun
+/docs/production-readiness.md @cyberyugun

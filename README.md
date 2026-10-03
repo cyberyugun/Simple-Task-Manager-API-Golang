@@ -435,6 +435,8 @@ The workflow builds the release, blocks HIGH/CRITICAL image vulnerabilities with
 
 The deployment workflow natively supports GitHub OIDC for AWS EKS, Azure AKS, and Google GKE. These modes exchange GitHub's short-lived OIDC token for provider credentials and avoid storing a long-lived kubeconfig in GitHub. `KUBE_CONFIG_B64` remains an explicit provider-neutral fallback for clusters that cannot use workload identity federation.
 
+Before the first production rollout, follow the full readiness runbook in [`docs/production-readiness.md`](docs/production-readiness.md). The deployment workflow runs the same cluster preflight automatically before migrations or rollout.
+
 ## Security and software supply chain
 
 Security automation lives in `.github/workflows/security.yml` and runs on pushes to `main`, pull requests, manual dispatches, and a weekly schedule.

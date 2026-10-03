@@ -18,6 +18,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Validate production preflight script
+        run: bash -n scripts/production-preflight.sh
+
       - name: Enforce immutable GitHub Action pins
         run: |
           ruby <<'RUBY'
@@ -133,7 +136,320 @@ jobs:
           grep -q '^kind: HorizontalPodAutoscaler$' /tmp/kubernetes.yaml
           grep -q '^kind: PodDisruptionBudget$' /tmp/kubernetes.yaml
           grep -q '^kind: NetworkPolicy$' /tmp/kubernetes.yaml
-          grep -q '^kind: Ingress$' /tmp/kubernetes.yaml
+          grep -q '^kind: Ingress
+      - name: Validate manifest YAML structure
+        run: |
+          ruby <<'RUBY'
+          require "yaml"
+
+          paths = [
+            "/tmp/kubernetes.yaml",
+            "deploy/k8s/base/migration-job.yaml",
+            "deploy/k8s/base/secret.example.yaml",
+            "deploy/k8s/optional/external-secret.example.yaml",
+            "deploy/k8s/optional/cert-manager-clusterissuer.example.yaml"
+          ]
+
+          paths.each do |path|
+            documents = YAML.load_stream(File.read(path)).compact
+            raise "#{path}: no YAML documents" if documents.empty?
+
+            documents.each_with_index do |document, index|
+              raise "#{path}: document #{index + 1} is not a mapping" unless document.is_a?(Hash)
+              raise "#{path}: document #{index + 1} missing apiVersion" if document["apiVersion"].to_s.empty?
+              raise "#{path}: document #{index + 1} missing kind" if document["kind"].to_s.empty?
+              metadata = document["metadata"]
+              raise "#{path}: document #{index + 1} missing metadata.name" unless metadata.is_a?(Hash) && !metadata["name"].to_s.empty?
+            end
+
+            puts "#{path}: #{documents.length} document(s) valid"
+          end
+          RUBY
+
+  container:
+    name: Docker Compose Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [test, integration, manifests]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and start stack
+        env:
+          JWT_SECRET: ci-local-secret-123456789012345678901234
+          EXPOSE_AUTH_TOKENS: "true"
+          AUTH_RATE_LIMIT_REQUESTS: "100"
+        run: docker compose up -d --build
+
+      - name: Wait for API
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8080/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs
+          exit 1
+
+      - name: Smoke test system endpoints
+        run: |
+          curl --fail --silent http://localhost:8080/health | grep "API is healthy"
+          curl --fail --silent http://localhost:8080/ready | grep "API is ready"
+          curl --fail --silent http://localhost:8080/openapi.yaml | grep "openapi: 3.1.0"
+          curl --fail --silent http://localhost:8080/docs | grep "SwaggerUIBundle"
+          curl --fail --silent http://localhost:8080/metrics | grep "task_api_http_requests_total"
+          curl --fail --silent http://localhost:8080/version | \
+            python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert data["version"]; assert data["commit"]; assert data["go_version"]'
+
+      - name: Smoke test account security flows
+        run: |
+          register_response="$(curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/register \
+            -H 'Content-Type: application/json' \
+            -H 'User-Agent: ci-browser' \
+            -d '{"name":"CI User","email":"ci@example.com","password":"password123"}')"
+          access_token="$(printf '%s' "$register_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+          refresh_token="$(printf '%s' "$register_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
+
+          sessions_response="$(curl --fail --silent \
+            http://localhost:8080/api/auth/sessions \
+            -H "Authorization: Bearer $access_token")"
+          printf '%s' "$sessions_response" | python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert len(data) == 1; assert data[0]["user_agent"] == "ci-browser"'
+
+          verify_request="$(curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/email-verification/request \
+            -H "Authorization: Bearer $access_token")"
+          verify_token="$(printf '%s' "$verify_request" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["development_token"])')"
+          curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/email-verification/confirm \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"$verify_token\"}" >/dev/null
+
+          verify_replay_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:8080/api/auth/email-verification/confirm \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"$verify_token\"}")"
+          test "$verify_replay_status" = "401"
+
+          forgot_response="$(curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/forgot-password \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"ci@example.com"}')"
+          reset_token="$(printf '%s' "$forgot_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["development_token"])')"
+
+          curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/reset-password \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"$reset_token\",\"new_password\":\"new-password-456\"}" >/dev/null
+
+          reset_replay_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:8080/api/auth/reset-password \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"$reset_token\",\"new_password\":\"another-password-789\"}")"
+          test "$reset_replay_status" = "401"
+
+          old_refresh_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:8080/api/auth/refresh \
+            -H 'Content-Type: application/json' \
+            -d "{\"refresh_token\":\"$refresh_token\"}")"
+          test "$old_refresh_status" = "401"
+
+          login_response="$(curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          new_access="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+          new_refresh="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
+
+          curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/logout-all \
+            -H "Authorization: Bearer $new_access" >/dev/null
+
+          logout_all_refresh_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:8080/api/auth/refresh \
+            -H 'Content-Type: application/json' \
+            -d "{\"refresh_token\":\"$new_refresh\"}")"
+          test "$logout_all_refresh_status" = "401"
+
+      - name: Validate production operations
+        run: |
+          migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
+          test "$migration_count" = "5"
+
+          docker compose exec -T redis sh -c \
+            "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
+
+          docker compose logs api | grep '"msg":"http_request"'
+          docker compose logs api | grep '"request_id"'
+
+      - name: Show container status
+        run: docker compose ps
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v
+ /tmp/kubernetes.yaml
+          grep -q '^kind: ClusterIssuer
+      - name: Validate manifest YAML structure
+        run: |
+          ruby <<'RUBY'
+          require "yaml"
+
+          paths = [
+            "/tmp/kubernetes.yaml",
+            "deploy/k8s/base/migration-job.yaml",
+            "deploy/k8s/base/secret.example.yaml",
+            "deploy/k8s/optional/external-secret.example.yaml",
+            "deploy/k8s/optional/cert-manager-clusterissuer.example.yaml"
+          ]
+
+          paths.each do |path|
+            documents = YAML.load_stream(File.read(path)).compact
+            raise "#{path}: no YAML documents" if documents.empty?
+
+            documents.each_with_index do |document, index|
+              raise "#{path}: document #{index + 1} is not a mapping" unless document.is_a?(Hash)
+              raise "#{path}: document #{index + 1} missing apiVersion" if document["apiVersion"].to_s.empty?
+              raise "#{path}: document #{index + 1} missing kind" if document["kind"].to_s.empty?
+              metadata = document["metadata"]
+              raise "#{path}: document #{index + 1} missing metadata.name" unless metadata.is_a?(Hash) && !metadata["name"].to_s.empty?
+            end
+
+            puts "#{path}: #{documents.length} document(s) valid"
+          end
+          RUBY
+
+  container:
+    name: Docker Compose Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [test, integration, manifests]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and start stack
+        env:
+          JWT_SECRET: ci-local-secret-123456789012345678901234
+          EXPOSE_AUTH_TOKENS: "true"
+          AUTH_RATE_LIMIT_REQUESTS: "100"
+        run: docker compose up -d --build
+
+      - name: Wait for API
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8080/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs
+          exit 1
+
+      - name: Smoke test system endpoints
+        run: |
+          curl --fail --silent http://localhost:8080/health | grep "API is healthy"
+          curl --fail --silent http://localhost:8080/ready | grep "API is ready"
+          curl --fail --silent http://localhost:8080/openapi.yaml | grep "openapi: 3.1.0"
+          curl --fail --silent http://localhost:8080/docs | grep "SwaggerUIBundle"
+          curl --fail --silent http://localhost:8080/metrics | grep "task_api_http_requests_total"
+          curl --fail --silent http://localhost:8080/version | \
+            python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert data["version"]; assert data["commit"]; assert data["go_version"]'
+
+      - name: Smoke test account security flows
+        run: |
+          register_response="$(curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/register \
+            -H 'Content-Type: application/json' \
+            -H 'User-Agent: ci-browser' \
+            -d '{"name":"CI User","email":"ci@example.com","password":"password123"}')"
+          access_token="$(printf '%s' "$register_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+          refresh_token="$(printf '%s' "$register_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
+
+          sessions_response="$(curl --fail --silent \
+            http://localhost:8080/api/auth/sessions \
+            -H "Authorization: Bearer $access_token")"
+          printf '%s' "$sessions_response" | python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert len(data) == 1; assert data[0]["user_agent"] == "ci-browser"'
+
+          verify_request="$(curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/email-verification/request \
+            -H "Authorization: Bearer $access_token")"
+          verify_token="$(printf '%s' "$verify_request" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["development_token"])')"
+          curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/email-verification/confirm \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"$verify_token\"}" >/dev/null
+
+          verify_replay_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:8080/api/auth/email-verification/confirm \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"$verify_token\"}")"
+          test "$verify_replay_status" = "401"
+
+          forgot_response="$(curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/forgot-password \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"ci@example.com"}')"
+          reset_token="$(printf '%s' "$forgot_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["development_token"])')"
+
+          curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/reset-password \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"$reset_token\",\"new_password\":\"new-password-456\"}" >/dev/null
+
+          reset_replay_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:8080/api/auth/reset-password \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"$reset_token\",\"new_password\":\"another-password-789\"}")"
+          test "$reset_replay_status" = "401"
+
+          old_refresh_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:8080/api/auth/refresh \
+            -H 'Content-Type: application/json' \
+            -d "{\"refresh_token\":\"$refresh_token\"}")"
+          test "$old_refresh_status" = "401"
+
+          login_response="$(curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          new_access="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+          new_refresh="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])')"
+
+          curl --fail --silent \
+            -X POST http://localhost:8080/api/auth/logout-all \
+            -H "Authorization: Bearer $new_access" >/dev/null
+
+          logout_all_refresh_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -X POST http://localhost:8080/api/auth/refresh \
+            -H 'Content-Type: application/json' \
+            -d "{\"refresh_token\":\"$new_refresh\"}")"
+          test "$logout_all_refresh_status" = "401"
+
+      - name: Validate production operations
+        run: |
+          migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
+          test "$migration_count" = "5"
+
+          docker compose exec -T redis sh -c \
+            "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
+
+          docker compose logs api | grep '"msg":"http_request"'
+          docker compose logs api | grep '"request_id"'
+
+      - name: Show container status
+        run: docker compose ps
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v
+ /tmp/kubernetes.yaml
 
       - name: Validate manifest YAML structure
         run: |
