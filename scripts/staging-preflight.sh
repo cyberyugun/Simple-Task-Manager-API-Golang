@@ -28,7 +28,7 @@ else
   fail "staging task-api-secrets is missing"
 fi
 
-for key in DATABASE_URL REDIS_URL JWT_SECRET; do
+for key in DATABASE_URL REDIS_URL JWT_SECRET WEBHOOK_SIGNING_KEY; do
   value="$(secret_value "$KUBE_NAMESPACE" "$key")"
   if [ -n "$value" ] && [ "$value" != "<no value>" ]; then
     pass "staging secret contains $key"

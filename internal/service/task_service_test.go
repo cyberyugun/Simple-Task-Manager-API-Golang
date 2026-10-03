@@ -69,3 +69,34 @@ func TestTaskServiceWorkspaceIsolation(t *testing.T) {
 		t.Fatalf("FindByID(other workspace) error = %v", err)
 	}
 }
+
+func TestTaskServiceIdempotency(t *testing.T) {
+	service := newTestService()
+	access := workspaceAccess(10)
+	req := model.CreateTaskRequest{Title: "Retry safe", Description: "same payload"}
+
+	first, err := service.CreateIdempotent(1, access, req, "idem-key-1234")
+	if err != nil {
+		t.Fatalf("first CreateIdempotent() error = %v", err)
+	}
+	if first.Replayed {
+		t.Fatal("first idempotent create must not be replayed")
+	}
+
+	second, err := service.CreateIdempotent(1, access, req, "idem-key-1234")
+	if err != nil {
+		t.Fatalf("second CreateIdempotent() error = %v", err)
+	}
+	if !second.Replayed || second.Task.ID != first.Task.ID {
+		t.Fatalf("unexpected replay result: first=%+v second=%+v", first, second)
+	}
+
+	_, err = service.CreateIdempotent(1, access, model.CreateTaskRequest{Title: "Different"}, "idem-key-1234")
+	if !errors.Is(err, repository.ErrIdempotencyConflict) {
+		t.Fatalf("conflicting idempotency key error = %v, want ErrIdempotencyConflict", err)
+	}
+
+	if _, err := service.CreateIdempotent(1, access, req, "short"); !errors.Is(err, ErrInvalidIdempotencyKey) {
+		t.Fatalf("short key error = %v, want ErrInvalidIdempotencyKey", err)
+	}
+}

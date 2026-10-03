@@ -50,6 +50,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	refreshRepo := repository.NewPostgresRefreshTokenRepository(db)
 	actionRepo := repository.NewPostgresAuthActionTokenRepository(db)
 	workspaceRepo := repository.NewPostgresWorkspaceRepository(db)
+	eventRepo := repository.NewPostgresEventRepository(db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	user1, err := userRepo.Create(model.User{
@@ -210,6 +211,72 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 		t.Fatalf("unexpected updated user: %+v", updatedUser)
 	}
 
+	subscription, err := eventRepo.CreateSubscription(
+		workspace1.ID,
+		user1.ID,
+		"https://example.com/task-events",
+		[]string{model.EventTaskCreated},
+		now,
+	)
+	if err != nil {
+		t.Fatalf("create webhook subscription: %v", err)
+	}
+	if subscription.ID <= 0 {
+		t.Fatal("webhook subscription id is empty")
+	}
+
+	idempotentTask := model.Task{
+		WorkspaceID:       workspace1.ID,
+		UserID:            user1.ID,
+		PersonalWorkspace: true,
+		Title:             "Idempotent integration task",
+		Description:       "outbox once",
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	idemFirst, err := taskRepo.CreateIdempotent(idempotentTask, "integration-idem-123", strings.Repeat("a", 64), now)
+	if err != nil {
+		t.Fatalf("create idempotent task: %v", err)
+	}
+	idemReplay, err := taskRepo.CreateIdempotent(idempotentTask, "integration-idem-123", strings.Repeat("a", 64), now)
+	if err != nil {
+		t.Fatalf("replay idempotent task: %v", err)
+	}
+	if !idemReplay.Replayed || idemReplay.Task.ID != idemFirst.Task.ID {
+		t.Fatalf("unexpected idempotency replay: first=%+v replay=%+v", idemFirst, idemReplay)
+	}
+	if _, err := taskRepo.CreateIdempotent(idempotentTask, "integration-idem-123", strings.Repeat("b", 64), now); !errors.Is(err, repository.ErrIdempotencyConflict) {
+		t.Fatalf("idempotency conflict error = %v, want ErrIdempotencyConflict", err)
+	}
+
+	fannedOut, err := eventRepo.FanoutOutbox(100, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("fanout outbox: %v", err)
+	}
+	if fannedOut != 1 {
+		t.Fatalf("fanout count = %d, want 1", fannedOut)
+	}
+	deliveries, err := eventRepo.ClaimDeliveries("integration-worker", 10, time.Minute, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatalf("claim deliveries: %v", err)
+	}
+	if len(deliveries) != 1 || deliveries[0].EventType != model.EventTaskCreated || deliveries[0].WorkspaceID != workspace1.ID {
+		t.Fatalf("unexpected claimed deliveries: %+v", deliveries)
+	}
+	if deliveries[0].Payload["title"] != idempotentTask.Title {
+		t.Fatalf("delivery payload = %+v", deliveries[0].Payload)
+	}
+	if err := eventRepo.MarkDeliverySuccess(deliveries[0].ID, "integration-worker", 204, now.Add(3*time.Second)); err != nil {
+		t.Fatalf("mark delivery success: %v", err)
+	}
+	history, err := eventRepo.ListDeliveries(workspace1.ID, subscription.ID, 10)
+	if err != nil {
+		t.Fatalf("list deliveries: %v", err)
+	}
+	if len(history) != 1 || history[0].DeliveredAt == nil || history[0].LastStatus == nil || *history[0].LastStatus != 204 {
+		t.Fatalf("unexpected delivery history: %+v", history)
+	}
+
 	first, err := taskRepo.Create(model.Task{
 		WorkspaceID: workspace1.ID,
 		UserID:      user1.ID,
@@ -289,6 +356,10 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 
 func resetDatabase(db *sql.DB) error {
 	for _, statement := range []string{
+		"DROP TABLE IF EXISTS webhook_deliveries CASCADE",
+		"DROP TABLE IF EXISTS webhook_subscriptions CASCADE",
+		"DROP TABLE IF EXISTS outbox_events CASCADE",
+		"DROP TABLE IF EXISTS idempotency_keys CASCADE",
 		"DROP TABLE IF EXISTS audit_events CASCADE",
 		"DROP TABLE IF EXISTS workspace_members CASCADE",
 		"DROP TABLE IF EXISTS auth_action_tokens CASCADE",
@@ -315,6 +386,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"005_account_security.sql",
 		"006_performance_indexes.sql",
 		"007_workspaces_rbac_audit.sql",
+		"008_event_outbox_webhooks.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {

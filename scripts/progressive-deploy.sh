@@ -13,8 +13,10 @@ CANARY_OBSERVATION_SECONDS="${CANARY_OBSERVATION_SECONDS:-60}"
 EVIDENCE_PATH="${EVIDENCE_PATH:-release-evidence.json}"
 
 stable_existed=false
+worker_existed=false
 promotion_started=false
 previous_image=""
+previous_worker_image=""
 port_forward_pid=""
 started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 tmpdir="$(mktemp -d)"
@@ -76,6 +78,14 @@ rollback_on_error() {
       echo "No previous stable deployment existed; removing failed bootstrap deployment." >&2
       "$KUBECTL_BIN" -n "$KUBE_NAMESPACE" delete deployment task-api --ignore-not-found --wait=true
     fi
+
+    if [ "$worker_existed" = "true" ] && [ -n "$previous_worker_image" ]; then
+      echo "Rolling worker deployment back to $previous_worker_image" >&2
+      "$KUBECTL_BIN" -n "$KUBE_NAMESPACE" set image deployment/task-worker "worker=$previous_worker_image"
+      "$KUBECTL_BIN" -n "$KUBE_NAMESPACE" rollout status deployment/task-worker --timeout=5m
+    else
+      "$KUBECTL_BIN" -n "$KUBE_NAMESPACE" delete deployment task-worker --ignore-not-found --wait=true
+    fi
   fi
 
   write_evidence "failed"
@@ -94,6 +104,12 @@ else
   echo "No existing stable deployment; this release will bootstrap it after canary verification."
 fi
 
+if "$KUBECTL_BIN" -n "$KUBE_NAMESPACE" get deployment task-worker >/dev/null 2>&1; then
+  worker_existed=true
+  previous_worker_image="$("$KUBECTL_BIN" -n "$KUBE_NAMESPACE" get deployment task-worker -o jsonpath='{.spec.template.spec.containers[?(@.name=="worker")].image}')"
+  echo "Previous worker image: $previous_worker_image"
+fi
+
 echo "Applying production runtime resources without changing the stable Deployment."
 cp deploy/k8s/overlays/production/ingress.yaml "$tmpdir/ingress.yaml"
 cp deploy/k8s/overlays/production/clusterissuer.yaml "$tmpdir/clusterissuer.yaml"
@@ -103,6 +119,7 @@ sed -i "s/platform@example.com/$CERT_MANAGER_EMAIL/g" "$tmpdir/clusterissuer.yam
 "$KUBECTL_BIN" apply -f deploy/k8s/base/serviceaccount.yaml
 "$KUBECTL_BIN" apply -f deploy/k8s/base/configmap.yaml
 "$KUBECTL_BIN" apply -f deploy/k8s/base/service.yaml
+"$KUBECTL_BIN" apply -f deploy/k8s/base/worker-service.yaml
 "$KUBECTL_BIN" apply -f deploy/k8s/base/hpa.yaml
 "$KUBECTL_BIN" apply -f deploy/k8s/base/pdb.yaml
 "$KUBECTL_BIN" apply -f deploy/k8s/base/networkpolicy.yaml
@@ -197,9 +214,12 @@ done
 
 echo "Canary passed; promoting immutable digest to stable Deployment."
 promotion_started=true
-sed "s|image: task-api:latest|image: $IMAGE_REPOSITORY@$IMAGE_DIGEST|"   deploy/k8s/base/deployment.yaml > "$tmpdir/stable-deployment.yaml"
+sed "s|image: task-api:latest|image: $IMAGE_REPOSITORY@$IMAGE_DIGEST|" deploy/k8s/base/deployment.yaml > "$tmpdir/stable-deployment.yaml"
+sed "s|image: task-api:latest|image: $IMAGE_REPOSITORY@$IMAGE_DIGEST|" deploy/k8s/base/worker-deployment.yaml > "$tmpdir/worker-deployment.yaml"
 "$KUBECTL_BIN" apply -f "$tmpdir/stable-deployment.yaml"
+"$KUBECTL_BIN" apply -f "$tmpdir/worker-deployment.yaml"
 "$KUBECTL_BIN" -n "$KUBE_NAMESPACE" rollout status deployment/task-api --timeout=5m
+"$KUBECTL_BIN" -n "$KUBE_NAMESPACE" rollout status deployment/task-worker --timeout=5m
 
 echo "Verifying stable public route."
 for attempt in $(seq 1 30); do

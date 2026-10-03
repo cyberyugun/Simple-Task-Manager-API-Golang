@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.4.0
+  version: 1.5.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -18,6 +18,7 @@ tags:
   - name: Authentication
   - name: Tasks
   - name: Workspaces
+  - name: Webhooks
 
 paths:
   /health:
@@ -102,8 +103,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
   /api/auth/login:
     post:
       tags: [Authentication]
@@ -128,8 +127,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
   /api/auth/refresh:
     post:
       tags: [Authentication]
@@ -152,6 +149,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /api/auth/logout:
     post:
       tags: [Authentication]
@@ -172,6 +171,8 @@ paths:
                 $ref: '#/components/schemas/MessageEnvelope'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/auth/forgot-password:
     post:
@@ -589,6 +590,134 @@ paths:
         '404':
           $ref: '#/components/responses/WorkspaceNotFound'
 
+  /api/webhooks:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
+    get:
+      tags: [Webhooks]
+      summary: List webhook subscriptions for the selected workspace
+      operationId: listWebhooks
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Workspace webhook subscriptions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscriptionListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Webhooks]
+      summary: Create a webhook subscription
+      operationId: createWebhook
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookSubscriptionRequest'
+      responses:
+        '201':
+          description: Webhook created. The signing_secret is returned only in this creation response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscriptionEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/webhooks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WebhookID'
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
+    delete:
+      tags: [Webhooks]
+      summary: Delete a webhook subscription
+      operationId: deleteWebhook
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Webhook deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WebhookNotFound'
+  /api/webhooks/{id}/deliveries:
+    parameters:
+      - $ref: '#/components/parameters/WebhookID'
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
+    get:
+      tags: [Webhooks]
+      summary: List recent webhook deliveries
+      operationId: listWebhookDeliveries
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Delivery attempts including retry and dead-letter state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookDeliveryListEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WebhookNotFound'
+  /api/webhooks/{id}/deliveries/{delivery_id}/replay:
+    parameters:
+      - $ref: '#/components/parameters/WebhookID'
+      - $ref: '#/components/parameters/DeliveryID'
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
+    post:
+      tags: [Webhooks]
+      summary: Requeue a webhook delivery for replay
+      operationId: replayWebhookDelivery
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Delivery queued for replay
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/WebhookDeliveryNotFound'
+
   /api/tasks:
     parameters:
       - $ref: '#/components/parameters/WorkspaceIDHeader'
@@ -650,6 +779,8 @@ paths:
       operationId: createTask
       security:
         - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       requestBody:
         required: true
         content:
@@ -658,7 +789,13 @@ paths:
               $ref: '#/components/schemas/TaskWriteRequest'
       responses:
         '201':
-          description: Task created
+          description: Task created, or the original result replayed for the same idempotency key and payload.
+          headers:
+            Idempotency-Replayed:
+              description: Present with value true when the stored result is replayed.
+              schema:
+                type: string
+                const: "true"
           content:
             application/json:
               schema:
@@ -667,6 +804,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Idempotency key was previously used with a different request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /api/tasks/{id}:
     parameters:
       - $ref: '#/components/parameters/TaskID'
@@ -785,6 +928,31 @@ components:
         type: integer
         format: int64
         minimum: 1
+    WebhookID:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    DeliveryID:
+      in: path
+      name: delivery_id
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    IdempotencyKeyHeader:
+      in: header
+      name: Idempotency-Key
+      required: false
+      description: Retry-safe key scoped to the selected workspace. Reuse with a different payload returns 409.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
     TaskID:
       in: path
       name: id
@@ -820,6 +988,24 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     WorkspaceNotFound:
       description: Workspace is missing or not visible to the authenticated user
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    WebhookNotFound:
+      description: Webhook subscription not found in the selected workspace
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    WebhookDeliveryNotFound:
+      description: Webhook delivery not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ServiceUnavailable:
+      description: Required server-side feature configuration is unavailable
       content:
         application/json:
           schema:
@@ -1146,6 +1332,120 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuditEvent'
+    CreateWebhookSubscriptionRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTPS delivery endpoint. Loopback HTTP is allowed only for local development.
+        event_types:
+          type: array
+          description: Empty or omitted subscribes to all current event types.
+          uniqueItems: true
+          items:
+            type: string
+            enum: [task.created, task.updated, task.completed, task.deleted]
+    WebhookSubscription:
+      type: object
+      required: [id, workspace_id, url, event_types, active, created_by_user_id, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        workspace_id:
+          type: integer
+          format: int64
+        url:
+          type: string
+          format: uri
+        event_types:
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        created_by_user_id:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        signing_secret:
+          type: string
+          description: Returned only when the subscription is created. It is derived server-side and is not stored in plaintext.
+    WebhookDelivery:
+      type: object
+      required: [id, subscription_id, event_id, attempt_count, max_attempts, next_attempt_at, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        subscription_id:
+          type: integer
+          format: int64
+        event_id:
+          type: string
+        event_type:
+          type: string
+        attempt_count:
+          type: integer
+        max_attempts:
+          type: integer
+        next_attempt_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type: string
+          format: date-time
+        dead_lettered_at:
+          type: string
+          format: date-time
+        last_status:
+          type: integer
+        last_error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    WebhookSubscriptionEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/WebhookSubscription'
+    WebhookSubscriptionListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookSubscription'
+    WebhookDeliveryListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookDelivery'
     TaskWriteRequest:
       type: object
       required: [title]

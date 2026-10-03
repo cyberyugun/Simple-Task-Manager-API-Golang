@@ -1,5 +1,23 @@
 # API Changelog
 
+## 1.5.0 — Phase 24
+
+Compatibility line: **v1**.
+
+Additive reliability/eventing release:
+
+- adds optional `Idempotency-Key` to task creation
+- returns `Idempotency-Replayed: true` when a prior identical task creation is replayed
+- adds workspace-scoped webhook subscription APIs
+- adds webhook delivery-history and manual replay APIs
+- adds task event filters for `task.created`, `task.updated`, `task.completed`, and `task.deleted`
+- adds one-time webhook `signing_secret` to subscription creation responses
+- documents delivery retry/dead-letter state
+- corrects legacy duplicate/missing auth `429` documentation without changing runtime behavior
+
+Existing task clients can omit both `X-Workspace-ID` and `Idempotency-Key` and retain their previous behavior.
+
+
 ## 1.4.0 — Phase 23
 
 Compatibility line: **v1**.

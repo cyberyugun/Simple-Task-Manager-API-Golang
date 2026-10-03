@@ -20,7 +20,12 @@ RUN go mod tidy && \
       -trimpath \
       -ldflags="-s -w" \
       -o /out/migrate \
-      ./cmd/migrate
+      ./cmd/migrate && \
+    CGO_ENABLED=0 GOOS=linux go build \
+      -trimpath \
+      -ldflags="-s -w" \
+      -o /out/worker \
+      ./cmd/worker
 
 FROM alpine:3.21
 
@@ -33,6 +38,7 @@ WORKDIR /app
 
 COPY --from=builder /out/task-api /app/task-api
 COPY --from=builder /out/migrate /app/migrate
+COPY --from=builder /out/worker /app/worker
 COPY migrations /app/migrations
 
 USER app

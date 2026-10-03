@@ -108,3 +108,21 @@ spec:
           annotations:
             summary: Redis client pool is timing out
             runbook_url: docs/performance-scalability.md
+        - alert: TaskWorkerProcessingErrors
+          expr: increase(task_worker_processing_errors[10m]) > 3
+          for: 5m
+          labels:
+            severity: ticket
+            service: task-worker
+          annotations:
+            summary: Async worker processing errors are increasing
+            runbook_url: docs/event-driven-processing.md
+        - alert: TaskWorkerDeadLetters
+          expr: increase(task_worker_dead_letter_total[10m]) > 0
+          for: 0m
+          labels:
+            severity: page
+            service: task-worker
+          annotations:
+            summary: One or more webhook deliveries entered the dead-letter state
+            runbook_url: docs/event-driven-processing.md

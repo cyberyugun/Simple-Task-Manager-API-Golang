@@ -6,6 +6,7 @@ resources:
   - namespace.yaml
   - ingress.yaml
   - servicemonitor.yaml
+  - worker-servicemonitor.yaml
 patches:
   - path: namespace-delete.yaml
   - path: configmap.yaml

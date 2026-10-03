@@ -182,6 +182,8 @@ jobs:
           test -s /tmp/kubernetes.yaml
           test -s /tmp/staging-kubernetes.yaml
           grep -q '^kind: Deployment$' /tmp/kubernetes.yaml
+          grep -q 'name: task-worker' /tmp/kubernetes.yaml
+          grep -q 'name: task-worker-metrics' /tmp/kubernetes.yaml
           grep -q '^kind: Service$' /tmp/kubernetes.yaml
           grep -q '^kind: HorizontalPodAutoscaler$' /tmp/kubernetes.yaml
           grep -q '^kind: PodDisruptionBudget$' /tmp/kubernetes.yaml
@@ -204,6 +206,8 @@ jobs:
             "/tmp/kubernetes.yaml",
             "deploy/k8s/base/migration-job.yaml",
             "deploy/k8s/base/secret.example.yaml",
+            "deploy/k8s/base/worker-deployment.yaml",
+            "deploy/k8s/base/worker-service.yaml",
             "deploy/k8s/optional/external-secret.example.yaml",
             "deploy/k8s/optional/cert-manager-clusterissuer.example.yaml",
             "deploy/k8s/progressive/canary-deployment.yaml",
@@ -215,7 +219,8 @@ jobs:
             "deploy/k8s/overlays/staging/ingress.yaml",
             "deploy/k8s/overlays/staging/deployment-patch.yaml",
             "deploy/k8s/overlays/staging/hpa-patch.yaml",
-            "deploy/k8s/overlays/staging/servicemonitor.yaml"
+            "deploy/k8s/overlays/staging/servicemonitor.yaml",
+            "deploy/k8s/overlays/staging/worker-servicemonitor.yaml"
           ]
 
           paths.each do |path|
@@ -271,6 +276,8 @@ jobs:
           curl --fail --silent http://localhost:8080/docs | grep "SwaggerUIBundle"
           curl --fail --silent http://localhost:8080/metrics | grep "task_api_http_requests_total"
           curl --fail --silent http://localhost:8080/metrics | grep "task_api_http_request_duration_seconds_bucket"
+          curl --fail --silent http://localhost:9091/health | grep "ok"
+          curl --fail --silent http://localhost:9091/metrics | grep "task_worker_fanout_total"
           curl --fail --silent http://localhost:8080/version | \
             python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert data["version"]; assert data["commit"]; assert data["go_version"]'
 
@@ -347,7 +354,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "7"
+          test "$migration_count" = "8"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"

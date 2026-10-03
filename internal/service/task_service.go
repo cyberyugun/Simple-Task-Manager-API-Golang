@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -11,7 +13,8 @@ import (
 
 var (
 	ErrInvalidTask      = errors.New("title is required")
-	ErrInvalidTaskQuery = errors.New("invalid task query")
+	ErrInvalidTaskQuery      = errors.New("invalid task query")
+	ErrInvalidIdempotencyKey = errors.New("Idempotency-Key must be between 8 and 128 characters")
 )
 
 type TaskService struct {
@@ -41,6 +44,31 @@ func (s *TaskService) Create(userID int64, access model.WorkspaceAccess, req mod
 	}
 
 	return s.repo.Create(task)
+}
+
+func (s *TaskService) CreateIdempotent(userID int64, access model.WorkspaceAccess, req model.CreateTaskRequest, key string) (model.TaskCreateResult, error) {
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		return model.TaskCreateResult{}, ErrInvalidTask
+	}
+	key = strings.TrimSpace(key)
+	if key != "" && (len(key) < 8 || len(key) > 128) {
+		return model.TaskCreateResult{}, ErrInvalidIdempotencyKey
+	}
+
+	now := time.Now()
+	task := model.Task{
+		WorkspaceID:       access.ID,
+		UserID:            userID,
+		PersonalWorkspace: access.IsPersonal,
+		Title:             title,
+		Description:       strings.TrimSpace(req.Description),
+		Completed:         false,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	hash := sha256.Sum256([]byte(task.Title + "\n" + task.Description))
+	return s.repo.CreateIdempotent(task, key, hex.EncodeToString(hash[:]), now)
 }
 
 func (s *TaskService) FindAll(workspaceID int64, query model.TaskQuery) (model.TaskPage, error) {
@@ -107,14 +135,7 @@ func (s *TaskService) Update(workspaceID, id int64, req model.UpdateTaskRequest)
 }
 
 func (s *TaskService) Complete(workspaceID, id int64) (model.Task, error) {
-	task, err := s.repo.FindByID(workspaceID, id)
-	if err != nil {
-		return model.Task{}, err
-	}
-
-	task.Completed = true
-	task.UpdatedAt = time.Now()
-	return s.repo.Update(task)
+	return s.repo.Complete(workspaceID, id, time.Now())
 }
 
 func (s *TaskService) Delete(workspaceID, id int64) error {

@@ -2,33 +2,47 @@ package repository
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"go-simple-task-api/internal/model"
 )
 
-var ErrTaskNotFound = errors.New("task not found")
+var (
+	ErrTaskNotFound         = errors.New("task not found")
+	ErrIdempotencyConflict  = errors.New("idempotency key was already used with a different request")
+)
 
 type TaskRepository interface {
 	Create(task model.Task) (model.Task, error)
+	CreateIdempotent(task model.Task, key, requestHash string, now time.Time) (model.TaskCreateResult, error)
 	FindAll(workspaceID int64, query model.TaskQuery) (model.TaskPage, error)
 	FindByID(workspaceID, id int64) (model.Task, error)
 	Update(task model.Task) (model.Task, error)
+	Complete(workspaceID, id int64, updatedAt time.Time) (model.Task, error)
 	Delete(workspaceID, id int64) error
 }
 
 type InMemoryTaskRepository struct {
 	mu     sync.RWMutex
 	tasks  map[int64]model.Task
-	nextID int64
+	nextID      int64
+	idempotency map[string]inMemoryIdempotency
+}
+
+type inMemoryIdempotency struct {
+	RequestHash string
+	TaskID      int64
 }
 
 func NewInMemoryTaskRepository() *InMemoryTaskRepository {
 	return &InMemoryTaskRepository{
-		tasks:  make(map[int64]model.Task),
-		nextID: 1,
+		tasks:       make(map[int64]model.Task),
+		nextID:      1,
+		idempotency: make(map[string]inMemoryIdempotency),
 	}
 }
 
@@ -40,6 +54,34 @@ func (r *InMemoryTaskRepository) Create(task model.Task) (model.Task, error) {
 	r.nextID++
 	r.tasks[task.ID] = task
 	return task, nil
+}
+
+func (r *InMemoryTaskRepository) CreateIdempotent(task model.Task, key, requestHash string, _ time.Time) (model.TaskCreateResult, error) {
+	if key == "" {
+		created, err := r.Create(task)
+		return model.TaskCreateResult{Task: created}, err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cacheKey := fmt.Sprintf("%d:%s", task.WorkspaceID, key)
+	if existing, ok := r.idempotency[cacheKey]; ok {
+		if existing.RequestHash != requestHash {
+			return model.TaskCreateResult{}, ErrIdempotencyConflict
+		}
+		stored, ok := r.tasks[existing.TaskID]
+		if !ok {
+			return model.TaskCreateResult{}, ErrTaskNotFound
+		}
+		return model.TaskCreateResult{Task: stored, Replayed: true}, nil
+	}
+
+	task.ID = r.nextID
+	r.nextID++
+	r.tasks[task.ID] = task
+	r.idempotency[cacheKey] = inMemoryIdempotency{RequestHash: requestHash, TaskID: task.ID}
+	return model.TaskCreateResult{Task: task}, nil
 }
 
 func (r *InMemoryTaskRepository) FindAll(workspaceID int64, query model.TaskQuery) (model.TaskPage, error) {
@@ -159,6 +201,20 @@ func (r *InMemoryTaskRepository) Update(task model.Task) (model.Task, error) {
 	}
 
 	r.tasks[task.ID] = task
+	return task, nil
+}
+
+func (r *InMemoryTaskRepository) Complete(workspaceID, id int64, updatedAt time.Time) (model.Task, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	task, ok := r.tasks[id]
+	if !ok || task.WorkspaceID != workspaceID {
+		return model.Task{}, ErrTaskNotFound
+	}
+	task.Completed = true
+	task.UpdatedAt = updatedAt
+	r.tasks[id] = task
 	return task, nil
 }
 

@@ -154,12 +154,26 @@ func (h *TaskHandler) create(w http.ResponseWriter, r *http.Request, userID int6
 		return
 	}
 
-	task, err := h.service.Create(userID, access, req)
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if key == "" {
+		task, err := h.service.Create(userID, access, req)
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
+		response.JSON(w, http.StatusCreated, response.Envelope{Success: true, Data: task})
+		return
+	}
+
+	result, err := h.service.CreateIdempotent(userID, access, req, key)
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
-	response.JSON(w, http.StatusCreated, response.Envelope{Success: true, Data: task})
+	if result.Replayed {
+		w.Header().Set("Idempotency-Replayed", "true")
+	}
+	response.JSON(w, http.StatusCreated, response.Envelope{Success: true, Data: result.Task})
 }
 
 func (h *TaskHandler) get(w http.ResponseWriter, workspaceID, id int64) {
@@ -209,7 +223,9 @@ func (h *TaskHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, repository.ErrTaskNotFound):
 		response.JSON(w, http.StatusNotFound, response.Envelope{Success: false, Message: err.Error()})
-	case errors.Is(err, service.ErrInvalidTask), errors.Is(err, service.ErrInvalidTaskQuery):
+	case errors.Is(err, repository.ErrIdempotencyConflict):
+		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: err.Error()})
+	case errors.Is(err, service.ErrInvalidTask), errors.Is(err, service.ErrInvalidTaskQuery), errors.Is(err, service.ErrInvalidIdempotencyKey):
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 	default:
 		response.JSON(w, http.StatusInternalServerError, response.Envelope{Success: false, Message: "internal server error"})
