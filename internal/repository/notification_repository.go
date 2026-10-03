@@ -263,6 +263,12 @@ func (r *InMemoryNotificationRepository) Stats(userID int64, orgID *int64) (mode
 		if d.UserID != userID {
 			continue
 		}
+		if orgID != nil {
+			notification, ok := r.notifications[d.NotificationID]
+			if !ok || notification.OrganizationID == nil || *notification.OrganizationID != *orgID {
+				continue
+			}
+		}
 		s.ByChannel[d.Channel]++
 		s.ByStatus[d.Status]++
 		if d.Status == model.NotificationDeliveryDeadLetter {
