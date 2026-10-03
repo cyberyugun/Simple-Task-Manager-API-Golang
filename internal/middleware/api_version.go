@@ -2,10 +2,8 @@ package middleware
 
 import "net/http"
 
-const (
-	apiVersionHeader          = "X-API-Version"
-	apiSupportedVersionsHeader = "API-Supported-Versions"
-)
+const apiVersionHeader = "X-API-Version"
+const apiSupportedVersionsHeader = "API-Supported-Versions"
 
 // APIVersion advertises the public compatibility line served by the API.
 func APIVersion(version string, next http.Handler) http.Handler {
