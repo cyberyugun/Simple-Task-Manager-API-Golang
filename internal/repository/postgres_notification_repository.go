@@ -204,8 +204,15 @@ func (r *PostgresNotificationRepository) ListNotifications(userID int64, limit i
 	rows, err := r.db.Query(`
 		SELECT id,user_id,organization_id,workspace_id,event_type,title,body,data,
 		       dedup_key,template_key,template_version,read_at,created_at
-		FROM notifications WHERE user_id=$1
-		ORDER BY created_at DESC,id DESC LIMIT $2
+		FROM notifications n
+		WHERE n.user_id=$1
+		  AND EXISTS (
+		    SELECT 1 FROM notification_deliveries d
+		    WHERE d.notification_id=n.id
+		      AND d.channel='in_app'
+		      AND d.status<>'suppressed'
+		  )
+		ORDER BY n.created_at DESC,n.id DESC LIMIT $2
 	`, userID, limit)
 	if err != nil {
 		return nil, err
