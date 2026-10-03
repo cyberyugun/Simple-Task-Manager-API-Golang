@@ -31,6 +31,13 @@ jobs:
           bash -n scripts/staging-preflight.sh
           python3 -m py_compile scripts/check-migration-compatibility.py
           python3 -m py_compile scripts/promotion-evidence.py
+          ruby -c scripts/openapi-governance.rb
+          ruby -c scripts/openapi-compatibility.rb
+          ruby -c scripts/consumer-contract.rb
+          ruby -c scripts/generate-typescript-sdk.rb
+          ruby -c scripts/openapi-live-contract.rb
+          ruby scripts/openapi-governance.rb
+          ruby scripts/consumer-contract.rb
           bash scripts/dr-readiness-check.sh
           bash scripts/performance-policy-check.sh
           bash scripts/release-policy-check.sh
