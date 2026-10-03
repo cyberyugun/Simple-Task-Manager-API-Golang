@@ -106,7 +106,6 @@ func intEnv(name string, fallback int) (int, error) {
 	return value, nil
 }
 
-
 func runLifecycleAutomation(ctx context.Context, lifecycle *service.LifecycleService, poll time.Duration, logger *slog.Logger) {
 	run := func() {
 		workspaceIDs, err := lifecycle.ConfiguredWorkspaceIDs()
