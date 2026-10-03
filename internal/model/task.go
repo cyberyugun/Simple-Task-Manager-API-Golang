@@ -59,20 +59,20 @@ type UpdateTaskRequest struct {
 }
 
 type TaskQuery struct {
-	Page      int
-	Limit     int
-	Search    string
-	Completed *bool
-	Status    string
-	Priority  string
-	ProjectID *int64
-	ListID    *int64
+	Page       int
+	Limit      int
+	Search     string
+	Completed  *bool
+	Status     string
+	Priority   string
+	ProjectID  *int64
+	ListID     *int64
 	AssigneeID *int64
-	LabelID   *int64
-	Archived  *bool
-	Deleted   *bool
-	Sort      string
-	Order     string
+	LabelID    *int64
+	Archived   *bool
+	Deleted    *bool
+	Sort       string
+	Order      string
 }
 
 type Pagination struct {
