@@ -588,10 +588,10 @@ func nextRecurrence(from time.Time, frequency string, interval int) time.Time {
 
 func taskMutationMetadata(before, after model.Task) map[string]any {
 	return map[string]any{
-		"before_status": before.Status,
-		"status": after.Status,
+		"before_status":   before.Status,
+		"status":          after.Status,
 		"before_priority": before.Priority,
-		"priority": after.Priority,
+		"priority":        after.Priority,
 	}
 }
 
