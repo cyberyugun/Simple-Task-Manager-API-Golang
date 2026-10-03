@@ -212,6 +212,10 @@ func Sign(secret, timestamp string, body []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+func NewWebhookHTTPClient(timeout time.Duration, allowInsecure bool) *http.Client {
+	return newHTTPClient(timeout, allowInsecure)
+}
+
 func newHTTPClient(timeout time.Duration, allowInsecure bool) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if !allowInsecure {
