@@ -19,17 +19,17 @@ const (
 )
 
 type Organization struct {
-	ID               int64      `json:"id"`
-	ParentID         *int64     `json:"parent_id,omitempty"`
-	Name             string     `json:"name"`
-	Status           string     `json:"status"`
-	OwnerUserID      int64      `json:"owner_user_id"`
-	MaxWorkspaces    int        `json:"max_workspaces"`
-	MaxMembers       int        `json:"max_members"`
-	CreatedByUserID  int64      `json:"created_by_user_id"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-	DeactivatedAt    *time.Time `json:"deactivated_at,omitempty"`
+	ID              int64      `json:"id"`
+	ParentID        *int64     `json:"parent_id,omitempty"`
+	Name            string     `json:"name"`
+	Status          string     `json:"status"`
+	OwnerUserID     int64      `json:"owner_user_id"`
+	MaxWorkspaces   int        `json:"max_workspaces"`
+	MaxMembers      int        `json:"max_members"`
+	CreatedByUserID int64      `json:"created_by_user_id"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	DeactivatedAt   *time.Time `json:"deactivated_at,omitempty"`
 }
 
 type OrganizationMember struct {
@@ -93,14 +93,14 @@ type OrganizationTeamMember struct {
 }
 
 type OrganizationDomain struct {
-	ID                int64      `json:"id"`
-	OrganizationID    int64      `json:"organization_id"`
-	Domain            string     `json:"domain"`
-	VerificationHash  string     `json:"-"`
-	CreatedByUserID   int64      `json:"created_by_user_id"`
-	CreatedAt         time.Time  `json:"created_at"`
-	VerifiedAt        *time.Time `json:"verified_at,omitempty"`
-	VerifiedByUserID  *int64     `json:"verified_by_user_id,omitempty"`
+	ID               int64      `json:"id"`
+	OrganizationID   int64      `json:"organization_id"`
+	Domain           string     `json:"domain"`
+	VerificationHash string     `json:"-"`
+	CreatedByUserID  int64      `json:"created_by_user_id"`
+	CreatedAt        time.Time  `json:"created_at"`
+	VerifiedAt       *time.Time `json:"verified_at,omitempty"`
+	VerifiedByUserID *int64     `json:"verified_by_user_id,omitempty"`
 }
 
 type OrganizationDomainSecret struct {
