@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	ErrWorkspaceNotFound   = errors.New("workspace not found")
-	ErrWorkspaceMemberExists = errors.New("workspace member already exists")
+	ErrWorkspaceNotFound       = errors.New("workspace not found")
+	ErrWorkspaceMemberExists   = errors.New("workspace member already exists")
 	ErrWorkspaceMemberNotFound = errors.New("workspace member not found")
 )
 
