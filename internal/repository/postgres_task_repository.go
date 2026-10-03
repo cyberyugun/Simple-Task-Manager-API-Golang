@@ -85,7 +85,9 @@ func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuer
 		conditions = append(conditions, fmt.Sprintf(condition, len(args)))
 	}
 	if query.Search != "" {
-		add("(title ILIKE $%d OR description ILIKE $%d)", "%"+query.Search+"%")
+		args = append(args, "%"+query.Search+"%")
+		pos := len(args)
+		conditions = append(conditions, fmt.Sprintf("(title ILIKE $%d OR description ILIKE $%d)", pos, pos))
 	}
 	if query.Completed != nil {
 		add("completed = $%d", *query.Completed)
@@ -129,7 +131,7 @@ func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuer
 		"id": "id", "title": "LOWER(title)", "created_at": "created_at",
 		"updated_at": "updated_at", "completed": "completed", "status": "status",
 		"priority": `CASE priority WHEN 'LOW' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'HIGH' THEN 3 WHEN 'URGENT' THEN 4 ELSE 0 END`,
-		"due_at": "due_at NULLS LAST", "position": "position",
+		"due_at": "due_at", "position": "position",
 	}
 	sortColumn := sortColumns[query.Sort]
 	if sortColumn == "" {
