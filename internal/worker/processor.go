@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -50,10 +51,13 @@ func New(repo repository.EventRepository, cfg Config, logger *slog.Logger) *Proc
 	if cfg.BaseBackoff <= 0 {
 		cfg.BaseBackoff = time.Second
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = safeDialContext
 	return &Processor{
 		repo: repo,
 		client: &http.Client{
-			Timeout: cfg.RequestTimeout,
+			Timeout:   cfg.RequestTimeout,
+			Transport: transport,
 		},
 		cfg:    cfg,
 		logger: logger,
@@ -170,4 +174,27 @@ func sign(secret, timestamp string, body []byte) string {
 	_, _ = mac.Write([]byte("."))
 	_, _ = mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func safeDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("webhook host resolved to no addresses")
+	}
+	for _, resolved := range ips {
+		ip := resolved.IP
+		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+			return nil, fmt.Errorf("webhook destination resolves to a non-public address")
+		}
+	}
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
 }
