@@ -294,15 +294,21 @@ A successful plan uploads an artifact named like:
 terraform-plan-aws-123456789
 ```
 
-The artifact contains:
+The uploaded artifact contains a single encrypted archive:
 
 ```text
-production.tfplan.enc
+terraform-plan.tgz.enc
+```
+
+After decryption, the archive contains:
+
+```text
+production.tfplan
 metadata.json
 .terraform.lock.hcl
 ```
 
-The binary Terraform plan is encrypted before upload. The metadata records the source commit, provider, workflow run ID, Terraform version, plan hash, provider-lock hash, action counts, and destructive resource addresses.
+The entire plan bundle is encrypted before upload. No plaintext Terraform plan, metadata, or provider-lock file is published as an Actions artifact. The metadata records the source commit, provider, workflow run ID, Terraform version, plan hash, provider-lock hash, action counts, and destructive resource addresses.
 
 The artifact retention period is three days.
 
