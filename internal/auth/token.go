@@ -151,7 +151,10 @@ func (m *TokenManager) ParseClaims(token string) (Claims, error) {
 		return Claims{}, ErrExpiredToken
 	}
 	if payload.JTI == "" {
-		return Claims{}, ErrInvalidToken
+		// Phase 25 adds jti. Derive a stable identifier for pre-Phase-25 tokens
+		// during the short access-token compatibility window.
+		sum := sha256.Sum256([]byte(token))
+		payload.JTI = "legacy-" + hex.EncodeToString(sum[:16])
 	}
 	return payload, nil
 }
