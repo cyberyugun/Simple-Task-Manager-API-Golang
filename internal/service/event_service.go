@@ -2,7 +2,6 @@ package service
 
 import (
 	"errors"
-	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -14,7 +13,7 @@ import (
 var (
 	ErrAsyncUnavailable       = errors.New("asynchronous processing requires PostgreSQL")
 	ErrWebhookForbidden       = errors.New("webhook administration requires owner or admin role")
-	ErrInvalidWebhookURL      = errors.New("webhook URL must use HTTPS; HTTP is allowed only for localhost")
+	ErrInvalidWebhookURL      = errors.New("webhook URL must use HTTPS")
 	ErrInvalidWebhookSecret   = errors.New("webhook secret must be at least 32 characters")
 	ErrInvalidWebhookEvent    = errors.New("unsupported webhook event type")
 )
@@ -133,22 +132,8 @@ func normalizeEventTypes(values []string) ([]string, error) {
 
 func validateWebhookURL(raw string) error {
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.Scheme != "https" {
 		return ErrInvalidWebhookURL
 	}
-	if parsed.Scheme == "https" {
-		return nil
-	}
-	if parsed.Scheme != "http" {
-		return ErrInvalidWebhookURL
-	}
-	host := parsed.Hostname()
-	if strings.EqualFold(host, "localhost") {
-		return nil
-	}
-	ip := net.ParseIP(host)
-	if ip != nil && ip.IsLoopback() {
-		return nil
-	}
-	return ErrInvalidWebhookURL
+	return nil
 }
