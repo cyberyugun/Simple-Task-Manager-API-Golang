@@ -33,6 +33,7 @@ type Claims struct {
 	ClientID    string   `json:"client_id,omitempty"`
 	WorkspaceID int64    `json:"workspace_id,omitempty"`
 	ActorUserID int64    `json:"actor_user_id,omitempty"`
+	MFA         bool     `json:"mfa,omitempty"`
 	Issued      int64    `json:"iat"`
 	Expires     int64    `json:"exp"`
 }
@@ -55,6 +56,10 @@ func (m *TokenManager) Generate(userID int64, email string) (string, error) {
 }
 
 func (m *TokenManager) GenerateUser(userID int64, email string, scopes []string, workspaceID int64) (string, error) {
+	return m.GenerateUserWithMFA(userID, email, scopes, workspaceID, false)
+}
+
+func (m *TokenManager) GenerateUserWithMFA(userID int64, email string, scopes []string, workspaceID int64, mfa bool) (string, error) {
 	if userID <= 0 || strings.TrimSpace(email) == "" {
 		return "", ErrInvalidToken
 	}
@@ -65,6 +70,7 @@ func (m *TokenManager) GenerateUser(userID int64, email string, scopes []string,
 		TokenUse:    "user",
 		WorkspaceID: workspaceID,
 		ActorUserID: userID,
+		MFA:         mfa,
 	})
 }
 
