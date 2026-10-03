@@ -9,18 +9,36 @@ CREATE TABLE IF NOT EXISTS user_totp_credentials (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS webauthn_user_handles (
+    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    handle BYTEA NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS webauthn_credentials (
     credential_id TEXT PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    public_key_cose BYTEA NOT NULL,
-    sign_count BIGINT NOT NULL DEFAULT 0,
-    transports JSONB NOT NULL DEFAULT '[]'::jsonb,
+    credential_json JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_used_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user
     ON webauthn_credentials (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS webauthn_sessions (
+    session_id CHAR(64) PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    purpose TEXT NOT NULL CHECK (purpose IN ('registration', 'authentication')),
+    session_json JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_webauthn_sessions_active
+    ON webauthn_sessions (user_id, purpose, expires_at)
+    WHERE consumed_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS trusted_devices (
     id BIGSERIAL PRIMARY KEY,
