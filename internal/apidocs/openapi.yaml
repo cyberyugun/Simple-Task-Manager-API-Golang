@@ -22,6 +22,7 @@ tags:
   - name: Enterprise Identity
   - name: Enterprise Governance
   - name: Enterprise Administration
+  - name: Enterprise Billing
 
 paths:
   /health:
@@ -1897,6 +1898,152 @@ paths:
       responses:
         '200':
           description: Organization audit events
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+
+  /api/billing/plans:
+    get:
+      tags: [Enterprise Billing]
+      summary: List active billing plans and plan entitlements
+      operationId: listBillingPlans
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Billing plan catalog
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/billing/webhooks/{provider}:
+    post:
+      tags: [Enterprise Billing]
+      summary: Receive an HMAC-signed idempotent billing-provider event
+      operationId: receiveBillingWebhook
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Billing-Event-ID
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Billing-Signature
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event processed or previously processed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Billing webhook secret is not configured
+  /api/organizations/{id}/billing/subscription:
+    get:
+      tags: [Enterprise Billing]
+      summary: Get the organization billing subscription
+      operationId: getBillingSubscription
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current subscription or null when using implicit free plan
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags: [Enterprise Billing]
+      summary: Subscribe, upgrade, or downgrade an organization plan
+      operationId: changeBillingSubscription
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Subscription updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Current utilization exceeds target plan limits
+  /api/organizations/{id}/billing/subscription/cancel:
+    post:
+      tags: [Enterprise Billing]
+      summary: Cancel now or at the current billing-period boundary
+      operationId: cancelBillingSubscription
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cancellation updated
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/billing/entitlements:
+    get:
+      tags: [Enterprise Billing]
+      summary: Resolve effective feature and capacity entitlements
+      operationId: getBillingEntitlements
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Effective entitlements
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/billing/usage:
+    get:
+      tags: [Enterprise Billing]
+      summary: List usage meters for the current UTC billing month
+      operationId: listBillingUsage
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current-period usage
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Billing]
+      summary: Record an additive usage measurement
+      operationId: recordBillingUsage
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Usage recorded
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/billing/invoices:
+    get:
+      tags: [Enterprise Billing]
+      summary: List recent billing invoices
+      operationId: listBillingInvoices
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Invoice history
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/billing/dashboard:
+    get:
+      tags: [Enterprise Billing]
+      summary: Get subscription, entitlement, utilization, usage, and invoice summary
+      operationId: getBillingDashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Billing dashboard
         '403':
           $ref: '#/components/responses/Forbidden'
 

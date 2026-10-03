@@ -65,6 +65,7 @@ type Config struct {
 	RedisWriteTimeout     time.Duration
 	IdempotencyTTL        time.Duration
 	WebhookAllowInsecure  bool
+	BillingWebhookSecret  string
 	WebAuthnRPID          string
 	WebAuthnRPOrigins     []string
 	WebAuthnRPDisplayName string
@@ -100,6 +101,7 @@ func Load() (Config, error) {
 		RedisReadTimeout:      defaultRedisReadTimeout,
 		RedisWriteTimeout:     defaultRedisWriteTimeout,
 		IdempotencyTTL:        defaultIdempotencyTTL,
+		BillingWebhookSecret:  strings.TrimSpace(os.Getenv("BILLING_WEBHOOK_SECRET")),
 		WebAuthnRPID:          strings.TrimSpace(os.Getenv("WEBAUTHN_RP_ID")),
 		WebAuthnRPDisplayName: strings.TrimSpace(os.Getenv("WEBAUTHN_RP_DISPLAY_NAME")),
 	}

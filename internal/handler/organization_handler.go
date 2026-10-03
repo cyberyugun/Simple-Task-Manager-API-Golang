@@ -531,7 +531,8 @@ func (h *OrganizationHandler) handleError(w http.ResponseWriter, err error) {
 		response.JSON(w, http.StatusForbidden, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrOrganizationInactive),
 		errors.Is(err, service.ErrOrganizationMemberQuota),
-		errors.Is(err, service.ErrOrganizationWorkspaceQuota):
+		errors.Is(err, service.ErrOrganizationWorkspaceQuota),
+		errors.Is(err, service.ErrOrganizationPlanLimit):
 		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrInvalidOrganization),
 		errors.Is(err, service.ErrInvalidOrganizationRole),

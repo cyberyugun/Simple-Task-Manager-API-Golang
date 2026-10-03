@@ -69,6 +69,7 @@ func main() {
 	var governanceRepo repository.GovernanceRepository
 	var lifecycleRepo repository.LifecycleRepository
 	var organizationRepo repository.OrganizationRepository
+	var billingRepo repository.BillingRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
 
@@ -95,6 +96,7 @@ func main() {
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
 		organizationRepo = repository.NewPostgresOrganizationRepository(db)
+		billingRepo = repository.NewPostgresBillingRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
 		logger.Info(
@@ -114,6 +116,7 @@ func main() {
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
 		organizationRepo = repository.NewInMemoryOrganizationRepository()
+		billingRepo = repository.NewInMemoryBillingRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
@@ -177,6 +180,8 @@ func main() {
 	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
 	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)
 	organizationService := service.NewOrganizationService(organizationRepo, userRepo, workspaceRepo)
+	billingService := service.NewBillingService(billingRepo, organizationRepo)
+	organizationService.SetEntitlementProvider(billingService)
 	workspaceService.SetDeletionGuard(governanceService)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
@@ -186,6 +191,7 @@ func main() {
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
 	organizationHandler := handler.NewOrganizationHandler(organizationService)
+	billingHandler := handler.NewBillingHandler(billingService, cfg.BillingWebhookSecret)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
 	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
@@ -284,6 +290,9 @@ func main() {
 	mux.Handle("/api/auth/mfa/webauthn/register/begin", protectedFirstPartyRateLimited(webAuthnHandler.RegistrationBegin))
 	mux.Handle("/api/auth/mfa/webauthn/register/finish", protectedFirstPartyRateLimited(webAuthnHandler.RegistrationFinish))
 
+	mux.Handle("/api/billing/plans", protectedFirstParty(billingHandler.Plans))
+	mux.Handle("/api/billing/webhooks/{provider}", http.HandlerFunc(billingHandler.Webhook))
+
 	mux.Handle("/api/organizations", protectedFirstParty(organizationHandler.Organizations))
 	mux.Handle("/api/organizations/invitations/accept", protectedFirstParty(organizationHandler.AcceptInvitation))
 	mux.Handle("/api/organizations/{id}", protectedFirstParty(organizationHandler.Organization))
@@ -303,6 +312,12 @@ func main() {
 	mux.Handle("/api/organizations/{id}/domains/{domain_id}/verify", protectedFirstParty(organizationHandler.VerifyDomain))
 	mux.Handle("/api/organizations/{id}/dashboard", protectedFirstParty(organizationHandler.Dashboard))
 	mux.Handle("/api/organizations/{id}/audit", protectedFirstParty(organizationHandler.Audit))
+	mux.Handle("/api/organizations/{id}/billing/subscription", protectedFirstParty(billingHandler.Subscription))
+	mux.Handle("/api/organizations/{id}/billing/subscription/cancel", protectedFirstParty(billingHandler.CancelSubscription))
+	mux.Handle("/api/organizations/{id}/billing/entitlements", protectedFirstParty(billingHandler.Entitlements))
+	mux.Handle("/api/organizations/{id}/billing/usage", protectedFirstParty(billingHandler.Usage))
+	mux.Handle("/api/organizations/{id}/billing/invoices", protectedFirstParty(billingHandler.Invoices))
+	mux.Handle("/api/organizations/{id}/billing/dashboard", protectedFirstParty(billingHandler.Dashboard))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
