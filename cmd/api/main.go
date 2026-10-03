@@ -204,6 +204,7 @@ func main() {
 	root = middleware.AccessLog(logger, metrics, root)
 	root = middleware.Trace(tracer, root)
 	root = middleware.RequestID(root)
+	root = middleware.APIVersion("v1", root)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
