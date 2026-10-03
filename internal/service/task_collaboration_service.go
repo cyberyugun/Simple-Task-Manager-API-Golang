@@ -259,7 +259,7 @@ func (s *TaskCollaborationService) CreateComment(actorUserID, workspaceID, taskI
 				Title:     "Mentioned in a task comment",
 				Body:      item.Body,
 				DedupKey:  fmt.Sprintf("task-mention:%d:%d", taskID, item.ID),
-				Data:      map[string]any{"task_id": taskID, "comment_id": item.ID, "actor_user_id": actorUserID},
+				Data:      map[string]any{"task_id": taskID, "comment_id": item.ID, "comment_body": item.Body, "actor_user_id": actorUserID},
 			}); err != nil {
 				return model.TaskComment{}, err
 			}
