@@ -129,6 +129,7 @@ Required keys:
 DATABASE_URL
 REDIS_URL
 JWT_SECRET
+WEBHOOK_SIGNING_KEY
 ```
 
 Prefer External Secrets Operator or another secret manager integration for production. The repository includes `deploy/k8s/optional/external-secret.example.yaml` as a reference.
@@ -198,6 +199,9 @@ Before triggering `Deploy` for the first time, confirm:
 - application secrets exist
 - GHCR pull access matches package visibility
 - PostgreSQL and Redis are reachable from the cluster
+- webhook signing key is provisioned independently from JWT signing
+- both `task-api` and `task-worker` Deployments can become Ready
+- worker metrics are scrapeable on the `task-worker-metrics` Service
 - the readiness script passes
 - a rollback owner and incident contact are known
 
@@ -206,6 +210,8 @@ After the workflow succeeds, verify:
 ```bash
 kubectl -n task-manager get deployment,service,ingress,hpa,pdb
 kubectl -n task-manager get pods -l app.kubernetes.io/name=task-api
+kubectl -n task-manager get pods -l app.kubernetes.io/name=task-worker
+kubectl -n task-manager get servicemonitor task-worker
 kubectl get clusterissuer letsencrypt-prod
 kubectl -n task-manager get certificate
 ```
