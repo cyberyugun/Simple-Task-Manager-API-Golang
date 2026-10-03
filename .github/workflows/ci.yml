@@ -432,6 +432,47 @@ jobs:
           executions="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/automation/executions" -H "Authorization: Bearer $token")"
           printf '%s' "$executions" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; assert len(items)==1; assert items[0]["status"]=="succeeded"'
 
+      - name: Smoke test enterprise integration federation
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          organization_response="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Integration","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          connectors="$(curl --fail --silent http://localhost:8080/api/integrations/connectors -H "Authorization: Bearer $token")"
+          printf '%s' "$connectors" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; providers={x["provider"] for x in items}; assert {"slack","microsoft_teams","jira","github","generic_webhook"} <= providers'
+
+          federation_secret="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+          receiver_payload="$(python3 -c 'import json,sys; p={"provider":"generic_webhook","name":"CI Receiver","auth_type":"webhook_secret","config":{}}; p["credentials"]={"signing_secret":sys.argv[1]}; print(json.dumps(p))' "$federation_secret")"
+          receiver="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/integrations/connections" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$receiver_payload")"
+          receiver_id="$(printf '%s' "$receiver" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          target_url="http://api:8080/api/integrations/inbound/$receiver_id"
+          sender_payload="$(python3 -c 'import json,sys; p={"provider":"generic_webhook","name":"CI Sender","auth_type":"webhook_secret"}; p["config"]={"target_url":sys.argv[1]}; p["credentials"]={"signing_secret":sys.argv[2]}; print(json.dumps(p))' "$target_url" "$federation_secret")"
+          sender="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/integrations/connections" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$sender_payload")"
+          sender_id="$(printf '%s' "$sender" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          queued="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/integrations/deliveries" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "{\"connection_id\":$sender_id,\"event_type\":\"ci.federated\",\"payload\":{\"message\":\"hello integration hub\"}}")"
+          delivery_id="$(printf '%s' "$queued" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="pending"; print(d["id"])')"
+
+          state=""
+          for attempt in $(seq 1 30); do
+            deliveries="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/integrations/deliveries" -H "Authorization: Bearer $token")"
+            state="$(printf '%s' "$deliveries" | DELIVERY_ID="$delivery_id" python3 -c 'import json,os,sys; target=int(os.environ["DELIVERY_ID"]); items=json.load(sys.stdin)["data"]; print(next(x["status"] for x in items if x["id"]==target))')"
+            if [ "$state" = "delivered" ]; then
+              break
+            fi
+            sleep 1
+          done
+          test "$state" = "delivered"
+
+          inbound="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/integrations/inbound-events" -H "Authorization: Bearer $token")"
+          printf '%s' "$inbound" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; assert len(items)==1; assert items[0]["event_type"]=="ci.federated"; assert items[0]["payload"]["message"]=="hello integration hub"'
+
+          connections="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/integrations/connections" -H "Authorization: Bearer $token")"
+          printf '%s' "$connections" | SENDER_ID="$sender_id" python3 -c 'import json,os,sys; sid=int(os.environ["SENDER_ID"]); items=json.load(sys.stdin)["data"]; sender=next(x for x in items if x["id"]==sid); assert sender["health_status"]=="healthy"; assert "credentials" not in sender'
+
       - name: Smoke test idempotent task and outbox worker
         run: |
           login_response="$(curl --fail --silent \
@@ -475,7 +516,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "16"
+          test "$migration_count" = "17"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"

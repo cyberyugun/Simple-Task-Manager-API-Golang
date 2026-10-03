@@ -400,6 +400,9 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 
 func resetDatabase(db *sql.DB) error {
 	for _, statement := range []string{
+		"DROP TABLE IF EXISTS integration_inbound_events CASCADE",
+		"DROP TABLE IF EXISTS integration_deliveries CASCADE",
+		"DROP TABLE IF EXISTS integration_connections CASCADE",
 		"DROP TABLE IF EXISTS automation_executions CASCADE",
 		"DROP TABLE IF EXISTS automation_policies CASCADE",
 		"DROP TABLE IF EXISTS organization_operational_incidents CASCADE",
@@ -468,6 +471,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"014_enterprise_billing_entitlements_usage.sql",
 		"015_enterprise_platform_operations_finops.sql",
 		"016_enterprise_automation_policy_orchestration.sql",
+		"017_enterprise_integration_hub.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {
