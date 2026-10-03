@@ -59,6 +59,11 @@ func main() {
 		logger.Error("automation_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	workflowPoll, err := durationEnv("WORKFLOW_POLL_INTERVAL", 2*time.Second)
+	if err != nil {
+		logger.Error("workflow_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	integrationPoll, err := durationEnv("INTEGRATION_POLL_INTERVAL", 2*time.Second)
 	if err != nil {
 		logger.Error("integration_worker_configuration_failed", "error", err)
@@ -100,6 +105,13 @@ func main() {
 		billingService,
 	)
 	go runAutomationPolicies(ctx, automationService, automationPoll, logger)
+
+	workflowService := service.NewWorkflowService(
+		repository.NewPostgresWorkflowRepository(db),
+		organizationRepo,
+		service.NewWorkflowExecutorRegistry(repository.NewPostgresTaskRepository(db), repository.NewPostgresOperationsRepository(db)),
+	)
+	go runWorkflowExecutions(ctx, workflowService, workflowPoll, logger)
 
 	integrationCipher, err := service.NewIntegrationCredentialCipher(os.Getenv("JWT_SECRET"))
 	if err != nil {
@@ -204,6 +216,39 @@ func runAutomationPolicies(ctx context.Context, automation *service.AutomationSe
 		select {
 		case <-ctx.Done():
 			logger.Info("automation_worker_stopped")
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
+func runWorkflowExecutions(ctx context.Context, workflows *service.WorkflowService, poll time.Duration, logger *slog.Logger) {
+	run := func() {
+		executions, err := workflows.ProcessDueSystem(50)
+		if err != nil {
+			logger.Error("workflow_resume_failed", "error", err)
+			return
+		}
+		for _, execution := range executions {
+			logger.Info(
+				"workflow_execution_resumed",
+				"organization_id", execution.OrganizationID,
+				"workflow_id", execution.WorkflowID,
+				"execution_id", execution.ID,
+				"status", execution.Status,
+			)
+		}
+	}
+
+	logger.Info("workflow_worker_started", "poll_interval", poll)
+	run()
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("workflow_worker_stopped")
 			return
 		case <-ticker.C:
 			run()
