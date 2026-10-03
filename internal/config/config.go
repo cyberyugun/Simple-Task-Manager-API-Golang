@@ -21,6 +21,16 @@ const (
 	defaultLogLevel              = "info"
 	defaultAppEnv                = "development"
 	defaultOTELServiceName       = "task-api"
+	defaultDBMaxOpenConns        = 10
+	defaultDBMaxIdleConns        = 5
+	defaultDBConnMaxIdleTime     = 5 * time.Minute
+	defaultDBConnMaxLifetime     = 30 * time.Minute
+	defaultRedisPoolSize         = 20
+	defaultRedisMinIdleConns     = 5
+	defaultRedisPoolTimeout      = 4 * time.Second
+	defaultRedisDialTimeout      = 5 * time.Second
+	defaultRedisReadTimeout      = 3 * time.Second
+	defaultRedisWriteTimeout     = 3 * time.Second
 )
 
 type Config struct {
@@ -42,6 +52,16 @@ type Config struct {
 	AppEnv                string
 	OTELExporterEndpoint  string
 	OTELServiceName       string
+	DBMaxOpenConns        int
+	DBMaxIdleConns        int
+	DBConnMaxIdleTime     time.Duration
+	DBConnMaxLifetime     time.Duration
+	RedisPoolSize         int
+	RedisMinIdleConns     int
+	RedisPoolTimeout      time.Duration
+	RedisDialTimeout      time.Duration
+	RedisReadTimeout      time.Duration
+	RedisWriteTimeout     time.Duration
 }
 
 func Load() (Config, error) {
@@ -63,6 +83,16 @@ func Load() (Config, error) {
 		AppEnv:                strings.TrimSpace(os.Getenv("APP_ENV")),
 		OTELExporterEndpoint:  strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
 		OTELServiceName:       strings.TrimSpace(os.Getenv("OTEL_SERVICE_NAME")),
+		DBMaxOpenConns:        defaultDBMaxOpenConns,
+		DBMaxIdleConns:        defaultDBMaxIdleConns,
+		DBConnMaxIdleTime:     defaultDBConnMaxIdleTime,
+		DBConnMaxLifetime:     defaultDBConnMaxLifetime,
+		RedisPoolSize:         defaultRedisPoolSize,
+		RedisMinIdleConns:     defaultRedisMinIdleConns,
+		RedisPoolTimeout:      defaultRedisPoolTimeout,
+		RedisDialTimeout:      defaultRedisDialTimeout,
+		RedisReadTimeout:      defaultRedisReadTimeout,
+		RedisWriteTimeout:     defaultRedisWriteTimeout,
 	}
 
 	if cfg.Port == "" {
@@ -76,6 +106,43 @@ func Load() (Config, error) {
 	}
 	if cfg.OTELServiceName == "" {
 		cfg.OTELServiceName = defaultOTELServiceName
+	}
+
+	if cfg.DBMaxOpenConns, err = parseIntAtLeast("DB_MAX_OPEN_CONNS", cfg.DBMaxOpenConns, 1); err != nil {
+		return Config{}, err
+	}
+	if cfg.DBMaxIdleConns, err = parseIntAtLeast("DB_MAX_IDLE_CONNS", cfg.DBMaxIdleConns, 0); err != nil {
+		return Config{}, err
+	}
+	if cfg.DBMaxIdleConns > cfg.DBMaxOpenConns {
+		return Config{}, fmt.Errorf("DB_MAX_IDLE_CONNS must not exceed DB_MAX_OPEN_CONNS")
+	}
+	if cfg.DBConnMaxIdleTime, err = parsePositiveDuration("DB_CONN_MAX_IDLE_TIME", cfg.DBConnMaxIdleTime); err != nil {
+		return Config{}, err
+	}
+	if cfg.DBConnMaxLifetime, err = parsePositiveDuration("DB_CONN_MAX_LIFETIME", cfg.DBConnMaxLifetime); err != nil {
+		return Config{}, err
+	}
+	if cfg.RedisPoolSize, err = parseIntAtLeast("REDIS_POOL_SIZE", cfg.RedisPoolSize, 1); err != nil {
+		return Config{}, err
+	}
+	if cfg.RedisMinIdleConns, err = parseIntAtLeast("REDIS_MIN_IDLE_CONNS", cfg.RedisMinIdleConns, 0); err != nil {
+		return Config{}, err
+	}
+	if cfg.RedisMinIdleConns > cfg.RedisPoolSize {
+		return Config{}, fmt.Errorf("REDIS_MIN_IDLE_CONNS must not exceed REDIS_POOL_SIZE")
+	}
+	if cfg.RedisPoolTimeout, err = parsePositiveDuration("REDIS_POOL_TIMEOUT", cfg.RedisPoolTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.RedisDialTimeout, err = parsePositiveDuration("REDIS_DIAL_TIMEOUT", cfg.RedisDialTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.RedisReadTimeout, err = parsePositiveDuration("REDIS_READ_TIMEOUT", cfg.RedisReadTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.RedisWriteTimeout, err = parsePositiveDuration("REDIS_WRITE_TIMEOUT", cfg.RedisWriteTimeout); err != nil {
+		return Config{}, err
 	}
 
 	port, err := strconv.Atoi(cfg.Port)
@@ -161,6 +228,19 @@ func parseBool(name string, fallback bool) (bool, error) {
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return false, fmt.Errorf("%s must be true or false", name)
+	}
+	return parsed, nil
+}
+
+func parseIntAtLeast(name string, fallback, minimum int) (int, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < minimum {
+		return 0, fmt.Errorf("%s must be an integer greater than or equal to %d", name, minimum)
 	}
 	return parsed, nil
 }
