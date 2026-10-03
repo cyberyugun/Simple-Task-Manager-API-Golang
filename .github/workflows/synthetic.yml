@@ -1,0 +1,72 @@
+name: Synthetic Production Check
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe production endpoints
+    if: vars.SYNTHETIC_BASE_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: synthetic-production
+    env:
+      BASE_URL: ${{ vars.SYNTHETIC_BASE_URL }}
+      MAX_LATENCY_MS: ${{ vars.SYNTHETIC_MAX_LATENCY_MS || '2000' }}
+
+    steps:
+      - name: Validate synthetic configuration
+        run: |
+          case "$BASE_URL" in
+            https://*) ;;
+            *)
+              echo "::error::SYNTHETIC_BASE_URL must use https://"
+              exit 1
+              ;;
+          esac
+          printf '%s' "$MAX_LATENCY_MS" | grep -Eq '^[0-9]+$'
+
+      - name: Probe health readiness version and latency
+        run: |
+          check() {
+            path="$1"
+            output="$2"
+            metrics="$(curl --fail --silent --show-error               --connect-timeout 5               --max-time 10               --output "$output"               --write-out '%{http_code} %{time_total}'               "$BASE_URL$path")"
+
+            status="$(printf '%s' "$metrics" | awk '{print $1}')"
+            seconds="$(printf '%s' "$metrics" | awk '{print $2}')"
+            test "$status" = "200"
+
+            python3 - "$seconds" "$MAX_LATENCY_MS" "$path" <<'PY'
+          import sys
+          seconds = float(sys.argv[1])
+          max_ms = int(sys.argv[2])
+          path = sys.argv[3]
+          actual_ms = seconds * 1000
+          if actual_ms > max_ms:
+              raise SystemExit(f"{path} latency {actual_ms:.1f}ms exceeds {max_ms}ms")
+          print(f"{path}: {actual_ms:.1f}ms")
+          PY
+          }
+
+          check /health /tmp/health.json
+          check /ready /tmp/ready.json
+          check /version /tmp/version.json
+
+          python3 - <<'PY'
+          import json
+          for path in ("/tmp/health.json", "/tmp/ready.json"):
+              with open(path, "r", encoding="utf-8") as handle:
+                  payload = json.load(handle)
+              assert payload["success"] is True
+
+          with open("/tmp/version.json", "r", encoding="utf-8") as handle:
+              version = json.load(handle)["data"]
+          assert version["commit"]
+          assert version["version"]
+          PY
