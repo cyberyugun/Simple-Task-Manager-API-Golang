@@ -89,7 +89,7 @@ Quiet hours delay external email/push/webhook delivery until the recipient's con
 
 Email can use the user's account email when no explicit email endpoint exists. Push and webhook channels require registered endpoints.
 
-Webhook endpoints require HTTPS unless development insecure-webhook mode is enabled. They are signed with:
+Webhook endpoints require HTTPS unless development insecure-webhook mode is enabled. A generated `signing_secret` is returned only on endpoint creation and is omitted from later list responses. They are signed with:
 
 ```text
 X-Notification-Id
