@@ -23,12 +23,17 @@ var (
 )
 
 type BillingService struct {
-	repo repository.BillingRepository
-	orgs repository.OrganizationRepository
+	repo     repository.BillingRepository
+	orgs     repository.OrganizationRepository
+	notifier NotificationEmitter
 }
 
 func NewBillingService(repo repository.BillingRepository, orgs repository.OrganizationRepository) *BillingService {
 	return &BillingService{repo: repo, orgs: orgs}
+}
+
+func (s *BillingService) SetNotificationEmitter(notifier NotificationEmitter) {
+	s.notifier = notifier
 }
 
 func (s *BillingService) ListPlans() ([]model.BillingPlan, error) {
@@ -304,17 +309,39 @@ func (s *BillingService) ProcessWebhook(provider, eventID string, payload model.
 			return true, ErrBillingWebhookInvalid
 		}
 		graceUntil := now.Add(7 * 24 * time.Hour)
-		_, err = s.repo.UpdateBillingSubscriptionStatus(provider, payload.ProviderSubscriptionID, model.BillingSubscriptionPastDue, &graceUntil, now)
+		var subscription model.BillingSubscription
+		subscription, err = s.repo.UpdateBillingSubscriptionStatus(provider, payload.ProviderSubscriptionID, model.BillingSubscriptionPastDue, &graceUntil, now)
+		if err == nil && s.notifier != nil {
+			_ = s.notifier.EmitOrganizationAdminsSignal(subscription.OrganizationID, model.NotificationEventBilling,
+				"Subscription payment is past due",
+				"Your subscription entered past-due status and is in a grace period.",
+				"billing:past_due:"+eventID,
+				map[string]any{"subscription_id": subscription.ID, "grace_until": graceUntil, "provider": provider})
+		}
 	case "subscription.canceled":
 		if payload.ProviderSubscriptionID == "" {
 			return true, ErrBillingWebhookInvalid
 		}
-		_, err = s.repo.UpdateBillingSubscriptionStatus(provider, payload.ProviderSubscriptionID, model.BillingSubscriptionCanceled, nil, now)
+		var subscription model.BillingSubscription
+		subscription, err = s.repo.UpdateBillingSubscriptionStatus(provider, payload.ProviderSubscriptionID, model.BillingSubscriptionCanceled, nil, now)
+		if err == nil && s.notifier != nil {
+			_ = s.notifier.EmitOrganizationAdminsSignal(subscription.OrganizationID, model.NotificationEventBilling,
+				"Subscription canceled", "Your organization subscription was canceled.",
+				"billing:canceled:"+eventID,
+				map[string]any{"subscription_id": subscription.ID, "provider": provider})
+		}
 	case "invoice.paid":
 		if payload.InvoiceExternalID == "" || payload.AmountPaidCents < 0 {
 			return true, ErrBillingWebhookInvalid
 		}
-		_, err = s.repo.MarkBillingInvoicePaid(provider, payload.InvoiceExternalID, payload.AmountPaidCents, now, now)
+		var invoice model.BillingInvoice
+		invoice, err = s.repo.MarkBillingInvoicePaid(provider, payload.InvoiceExternalID, payload.AmountPaidCents, now, now)
+		if err == nil && s.notifier != nil {
+			_ = s.notifier.EmitOrganizationAdminsSignal(invoice.OrganizationID, model.NotificationEventBilling,
+				"Invoice paid", "A billing invoice was paid successfully.",
+				"billing:invoice_paid:"+eventID,
+				map[string]any{"invoice_id": invoice.ID, "amount_paid_cents": invoice.AmountPaidCents, "provider": provider})
+		}
 	}
 	return true, err
 }
