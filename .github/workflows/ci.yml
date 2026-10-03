@@ -474,6 +474,82 @@ jobs:
           connections="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/integrations/connections" -H "Authorization: Bearer $token")"
           printf '%s' "$connections" | SENDER_ID="$sender_id" python3 -c 'import json,os,sys; sid=int(os.environ["SENDER_ID"]); items=json.load(sys.stdin)["data"]; sender=next(x for x in items if x["id"]==sid); assert sender["health_status"]=="healthy"; assert "credentials" not in sender'
 
+      - name: Smoke test enterprise workflow builder
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          organization_response="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Workflow","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          graph_payload="$(python3 - <<'PY'
+          import json
+          graph = {
+            "name": "CI durable approval workflow",
+            "description": "Phase 34 Docker runtime smoke",
+            "graph": {
+              "nodes": [
+                {"id":"trigger","type":"trigger","config":{"source":"manual"}},
+                {"id":"approval","type":"approval"},
+                {"id":"action","type":"action","config":{"executor":"workflow.noop","params":{"message":"approved"}},"retry":{"max_attempts":2,"backoff_seconds":1},"timeout_seconds":10},
+                {"id":"delay","type":"delay","config":{"seconds":1}},
+                {"id":"parallel","type":"parallel"},
+                {"id":"branch-a","type":"transform","config":{"set":{"branch_a":"done"}}},
+                {"id":"branch-b","type":"transform","config":{"set":{"branch_b":"done"}}},
+                {"id":"join","type":"join","config":{"mode":"all"}},
+                {"id":"end","type":"end"}
+              ],
+              "edges": [
+                {"from":"trigger","to":"approval"},
+                {"from":"approval","to":"action"},
+                {"from":"action","to":"delay"},
+                {"from":"delay","to":"parallel"},
+                {"from":"parallel","to":"branch-a"},
+                {"from":"parallel","to":"branch-b"},
+                {"from":"branch-a","to":"join"},
+                {"from":"branch-b","to":"join"},
+                {"from":"join","to":"end"}
+              ]
+            }
+          }
+          print(json.dumps(graph))
+          PY
+          )"
+
+          created="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workflows" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$graph_payload")"
+          workflow_id="$(printf '%s' "$created" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["workflow"]["id"])')"
+          version_id="$(printf '%s' "$created" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["version"]["status"]=="draft"; print(d["version"]["id"])')"
+
+          published="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workflows/$workflow_id/versions/$version_id/publish" -H "Authorization: Bearer $token")"
+          printf '%s' "$published" | python3 -c 'import json,sys; v=json.load(sys.stdin)["data"]; assert v["status"]=="published"; assert len(v["checksum"])==64'
+
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workflows/$workflow_id/versions/$version_id/activate" -H "Authorization: Bearer $token" >/dev/null
+
+          started="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workflows/$workflow_id/start" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"trigger_type":"manual","trigger_payload":{"source":"ci"},"variables":{"seed":"phase34"}}')"
+          execution_id="$(printf '%s' "$started" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["execution"]["status"]=="waiting_approval"; assert len(d["approvals"])==1; print(d["execution"]["id"])')"
+          approval_id="$(printf '%s' "$started" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["approvals"][0]["id"])')"
+
+          approved="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workflow-approvals/$approval_id/decision" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"approve":true,"comment":"CI approval"}')"
+          printf '%s' "$approved" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["execution"]["status"]=="waiting_delay"; assert len(d["checkpoints"])>=4'
+
+          state=""
+          for attempt in $(seq 1 30); do
+            detail="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/workflow-executions/$execution_id" -H "Authorization: Bearer $token")"
+            state="$(printf '%s' "$detail" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["execution"]["status"])')"
+            if [ "$state" = "succeeded" ]; then
+              printf '%s' "$detail" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; types={n["node_type"] for n in d["nodes"]}; assert {"trigger","approval","action","delay","parallel","transform","join","end"} <= types; assert len(d["checkpoints"])>=9'
+              break
+            fi
+            sleep 1
+          done
+          test "$state" = "succeeded"
+
+          dry_run="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workflows/$workflow_id/start" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"trigger_type":"manual","trigger_payload":{"source":"ci-dry-run"},"dry_run":true}')"
+          printf '%s' "$dry_run" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["execution"]["status"]=="succeeded"; assert d["execution"]["dry_run"] is True'
+
+          schemas="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/workflows/node-schemas" -H "Authorization: Bearer $token")"
+          printf '%s' "$schemas" | python3 -c 'import json,sys; types={x["type"] for x in json.load(sys.stdin)["data"]}; assert {"trigger","condition","transform","approval","action","delay","branch","parallel","join","subworkflow","end"} <= types'
+
       - name: Smoke test task management 2 collaboration
         run: |
           login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
@@ -576,11 +652,12 @@ jobs:
           test "$pending" = "0"
           docker compose logs worker | grep '"msg":"event_worker_started"'
           docker compose logs worker | grep '"msg":"lifecycle_worker_started"'
+          docker compose logs worker | grep '"msg":"workflow_worker_started"'
 
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "18"
+          test "$migration_count" = "19"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
