@@ -231,6 +231,7 @@ func main() {
 	mux.Handle("/api/auth/change-password", protectedRateLimited(authHandler.ChangePassword))
 	mux.Handle("/api/auth/logout-all", protected(authHandler.LogoutAll))
 	mux.Handle("/api/auth/sessions", protected(authHandler.Sessions))
+	mux.Handle("/api/auth/sessions/risk", protected(authHandler.SessionRisks))
 	mux.Handle("/api/auth/sessions/", protected(authHandler.SessionByID))
 	mux.Handle("/api/auth/email-verification/request", protectedRateLimited(authHandler.RequestEmailVerification))
 	mux.Handle("/api/auth/token/introspect", protected(enterpriseHandler.Introspect))
