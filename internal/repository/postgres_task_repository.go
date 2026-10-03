@@ -19,14 +19,19 @@ func NewPostgresTaskRepository(db *sql.DB) *PostgresTaskRepository {
 
 func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 	const query = `
-		INSERT INTO tasks (workspace_id, user_id, title, description, completed, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, workspace_id, user_id, title, description, completed, created_at, updated_at
+		INSERT INTO tasks (workspace_id, user_id, created_by_user_id, title, description, completed, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, workspace_id, created_by_user_id, title, description, completed, created_at, updated_at
 	`
 
+	var legacyUserID any
+	if task.PersonalWorkspace {
+		legacyUserID = task.UserID
+	}
 	return scanTask(r.db.QueryRow(
 		query,
 		task.WorkspaceID,
+		legacyUserID,
 		task.UserID,
 		task.Title,
 		task.Description,
@@ -86,7 +91,7 @@ func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuer
 	offsetPos := len(args)
 
 	statement := fmt.Sprintf(`
-		SELECT id, COALESCE(workspace_id, $1), user_id, title, description, completed, created_at, updated_at
+		SELECT id, COALESCE(workspace_id, $1), COALESCE(created_by_user_id, user_id), title, description, completed, created_at, updated_at
 		FROM tasks
 		WHERE %s
 		ORDER BY %s %s, id %s
@@ -124,7 +129,7 @@ func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuer
 
 func (r *PostgresTaskRepository) FindByID(workspaceID, id int64) (model.Task, error) {
 	const query = `
-		SELECT id, COALESCE(workspace_id, $2), user_id, title, description, completed, created_at, updated_at
+		SELECT id, COALESCE(workspace_id, $2), COALESCE(created_by_user_id, user_id), title, description, completed, created_at, updated_at
 		FROM tasks
 		WHERE id = $1
 		  AND (
@@ -167,7 +172,7 @@ func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 		      )
 		    )
 		  )
-		RETURNING id, workspace_id, user_id, title, description, completed, created_at, updated_at
+		RETURNING id, workspace_id, COALESCE(created_by_user_id, user_id), title, description, completed, created_at, updated_at
 	`
 
 	updated, err := scanTask(r.db.QueryRow(
