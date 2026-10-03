@@ -60,6 +60,7 @@ func main() {
 	var db *sql.DB
 	var redisClient *redis.Client
 	var taskRepo repository.TaskRepository
+	var taskCollaborationRepo repository.TaskCollaborationRepository
 	var userRepo repository.UserRepository
 	var refreshRepo repository.RefreshTokenRepository
 	var actionRepo repository.AuthActionTokenRepository
@@ -90,6 +91,7 @@ func main() {
 		defer db.Close()
 
 		taskRepo = repository.NewPostgresTaskRepository(db)
+		taskCollaborationRepo = repository.NewPostgresTaskCollaborationRepository(db)
 		userRepo = repository.NewPostgresUserRepository(db)
 		refreshRepo = repository.NewPostgresRefreshTokenRepository(db)
 		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
@@ -113,6 +115,7 @@ func main() {
 		)
 	} else {
 		taskRepo = repository.NewInMemoryTaskRepository()
+		taskCollaborationRepo = repository.NewInMemoryTaskCollaborationRepository()
 		userRepo = repository.NewInMemoryUserRepository()
 		refreshRepo = repository.NewInMemoryRefreshTokenRepository()
 		actionRepo = repository.NewInMemoryAuthActionTokenRepository()
@@ -183,6 +186,8 @@ func main() {
 	mfaService.SetWebAuthnCredentialChecker(webAuthnService)
 	authService.SetMFAVerifier(mfaService)
 	taskService := service.NewTaskService(taskRepo)
+	taskCollaborationService := service.NewTaskCollaborationService(taskCollaborationRepo, taskRepo, workspaceRepo)
+	taskService.SetCollaborationService(taskCollaborationService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
 	webhookService := service.NewWebhookService(workspaceRepo, eventRepo, cfg.WebhookAllowInsecure)
 	enterpriseService := service.NewEnterpriseIdentityService(enterpriseRepo, workspaceRepo, userRepo, tokenManager)
@@ -202,6 +207,7 @@ func main() {
 	workspaceService.SetDeletionGuard(governanceService)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
+	taskCollaborationHandler := handler.NewTaskCollaborationHandler(taskCollaborationService)
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
 	webhookHandler := handler.NewWebhookHandler(webhookService)
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
@@ -385,7 +391,28 @@ func main() {
 	mux.Handle("/api/workspaces/{id}/governance/report", protectedFirstParty(lifecycleHandler.Report))
 	mux.Handle("/api/workspaces/", protected(workspaceHandler.WorkspaceByID))
 
+	mux.Handle("/api/task-projects", protectedWorkspaceIdempotent(taskCollaborationHandler.Projects))
+	mux.Handle("/api/task-projects/{project_id}", protectedWorkspace(taskCollaborationHandler.ProjectByID))
+	mux.Handle("/api/task-lists", protectedWorkspaceIdempotent(taskCollaborationHandler.Lists))
+	mux.Handle("/api/task-lists/{list_id}", protectedWorkspace(taskCollaborationHandler.ListByID))
+	mux.Handle("/api/task-labels", protectedWorkspaceIdempotent(taskCollaborationHandler.Labels))
+	mux.Handle("/api/task-custom-fields", protectedWorkspaceIdempotent(taskCollaborationHandler.CustomFields))
+
 	mux.Handle("/api/tasks", protectedWorkspaceIdempotent(taskHandler.Tasks))
+	mux.Handle("/api/tasks/{id}/labels", protectedWorkspaceIdempotent(taskCollaborationHandler.TaskLabels))
+	mux.Handle("/api/tasks/{id}/labels/{label_id}", protectedWorkspace(taskCollaborationHandler.TaskLabelByID))
+	mux.Handle("/api/tasks/{id}/assignees", protectedWorkspaceIdempotent(taskCollaborationHandler.Assignees))
+	mux.Handle("/api/tasks/{id}/assignees/{user_id}", protectedWorkspace(taskCollaborationHandler.AssigneeByID))
+	mux.Handle("/api/tasks/{id}/watchers", protectedWorkspaceIdempotent(taskCollaborationHandler.Watchers))
+	mux.Handle("/api/tasks/{id}/watchers/{user_id}", protectedWorkspace(taskCollaborationHandler.WatcherByID))
+	mux.Handle("/api/tasks/{id}/comments", protectedWorkspaceIdempotent(taskCollaborationHandler.Comments))
+	mux.Handle("/api/tasks/{id}/comments/{comment_id}", protectedWorkspace(taskCollaborationHandler.CommentByID))
+	mux.Handle("/api/tasks/{id}/dependencies", protectedWorkspaceIdempotent(taskCollaborationHandler.Dependencies))
+	mux.Handle("/api/tasks/{id}/dependencies/{depends_on_id}", protectedWorkspace(taskCollaborationHandler.DependencyByID))
+	mux.Handle("/api/tasks/{id}/recurrence", protectedWorkspace(taskCollaborationHandler.Recurrence))
+	mux.Handle("/api/tasks/{id}/activity", protectedWorkspace(taskCollaborationHandler.Activity))
+	mux.Handle("/api/tasks/{id}/custom-fields", protectedWorkspace(taskCollaborationHandler.CustomFieldValues))
+	mux.Handle("/api/tasks/{id}/custom-fields/{field_id}", protectedWorkspace(taskCollaborationHandler.CustomFieldValue))
 	mux.Handle("/api/tasks/", protectedWorkspace(taskHandler.TaskByID))
 
 	var root http.Handler = mux
