@@ -66,6 +66,7 @@ func main() {
 	var workspaceRepo repository.WorkspaceRepository
 	var eventRepo repository.EventRepository
 	var enterpriseRepo repository.EnterpriseIdentityRepository
+	var governanceRepo repository.GovernanceRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
 
@@ -89,6 +90,7 @@ func main() {
 		workspaceRepo = repository.NewPostgresWorkspaceRepository(db)
 		eventRepo = repository.NewPostgresEventRepository(db)
 		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
+		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
 		logger.Info(
@@ -105,6 +107,7 @@ func main() {
 		workspaceRepo = repository.NewInMemoryWorkspaceRepository()
 		eventRepo = repository.NewInMemoryEventRepository()
 		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
+		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
@@ -165,11 +168,14 @@ func main() {
 	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
 	webhookService := service.NewWebhookService(workspaceRepo, eventRepo, cfg.WebhookAllowInsecure)
 	enterpriseService := service.NewEnterpriseIdentityService(enterpriseRepo, workspaceRepo, userRepo, tokenManager)
+	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
+	workspaceService.SetDeletionGuard(governanceService)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
 	taskHandler := handler.NewTaskHandler(taskService)
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
 	webhookHandler := handler.NewWebhookHandler(webhookService)
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
+	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
 	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
@@ -278,6 +284,13 @@ func main() {
 	mux.Handle("/api/workspaces/{id}/identity/policy", protectedIdentityAdmin(enterpriseHandler.Policy))
 	mux.Handle("/api/workspaces/{id}/identity/oidc", protectedIdentityAdmin(enterpriseHandler.OIDC))
 	mux.Handle("/api/workspaces/{id}/identity/scim/users", protectedIdentityAdmin(enterpriseHandler.SCIMUsers))
+	mux.Handle("/api/workspaces/{id}/governance/policy", protectedFirstParty(governanceHandler.Policy))
+	mux.Handle("/api/workspaces/{id}/governance/data-inventory", protectedFirstParty(governanceHandler.DataInventory))
+	mux.Handle("/api/workspaces/{id}/governance/legal-holds", protectedFirstParty(governanceHandler.LegalHolds))
+	mux.Handle("/api/workspaces/{id}/governance/legal-holds/{hold_id}", protectedFirstParty(governanceHandler.LegalHoldByID))
+	mux.Handle("/api/workspaces/{id}/governance/privacy-requests", protectedFirstParty(governanceHandler.PrivacyRequests))
+	mux.Handle("/api/workspaces/{id}/governance/privacy-requests/{request_id}/complete", protectedFirstParty(governanceHandler.CompletePrivacyRequest))
+	mux.Handle("/api/workspaces/{id}/governance/evidence", protectedFirstParty(governanceHandler.Evidence))
 	mux.Handle("/api/workspaces/", protected(workspaceHandler.WorkspaceByID))
 
 	mux.Handle("/api/tasks", protectedWorkspaceIdempotent(taskHandler.Tasks))

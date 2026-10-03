@@ -20,6 +20,7 @@ tags:
   - name: Workspaces
   - name: Webhooks
   - name: Enterprise Identity
+  - name: Enterprise Governance
 
 paths:
   /health:
@@ -1218,6 +1219,215 @@ paths:
           description: Authenticated user, access token, and refresh token
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+
+  /api/workspaces/{id}/governance/policy:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Governance]
+      summary: Read workspace governance and data-protection policy
+      operationId: getGovernancePolicy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Governance policy
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags: [Enterprise Governance]
+      summary: Update workspace governance and data-protection policy
+      operationId: updateGovernancePolicy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Governance policy updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/workspaces/{id}/governance/data-inventory:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Governance]
+      summary: List classified workspace data inventory entries
+      operationId: listGovernanceDataInventory
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Data inventory
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags: [Enterprise Governance]
+      summary: Upsert a classified workspace data inventory entry
+      operationId: upsertGovernanceDataInventory
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Data inventory entry updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/workspaces/{id}/governance/legal-holds:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Governance]
+      summary: List workspace legal holds
+      operationId: listLegalHolds
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Legal holds
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Governance]
+      summary: Create a workspace legal hold
+      operationId: createLegalHold
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Legal hold created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/workspaces/{id}/governance/legal-holds/{hold_id}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - in: path
+        name: hold_id
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    delete:
+      tags: [Enterprise Governance]
+      summary: Release a workspace legal hold while preserving its history
+      operationId: releaseLegalHold
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Legal hold released
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/workspaces/{id}/governance/privacy-requests:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Governance]
+      summary: List workspace privacy and data-subject requests
+      operationId: listPrivacyRequests
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Privacy requests
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Governance]
+      summary: Create a privacy or data-subject request with policy-derived SLA
+      operationId: createPrivacyRequest
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Privacy request created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/workspaces/{id}/governance/privacy-requests/{request_id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+      - in: path
+        name: request_id
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    post:
+      tags: [Enterprise Governance]
+      summary: Complete or reject a workspace privacy request
+      operationId: completePrivacyRequest
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Privacy request finalized
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/workspaces/{id}/governance/evidence:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceID'
+    get:
+      tags: [Enterprise Governance]
+      summary: List workspace compliance evidence records
+      operationId: listComplianceEvidence
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Compliance evidence
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Enterprise Governance]
+      summary: Register append-only compliance evidence for a framework control
+      operationId: createComplianceEvidence
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Compliance evidence created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
 components:
   securitySchemes:

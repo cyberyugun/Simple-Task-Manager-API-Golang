@@ -244,6 +244,8 @@ func (h *WorkspaceHandler) handleError(w http.ResponseWriter, err error) {
 		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrWorkspaceForbidden), errors.Is(err, service.ErrOwnerMembership):
 		response.JSON(w, http.StatusForbidden, response.Envelope{Success: false, Message: err.Error()})
+	case errors.Is(err, service.ErrWorkspaceLegalHold):
+		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrInvalidWorkspaceName), errors.Is(err, service.ErrInvalidWorkspaceRole), errors.Is(err, service.ErrPersonalWorkspace):
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 	default:

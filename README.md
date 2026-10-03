@@ -625,3 +625,8 @@ DATABASE_URL="$DATABASE_URL" MIGRATIONS_DIR=migrations go run ./cmd/migrate
 ```
 
 Docker Compose uses the same runner automatically before starting the API.
+
+
+## Enterprise governance and data protection
+
+Phase 26 adds workspace governance policy, data classification inventory, legal holds, privacy/DSAR request tracking with SLA due dates, and a compliance evidence register. Active legal holds prevent workspace deletion. See [docs/enterprise-governance-compliance.md](docs/enterprise-governance-compliance.md).

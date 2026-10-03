@@ -16,15 +16,25 @@ var (
 	ErrWorkspaceForbidden   = errors.New("workspace action is forbidden")
 	ErrPersonalWorkspace    = errors.New("personal workspace cannot be deleted")
 	ErrOwnerMembership      = errors.New("owner membership cannot be changed or removed")
+	ErrWorkspaceLegalHold   = errors.New("workspace cannot be deleted while a legal hold is active")
 )
 
+type WorkspaceDeletionGuard interface {
+	HasActiveLegalHold(workspaceID int64) (bool, error)
+}
+
 type WorkspaceService struct {
-	workspaces repository.WorkspaceRepository
-	users      repository.UserRepository
+	workspaces    repository.WorkspaceRepository
+	users         repository.UserRepository
+	deletionGuard WorkspaceDeletionGuard
 }
 
 func NewWorkspaceService(workspaces repository.WorkspaceRepository, users repository.UserRepository) *WorkspaceService {
 	return &WorkspaceService{workspaces: workspaces, users: users}
+}
+
+func (s *WorkspaceService) SetDeletionGuard(guard WorkspaceDeletionGuard) {
+	s.deletionGuard = guard
 }
 
 func (s *WorkspaceService) List(userID int64) ([]model.WorkspaceAccess, error) {
@@ -84,6 +94,15 @@ func (s *WorkspaceService) Delete(actorID, workspaceID int64) error {
 	}
 	if access.IsPersonal {
 		return ErrPersonalWorkspace
+	}
+	if s.deletionGuard != nil {
+		held, err := s.deletionGuard.HasActiveLegalHold(workspaceID)
+		if err != nil {
+			return err
+		}
+		if held {
+			return ErrWorkspaceLegalHold
+		}
 	}
 	now := time.Now()
 	if err := s.audit(workspaceID, actorID, "workspace.deleted", "workspace", workspaceID, map[string]any{"name": access.Name}, now); err != nil {
