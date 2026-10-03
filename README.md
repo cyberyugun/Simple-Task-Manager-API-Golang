@@ -630,3 +630,8 @@ Docker Compose uses the same runner automatically before starting the API.
 ## Enterprise governance and data protection
 
 Phase 26 adds workspace governance policy, data classification inventory, legal holds, privacy/DSAR request tracking with SLA due dates, and a compliance evidence register. Active legal holds prevent workspace deletion. See [docs/enterprise-governance-compliance.md](docs/enterprise-governance-compliance.md).
+
+
+## Data lifecycle and privacy automation
+
+Phase 27 adds legal-hold-aware automated retention processing, task archival and delayed archive purge, DSAR export packages with SHA-256 integrity checks, delete-request content anonymization, an append-only consent ledger, automated lifecycle evidence, and governance operations reporting. The existing worker runs lifecycle automation for workspaces with a configured governance policy. Set `LIFECYCLE_POLL_INTERVAL` to override the default one-hour cadence. See [docs/data-lifecycle-privacy-automation.md](docs/data-lifecycle-privacy-automation.md).
