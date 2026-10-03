@@ -259,6 +259,32 @@ func (m *Metrics) writeDependencyMetrics(w http.ResponseWriter, db *sql.DB, redi
 		_, _ = fmt.Fprintf(w, "task_api_db_idle_connections %d\n", stats.Idle)
 		_, _ = fmt.Fprintf(w, "task_api_db_wait_count_total %d\n", stats.WaitCount)
 		_, _ = fmt.Fprintf(w, "task_api_db_wait_duration_seconds_total %g\n", stats.WaitDuration.Seconds())
+
+		var pendingEvents, deadEvents int64
+		if err := db.QueryRow(`
+			SELECT
+			  COUNT(*) FILTER (WHERE status = 'pending'),
+			  COUNT(*) FILTER (WHERE status = 'dead')
+			FROM outbox_events
+		`).Scan(&pendingEvents, &deadEvents); err == nil {
+			_, _ = fmt.Fprintln(w, "# HELP task_api_outbox_events Current durable outbox events by state.")
+			_, _ = fmt.Fprintln(w, "# TYPE task_api_outbox_events gauge")
+			_, _ = fmt.Fprintf(w, "task_api_outbox_events{status=\"pending\"} %d\n", pendingEvents)
+			_, _ = fmt.Fprintf(w, "task_api_outbox_events{status=\"dead\"} %d\n", deadEvents)
+		}
+
+		var pendingDeliveries, deadDeliveries int64
+		if err := db.QueryRow(`
+			SELECT
+			  COUNT(*) FILTER (WHERE status = 'pending'),
+			  COUNT(*) FILTER (WHERE status = 'dead')
+			FROM webhook_deliveries
+		`).Scan(&pendingDeliveries, &deadDeliveries); err == nil {
+			_, _ = fmt.Fprintln(w, "# HELP task_api_webhook_deliveries Current webhook deliveries by state.")
+			_, _ = fmt.Fprintln(w, "# TYPE task_api_webhook_deliveries gauge")
+			_, _ = fmt.Fprintf(w, "task_api_webhook_deliveries{status=\"pending\"} %d\n", pendingDeliveries)
+			_, _ = fmt.Fprintf(w, "task_api_webhook_deliveries{status=\"dead\"} %d\n", deadDeliveries)
+		}
 	}
 
 	if redisClient != nil {

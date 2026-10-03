@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.4.0
+  version: 1.5.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -18,6 +18,7 @@ tags:
   - name: Authentication
   - name: Tasks
   - name: Workspaces
+  - name: Events
 
 paths:
   /health:
@@ -589,6 +590,125 @@ paths:
         '404':
           $ref: '#/components/responses/WorkspaceNotFound'
 
+  /api/webhooks:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
+    get:
+      tags: [Events]
+      summary: List webhook subscriptions for the selected workspace
+      operationId: listWebhookSubscriptions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Webhook subscriptions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscriptionListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    post:
+      tags: [Events]
+      summary: Create a webhook subscription
+      operationId: createWebhookSubscription
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookSubscriptionRequest'
+      responses:
+        '201':
+          description: Webhook subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscriptionEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/webhooks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WebhookID'
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
+    delete:
+      tags: [Events]
+      summary: Delete a webhook subscription
+      operationId: deleteWebhookSubscription
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Webhook subscription deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/events/stats:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
+    get:
+      tags: [Events]
+      summary: Get outbox and webhook delivery queue statistics
+      operationId: getEventQueueStats
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Queue statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboxStatsEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/events/replay:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceIDHeader'
+    post:
+      tags: [Events]
+      summary: Replay dead-letter events and deliveries for a workspace
+      operationId: replayDeadEvents
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dead-letter items queued for replay
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplayEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
   /api/tasks:
     parameters:
       - $ref: '#/components/parameters/WorkspaceIDHeader'
@@ -760,6 +880,14 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
+    WebhookID:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
     WorkspaceID:
       in: path
       name: id
@@ -820,6 +948,12 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     WorkspaceNotFound:
       description: Workspace is missing or not visible to the authenticated user
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ServiceUnavailable:
+      description: PostgreSQL-backed asynchronous processing is unavailable
       content:
         application/json:
           schema:
@@ -1146,6 +1280,114 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuditEvent'
+    CreateWebhookSubscriptionRequest:
+      type: object
+      required: [url, secret]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTPS webhook endpoint. Private and loopback destinations are blocked by the worker.
+        secret:
+          type: string
+          minLength: 32
+          writeOnly: true
+          description: HMAC-SHA256 signing secret. It is never returned by the API.
+        event_types:
+          type: array
+          items:
+            type: string
+            enum: [task.*, task.created, task.updated, task.completed, task.deleted]
+          default: [task.*]
+    WebhookSubscription:
+      type: object
+      required: [id, workspace_id, url, event_types, active, created_by_user_id, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        workspace_id:
+          type: integer
+          format: int64
+        url:
+          type: string
+          format: uri
+        event_types:
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        created_by_user_id:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OutboxStats:
+      type: object
+      required: [pending_events, dead_events, pending_deliveries, dead_deliveries]
+      properties:
+        pending_events:
+          type: integer
+          format: int64
+        dead_events:
+          type: integer
+          format: int64
+        pending_deliveries:
+          type: integer
+          format: int64
+        dead_deliveries:
+          type: integer
+          format: int64
+    ReplayResult:
+      type: object
+      required: [replayed]
+      properties:
+        replayed:
+          type: integer
+          format: int64
+    WebhookSubscriptionEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/WebhookSubscription'
+    WebhookSubscriptionListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookSubscription'
+    OutboxStatsEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/OutboxStats'
+    ReplayEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/ReplayResult'
     TaskWriteRequest:
       type: object
       required: [title]

@@ -1,7 +1,10 @@
 package repository
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,17 +21,22 @@ func NewPostgresTaskRepository(db *sql.DB) *PostgresTaskRepository {
 }
 
 func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return model.Task{}, err
+	}
+	defer tx.Rollback()
+
 	const query = `
 		INSERT INTO tasks (workspace_id, user_id, created_by_user_id, title, description, completed, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, workspace_id, created_by_user_id, title, description, completed, created_at, updated_at
 	`
-
 	var legacyUserID any
 	if task.PersonalWorkspace {
 		legacyUserID = task.UserID
 	}
-	return scanTask(r.db.QueryRow(
+	created, err := scanTask(tx.QueryRow(
 		query,
 		task.WorkspaceID,
 		legacyUserID,
@@ -39,6 +47,20 @@ func (r *PostgresTaskRepository) Create(task model.Task) (model.Task, error) {
 		task.CreatedAt,
 		task.UpdatedAt,
 	))
+	if err != nil {
+		return model.Task{}, err
+	}
+	created.EventType = task.EventType
+	if created.EventType == "" {
+		created.EventType = "task.created"
+	}
+	if err := insertTaskOutbox(tx, created, created.EventType); err != nil {
+		return model.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Task{}, err
+	}
+	return created, nil
 }
 
 func (r *PostgresTaskRepository) FindAll(workspaceID int64, query model.TaskQuery) (model.TaskPage, error) {
@@ -144,7 +166,6 @@ func (r *PostgresTaskRepository) FindByID(workspaceID, id int64) (model.Task, er
 		    )
 		  )
 	`
-
 	task, err := scanTask(r.db.QueryRow(query, id, workspaceID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Task{}, ErrTaskNotFound
@@ -153,6 +174,12 @@ func (r *PostgresTaskRepository) FindByID(workspaceID, id int64) (model.Task, er
 }
 
 func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return model.Task{}, err
+	}
+	defer tx.Rollback()
+
 	const query = `
 		UPDATE tasks
 		SET workspace_id = COALESCE(workspace_id, $2),
@@ -174,8 +201,7 @@ func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 		  )
 		RETURNING id, workspace_id, COALESCE(created_by_user_id, user_id), title, description, completed, created_at, updated_at
 	`
-
-	updated, err := scanTask(r.db.QueryRow(
+	updated, err := scanTask(tx.QueryRow(
 		query,
 		task.ID,
 		task.WorkspaceID,
@@ -187,12 +213,32 @@ func (r *PostgresTaskRepository) Update(task model.Task) (model.Task, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Task{}, ErrTaskNotFound
 	}
-	return updated, err
+	if err != nil {
+		return model.Task{}, err
+	}
+	updated.EventType = task.EventType
+	if updated.EventType == "" {
+		updated.EventType = "task.updated"
+	}
+	if err := insertTaskOutbox(tx, updated, updated.EventType); err != nil {
+		return model.Task{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.Task{}, err
+	}
+	return updated, nil
 }
 
 func (r *PostgresTaskRepository) Delete(workspaceID, id int64) error {
-	result, err := r.db.Exec(`
-		DELETE FROM tasks
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	const selectQuery = `
+		SELECT id, COALESCE(workspace_id, $2), COALESCE(created_by_user_id, user_id), title, description, completed, created_at, updated_at
+		FROM tasks
 		WHERE id = $1
 		  AND (
 		    workspace_id = $2
@@ -205,19 +251,59 @@ func (r *PostgresTaskRepository) Delete(workspaceID, id int64) error {
 		      )
 		    )
 		  )
-	`, id, workspaceID)
-	if err != nil {
-		return err
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
+		FOR UPDATE
+	`
+	task, err := scanTask(tx.QueryRow(selectQuery, id, workspaceID))
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrTaskNotFound
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM tasks WHERE id = $1`, id); err != nil {
+		return err
+	}
+	task.EventType = "task.deleted"
+	if err := insertTaskOutbox(tx, task, task.EventType); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func insertTaskOutbox(tx *sql.Tx, task model.Task, eventType string) error {
+	eventID, err := newEventID()
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(map[string]any{
+		"id":           task.ID,
+		"workspace_id": task.WorkspaceID,
+		"title":        task.Title,
+		"description":  task.Description,
+		"completed":    task.Completed,
+		"created_at":   task.CreatedAt,
+		"updated_at":   task.UpdatedAt,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`
+		INSERT INTO outbox_events (
+			event_id, workspace_id, aggregate_type, aggregate_id,
+			event_type, schema_version, payload, status, attempts,
+			available_at, created_at
+		)
+		VALUES ($1, $2, 'task', $3, $4, 1, $5::jsonb, 'pending', 0, NOW(), NOW())
+	`, eventID, task.WorkspaceID, fmt.Sprintf("%d", task.ID), eventType, string(payload))
+	return err
+}
+
+func newEventID() (string, error) {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "", err
+	}
+	return "evt_" + hex.EncodeToString(value[:]), nil
 }
 
 type taskScanner interface {

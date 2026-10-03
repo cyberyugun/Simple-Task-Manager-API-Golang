@@ -33,6 +33,7 @@ func (s *TaskService) Create(userID int64, access model.WorkspaceAccess, req mod
 		WorkspaceID:       access.ID,
 		UserID:            userID,
 		PersonalWorkspace: access.IsPersonal,
+		EventType:         "task.created",
 		Title:             title,
 		Description:       strings.TrimSpace(req.Description),
 		Completed:         false,
@@ -102,6 +103,7 @@ func (s *TaskService) Update(workspaceID, id int64, req model.UpdateTaskRequest)
 
 	task.Title = title
 	task.Description = strings.TrimSpace(req.Description)
+	task.EventType = "task.updated"
 	task.UpdatedAt = time.Now()
 	return s.repo.Update(task)
 }
@@ -113,6 +115,7 @@ func (s *TaskService) Complete(workspaceID, id int64) (model.Task, error) {
 	}
 
 	task.Completed = true
+	task.EventType = "task.completed"
 	task.UpdatedAt = time.Now()
 	return s.repo.Update(task)
 }

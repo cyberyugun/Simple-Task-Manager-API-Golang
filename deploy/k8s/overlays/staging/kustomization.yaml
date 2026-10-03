@@ -10,6 +10,7 @@ patches:
   - path: namespace-delete.yaml
   - path: configmap.yaml
   - path: deployment-patch.yaml
+  - path: worker-deployment-patch.yaml
   - path: hpa-patch.yaml
 images:
   - name: task-api

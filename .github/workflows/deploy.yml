@@ -298,6 +298,7 @@ jobs:
           sed -i "s/newTag: latest/digest: $IMAGE_DIGEST/" deploy/k8s/overlays/staging/kustomization.yaml
           kubectl apply -k deploy/k8s/overlays/staging
           kubectl -n "$KUBE_NAMESPACE" rollout status deployment/task-api --timeout=5m
+          kubectl -n "$KUBE_NAMESPACE" rollout status deployment/task-worker --timeout=5m
 
       - name: Validate staging system endpoints
         env:
@@ -577,6 +578,8 @@ jobs:
           grep -q 'task_api_http_request_duration_seconds_bucket' /tmp/metrics.txt
           grep -q 'task_api_trace_export_errors_total' /tmp/metrics.txt
           grep -q 'task_api_db_max_open_connections' /tmp/metrics.txt
+          grep -q 'task_api_outbox_events' /tmp/metrics.txt
+          grep -q 'task_api_webhook_deliveries' /tmp/metrics.txt
 
           kubectl -n "$KUBE_NAMESPACE" get servicemonitor task-api
           kubectl -n "$KUBE_NAMESPACE" get prometheusrule task-api-slo
@@ -595,3 +598,4 @@ jobs:
         run: |
           kubectl -n "$KUBE_NAMESPACE" get deployment,service,ingress,hpa,pdb
           kubectl -n "$KUBE_NAMESPACE" get pods -l app.kubernetes.io/name=task-api -o wide
+          kubectl -n "$KUBE_NAMESPACE" get pods -l app.kubernetes.io/name=task-worker -o wide

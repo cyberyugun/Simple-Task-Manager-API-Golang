@@ -50,6 +50,7 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	refreshRepo := repository.NewPostgresRefreshTokenRepository(db)
 	actionRepo := repository.NewPostgresAuthActionTokenRepository(db)
 	workspaceRepo := repository.NewPostgresWorkspaceRepository(db)
+	eventRepo := repository.NewPostgresEventRepository(db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	user1, err := userRepo.Create(model.User{
@@ -285,10 +286,69 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 	if _, err := taskRepo.FindByID(workspace1.ID, first.ID); !errors.Is(err, repository.ErrTaskNotFound) {
 		t.Fatalf("FindByID() after delete error = %v, want ErrTaskNotFound", err)
 	}
+
+	var outboxCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM outbox_events").Scan(&outboxCount); err != nil {
+		t.Fatalf("count outbox events: %v", err)
+	}
+	if outboxCount != 5 {
+		t.Fatalf("outbox event count = %d, want 5", outboxCount)
+	}
+	for _, eventType := range []string{"task.created", "task.updated", "task.deleted"} {
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM outbox_events WHERE event_type = $1", eventType).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", eventType, err)
+		}
+		if count == 0 {
+			t.Fatalf("missing outbox event type %s", eventType)
+		}
+	}
+
+	subscription, err := eventRepo.CreateSubscription(model.WebhookSubscription{
+		WorkspaceID:     workspace1.ID,
+		URL:             "https://example.com/webhook",
+		EventTypes:      []string{"task.*"},
+		CreatedByUserID: user1.ID,
+		CreatedAt:       now,
+	}, "12345678901234567890123456789012")
+	if err != nil {
+		t.Fatalf("create webhook subscription: %v", err)
+	}
+	if subscription.ID == 0 {
+		t.Fatal("webhook subscription id is zero")
+	}
+
+	events, err := eventRepo.ClaimOutbox(10, now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("claim outbox: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatal("expected claimed outbox events")
+	}
+	event := events[0]
+	if err := eventRepo.FanOutEvent(event, now); err != nil {
+		t.Fatalf("fan out event: %v", err)
+	}
+	if err := eventRepo.FanOutEvent(event, now); err != nil {
+		t.Fatalf("idempotent fan out event: %v", err)
+	}
+	if err := eventRepo.MarkOutboxProcessed(event.EventID, now); err != nil {
+		t.Fatalf("mark outbox processed: %v", err)
+	}
+	deliveries, err := eventRepo.ClaimDeliveries(10, now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("claim deliveries: %v", err)
+	}
+	if len(deliveries) != 1 || deliveries[0].EventID != event.EventID {
+		t.Fatalf("unexpected deliveries: %+v", deliveries)
+	}
 }
 
 func resetDatabase(db *sql.DB) error {
 	for _, statement := range []string{
+		"DROP TABLE IF EXISTS webhook_deliveries CASCADE",
+		"DROP TABLE IF EXISTS webhook_subscriptions CASCADE",
+		"DROP TABLE IF EXISTS outbox_events CASCADE",
 		"DROP TABLE IF EXISTS audit_events CASCADE",
 		"DROP TABLE IF EXISTS workspace_members CASCADE",
 		"DROP TABLE IF EXISTS auth_action_tokens CASCADE",
@@ -315,6 +375,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"005_account_security.sql",
 		"006_performance_indexes.sql",
 		"007_workspaces_rbac_audit.sql",
+		"008_event_outbox_webhooks.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {
