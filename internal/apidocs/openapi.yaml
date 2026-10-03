@@ -1287,7 +1287,7 @@ components:
         url:
           type: string
           format: uri
-          description: HTTPS endpoint. HTTP is accepted only for localhost development.
+          description: HTTPS webhook endpoint. Private and loopback destinations are blocked by the worker.
         secret:
           type: string
           minLength: 32
