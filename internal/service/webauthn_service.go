@@ -83,10 +83,13 @@ func (s *WebAuthnService) BeginRegistration(userID int64) (model.WebAuthnCeremon
 	return model.WebAuthnCeremonyResult{SessionID: sessionID, Options: options}, nil
 }
 
-func (s *WebAuthnService) FinishRegistration(sessionID string, request *http.Request) (string, error) {
+func (s *WebAuthnService) FinishRegistration(expectedUserID int64, sessionID string, request *http.Request) (string, error) {
 	userID, session, err := s.consumeSession(sessionID, "registration")
 	if err != nil {
 		return "", err
+	}
+	if userID != expectedUserID {
+		return "", ErrWebAuthnCeremony
 	}
 	user, err := s.loadUser(userID)
 	if err != nil {
