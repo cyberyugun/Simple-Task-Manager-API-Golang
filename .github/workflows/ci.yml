@@ -576,7 +576,12 @@ jobs:
           test "$incident_count" -ge 1
 
           user_id="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc "SELECT id FROM users WHERE email='ci@example.com'")"
-          workspace_id="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc "SELECT id FROM workspaces WHERE created_by_user_id=$user_id AND is_personal=TRUE LIMIT 1")"
+          workspaces="$(curl --fail-with-body --show-error --silent http://localhost:8080/api/workspaces -H "Authorization: Bearer $token")"
+          workspace_id="$(printf '%s' "$workspaces" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; print(items[0]["id"] if items else "")')"
+          if [ -z "$workspace_id" ]; then
+            workspace_created="$(curl --fail-with-body --show-error --silent -X POST http://localhost:8080/api/workspaces -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Notification Workspace"}')"
+            workspace_id="$(printf '%s' "$workspace_created" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          fi
           docker compose exec -T postgres psql -U task_user -d task_manager -c "INSERT INTO tasks(title,description,completed,user_id,workspace_id,created_by_user_id,status,priority,due_at,created_at,updated_at) VALUES('CI due reminder','',FALSE,$user_id,$workspace_id,$user_id,'TODO','MEDIUM',NOW()+INTERVAL '10 minutes',NOW(),NOW());" >/dev/null
 
           reminder_count=0
