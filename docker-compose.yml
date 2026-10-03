@@ -43,6 +43,26 @@ services:
         condition: service_healthy
     restart: "no"
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/app/worker"]
+    environment:
+      DATABASE_URL: postgres://task_user:task_password@postgres:5432/task_manager?sslmode=disable
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-25}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-1s}
+      WEBHOOK_REQUEST_TIMEOUT: ${WEBHOOK_REQUEST_TIMEOUT:-10s}
+      WEBHOOK_MAX_ATTEMPTS: ${WEBHOOK_MAX_ATTEMPTS:-8}
+      WEBHOOK_BASE_BACKOFF: ${WEBHOOK_BASE_BACKOFF:-1s}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   api:
     build:
       context: .
