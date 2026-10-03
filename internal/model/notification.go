@@ -61,9 +61,10 @@ type NotificationEndpoint struct {
 	ID        int64      `json:"id"`
 	UserID    int64      `json:"user_id"`
 	Channel   string     `json:"channel"`
-	Address   string     `json:"address"`
-	Secret    string     `json:"-"`
-	Active    bool       `json:"active"`
+	Address       string     `json:"address"`
+	Secret        string     `json:"-"`
+	SigningSecret string     `json:"signing_secret,omitempty"`
+	Active        bool       `json:"active"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
