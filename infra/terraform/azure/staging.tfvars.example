@@ -1,0 +1,12 @@
+# Phase 21 staging profile.
+# Initialize this stack with a staging-specific remote-state key/container path.
+environment = "staging"
+vnet_cidr   = "10.120.0.0/16"
+
+aks_node_count = 2
+aks_node_zones = ["1", "2"]
+
+postgres_sku_name              = "GP_Standard_D2s_v3"
+postgres_backup_retention_days = 7
+
+redis_capacity = 1

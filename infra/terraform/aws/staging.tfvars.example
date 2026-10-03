@@ -1,0 +1,19 @@
+# Phase 21 staging profile.
+# Initialize this stack with a staging-specific remote-state key, never the production key.
+environment             = "staging"
+vpc_cidr                = "10.110.0.0/16"
+availability_zone_count = 2
+
+eks_node_min_size     = 2
+eks_node_desired_size = 2
+eks_node_max_size     = 3
+
+postgres_instance_class        = "db.t4g.micro"
+postgres_multi_az              = false
+postgres_backup_retention_days = 7
+
+redis_node_type                = "cache.t4g.micro"
+redis_snapshot_retention_days  = 7
+
+# Required account-specific value:
+# github_oidc_provider_arn = "arn:aws:iam::<account-id>:oidc-provider/token.actions.githubusercontent.com"
