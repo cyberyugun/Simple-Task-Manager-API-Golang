@@ -2,8 +2,8 @@
 # frozen_string_literal: true
 require "yaml"
 
-baseline = YAML.load_file(ARGV.fetch(0))
-current = YAML.load_file(ARGV.fetch(1))
+baseline = YAML.unsafe_load_file(ARGV.fetch(0))
+current = YAML.unsafe_load_file(ARGV.fetch(1))
 failures = []
 methods = %w[get post put patch delete options head]
 
