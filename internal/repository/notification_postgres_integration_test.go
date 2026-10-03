@@ -166,16 +166,20 @@ func TestIntegrationPostgresNotificationRepository(t *testing.T) {
 	if err != nil || failed.Status != model.NotificationDeliveryRetry || failed.Attempts != 1 {
 		t.Fatalf("failed=%+v err=%v", failed, err)
 	}
-	replayed, err := notifications.RetryDelivery(member.ID, delivery.ID, now.Add(3*time.Second))
+	deadLetter, err := notifications.MarkDeliveryFailed(delivery.ID, "provider unavailable again", now.Add(3*time.Second))
+	if err != nil || deadLetter.Status != model.NotificationDeliveryDeadLetter || deadLetter.Attempts != 2 {
+		t.Fatalf("deadLetter=%+v err=%v", deadLetter, err)
+	}
+	replayed, err := notifications.RetryDelivery(member.ID, delivery.ID, now.Add(4*time.Second))
 	if err != nil || replayed.Status != model.NotificationDeliveryPending || replayed.Attempts != 0 {
 		t.Fatalf("replayed=%+v err=%v", replayed, err)
 	}
-	sent, err := notifications.MarkDeliverySent(delivery.ID, now.Add(4*time.Second))
+	sent, err := notifications.MarkDeliverySent(delivery.ID, now.Add(5*time.Second))
 	if err != nil || sent.Status != model.NotificationDeliverySent || sent.SentAt == nil {
 		t.Fatalf("sent=%+v err=%v", sent, err)
 	}
 
-	read, err := notifications.MarkNotificationRead(member.ID, notification.ID, now.Add(5*time.Second))
+	read, err := notifications.MarkNotificationRead(member.ID, notification.ID, now.Add(6*time.Second))
 	if err != nil || read.ReadAt == nil {
 		t.Fatalf("read=%+v err=%v", read, err)
 	}
