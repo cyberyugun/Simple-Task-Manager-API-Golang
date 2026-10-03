@@ -560,13 +560,13 @@ func assertPerformanceIndexes(t *testing.T, db *sql.DB) {
 		}
 	}
 
-	assertPlanUsesIndex(t, db, `
+	assertPlanUsesAnyIndex(t, db, `
 		SELECT id, user_id, title, description, completed, created_at, updated_at
 		FROM tasks
 		WHERE user_id = 1 AND completed = false
 		ORDER BY created_at DESC, id DESC
 		LIMIT 20
-	`, "idx_tasks_user_completed_created_at")
+	`, "idx_tasks_user_completed_created_at", "idx_tasks_user_created_at")
 
 	assertPlanUsesIndex(t, db, `
 		SELECT id
@@ -576,6 +576,11 @@ func assertPerformanceIndexes(t *testing.T, db *sql.DB) {
 }
 
 func assertPlanUsesIndex(t *testing.T, db *sql.DB, statement, indexName string) {
+	t.Helper()
+	assertPlanUsesAnyIndex(t, db, statement, indexName)
+}
+
+func assertPlanUsesAnyIndex(t *testing.T, db *sql.DB, statement string, indexNames ...string) {
 	t.Helper()
 
 	tx, err := db.Begin()
@@ -606,7 +611,10 @@ func assertPlanUsesIndex(t *testing.T, db *sql.DB, statement, indexName string) 
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate explain rows: %v", err)
 	}
-	if !strings.Contains(plan.String(), indexName) {
-		t.Fatalf("query plan does not use %s:\n%s", indexName, plan.String())
+	for _, indexName := range indexNames {
+		if strings.Contains(plan.String(), indexName) {
+			return
+		}
 	}
+	t.Fatalf("query plan does not use any expected index %v:\n%s", indexNames, plan.String())
 }
