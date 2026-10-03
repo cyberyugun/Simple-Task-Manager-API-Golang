@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	eventdelivery "go-simple-task-api/internal/events"
 	"go-simple-task-api/internal/model"
