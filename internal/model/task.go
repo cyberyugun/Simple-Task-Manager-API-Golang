@@ -7,6 +7,7 @@ type Task struct {
 	WorkspaceID       int64     `json:"workspace_id,omitempty"`
 	UserID            int64     `json:"-"`
 	PersonalWorkspace bool      `json:"-"`
+	EventType         string    `json:"-"`
 	Title             string    `json:"title"`
 	Description       string    `json:"description"`
 	Completed         bool      `json:"completed"`
