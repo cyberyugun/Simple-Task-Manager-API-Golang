@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: task-worker
+  namespace: task-manager-staging
+  labels:
+    app.kubernetes.io/name: task-worker
+    app.kubernetes.io/part-of: simple-task-manager
+spec:
+  namespaceSelector:
+    matchNames:
+      - task-manager-staging
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: task-worker
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      scheme: http
