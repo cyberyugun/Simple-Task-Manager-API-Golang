@@ -552,21 +552,21 @@ jobs:
 
       - name: Smoke test notification reminder and communication platform
         run: |
-          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          login_response="$(curl --fail-with-body --show-error --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
           token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
 
-          organization_response="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Notifications","max_workspaces":20,"max_members":100}')"
+          organization_response="$(curl --fail-with-body --show-error --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Notifications","max_workspaces":20,"max_members":100}')"
           organization_id="$(printf '%s' "$organization_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
 
-          preference="$(curl --fail --silent -X PUT "http://localhost:8080/api/notifications/preferences?organization_id=$organization_id" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"in_app_enabled":true,"email_enabled":true,"push_enabled":false,"webhook_enabled":false,"digest":"immediate","timezone":"Asia/Jakarta","locale":"id","quiet_hours_start":"23:00","quiet_hours_end":"06:00","muted_event_types":[]}' )"
+          preference="$(curl --fail-with-body --show-error --silent -X PUT "http://localhost:8080/api/notifications/preferences?organization_id=$organization_id" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"in_app_enabled":true,"email_enabled":true,"push_enabled":false,"webhook_enabled":false,"digest":"immediate","timezone":"Asia/Jakarta","locale":"id","quiet_hours_start":"23:00","quiet_hours_end":"06:00","muted_event_types":[]}' )"
           printf '%s' "$preference" | python3 -c 'import json,sys; p=json.load(sys.stdin)["data"]; assert p["timezone"]=="Asia/Jakarta"; assert p["locale"]=="id"; assert p["quiet_hours_start"]=="23:00:00"'
 
-          incident="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/operations/incidents" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"title":"CI notification incident","severity":"sev3","summary":"notification smoke"}')"
+          incident="$(curl --fail-with-body --show-error --silent -X POST "http://localhost:8080/api/organizations/$organization_id/operations/incidents" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"title":"CI notification incident","severity":"sev3","summary":"notification smoke"}')"
           incident_id="$(printf '%s' "$incident" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
           test -n "$incident_id"
 
           for attempt in $(seq 1 20); do
-            inbox="$(curl --fail --silent "http://localhost:8080/api/notifications" -H "Authorization: Bearer $token")"
+            inbox="$(curl --fail-with-body --show-error --silent "http://localhost:8080/api/notifications" -H "Authorization: Bearer $token")"
             incident_count="$(printf '%s' "$inbox" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; print(sum(1 for x in items if x["event_type"]=="operations.incident.created"))')"
             if [ "$incident_count" -ge 1 ]; then
               break
@@ -581,7 +581,7 @@ jobs:
 
           reminder_count=0
           for attempt in $(seq 1 90); do
-            inbox="$(curl --fail --silent "http://localhost:8080/api/notifications" -H "Authorization: Bearer $token")"
+            inbox="$(curl --fail-with-body --show-error --silent "http://localhost:8080/api/notifications" -H "Authorization: Bearer $token")"
             reminder_count="$(printf '%s' "$inbox" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; print(sum(1 for x in items if x["event_type"]=="task.due_soon"))')"
             if [ "$reminder_count" -ge 1 ]; then
               break
@@ -591,9 +591,9 @@ jobs:
           test "$reminder_count" -ge 1
 
           notification_id="$(printf '%s' "$inbox" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; print(next(x["id"] for x in items if x["event_type"]=="task.due_soon"))')"
-          curl --fail --silent -X POST "http://localhost:8080/api/notifications/$notification_id/read" -H "Authorization: Bearer $token" >/dev/null
+          curl --fail-with-body --show-error --silent -X POST "http://localhost:8080/api/notifications/$notification_id/read" -H "Authorization: Bearer $token" >/dev/null
 
-          stats="$(curl --fail --silent "http://localhost:8080/api/notifications/stats" -H "Authorization: Bearer $token")"
+          stats="$(curl --fail-with-body --show-error --silent "http://localhost:8080/api/notifications/stats" -H "Authorization: Bearer $token")"
           printf '%s' "$stats" | python3 -c 'import json,sys; s=json.load(sys.stdin)["data"]; assert s["total"]>=2; assert "sent" in s["by_status"] or "pending" in s["by_status"]'
 
           docker compose logs worker | grep '"msg":"notification_worker_started"'
