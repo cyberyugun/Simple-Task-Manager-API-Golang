@@ -346,23 +346,24 @@ func (r *PostgresEnterpriseIdentityRepository) UpsertOIDCConnection(connection m
 	}
 	err = r.db.QueryRow(`
 		INSERT INTO oidc_connections
-			(workspace_id, issuer_url, client_id, client_secret_ref, scopes, enabled, updated_by_user_id, updated_at)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+			(workspace_id, issuer_url, client_id, client_secret_ref, redirect_uri, scopes, enabled, updated_by_user_id, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
 		ON CONFLICT (workspace_id) DO UPDATE SET
 			issuer_url = EXCLUDED.issuer_url,
 			client_id = EXCLUDED.client_id,
 			client_secret_ref = EXCLUDED.client_secret_ref,
+			redirect_uri = EXCLUDED.redirect_uri,
 			scopes = EXCLUDED.scopes,
 			enabled = EXCLUDED.enabled,
 			updated_by_user_id = EXCLUDED.updated_by_user_id,
 			updated_at = EXCLUDED.updated_at
-		RETURNING workspace_id, issuer_url, client_id, client_secret_ref, scopes,
+		RETURNING workspace_id, issuer_url, client_id, client_secret_ref, redirect_uri, scopes,
 		          enabled, updated_by_user_id, updated_at
 	`, connection.WorkspaceID, connection.IssuerURL, connection.ClientID, connection.ClientSecretRef,
-		string(scopes), connection.Enabled, connection.UpdatedByUserID, connection.UpdatedAt,
+		connection.RedirectURI, string(scopes), connection.Enabled, connection.UpdatedByUserID, connection.UpdatedAt,
 	).Scan(
 		&connection.WorkspaceID, &connection.IssuerURL, &connection.ClientID, &connection.ClientSecretRef,
-		&scopes, &connection.Enabled, &connection.UpdatedByUserID, &connection.UpdatedAt,
+		&connection.RedirectURI, &scopes, &connection.Enabled, &connection.UpdatedByUserID, &connection.UpdatedAt,
 	)
 	if err != nil {
 		return model.OIDCConnection{}, err
@@ -375,13 +376,13 @@ func (r *PostgresEnterpriseIdentityRepository) GetOIDCConnection(workspaceID int
 	var connection model.OIDCConnection
 	var scopes []byte
 	err := r.db.QueryRow(`
-		SELECT workspace_id, issuer_url, client_id, client_secret_ref, scopes,
+		SELECT workspace_id, issuer_url, client_id, client_secret_ref, redirect_uri, scopes,
 		       enabled, updated_by_user_id, updated_at
 		FROM oidc_connections
 		WHERE workspace_id = $1
 	`, workspaceID).Scan(
 		&connection.WorkspaceID, &connection.IssuerURL, &connection.ClientID, &connection.ClientSecretRef,
-		&scopes, &connection.Enabled, &connection.UpdatedByUserID, &connection.UpdatedAt,
+		&connection.RedirectURI, &scopes, &connection.Enabled, &connection.UpdatedByUserID, &connection.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.OIDCConnection{}, ErrOIDCConnection
