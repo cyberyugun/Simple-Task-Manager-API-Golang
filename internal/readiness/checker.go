@@ -42,6 +42,7 @@ func (c *Checker) Handler(w http.ResponseWriter, r *http.Request) {
 
 	if c.db != nil {
 		if err := c.db.PingContext(ctx); err != nil {
+			c.metrics.SetDependencyReady("postgresql", false)
 			c.metrics.ObserveReadiness(false)
 			response.JSON(w, http.StatusServiceUnavailable, response.Envelope{
 				Success: false,
@@ -49,10 +50,12 @@ func (c *Checker) Handler(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		c.metrics.SetDependencyReady("postgresql", true)
 	}
 
 	if c.redis != nil {
 		if err := c.redis.Ping(ctx).Err(); err != nil {
+			c.metrics.SetDependencyReady("redis", false)
 			c.metrics.ObserveReadiness(false)
 			response.JSON(w, http.StatusServiceUnavailable, response.Envelope{
 				Success: false,
@@ -60,6 +63,7 @@ func (c *Checker) Handler(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		c.metrics.SetDependencyReady("redis", true)
 	}
 
 	c.metrics.ObserveReadiness(true)
