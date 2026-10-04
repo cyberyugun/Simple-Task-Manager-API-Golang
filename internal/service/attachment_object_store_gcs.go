@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"go-simple-task-api/internal/model"
 )
 
 const gcsV4Algorithm = "GOOG4-RSA-SHA256"
@@ -509,4 +508,3 @@ func validGCSObjectKey(value string) bool {
 }
 
 var _ ObjectStore = (*GCSObjectStore)(nil)
-var _ = model.AttachmentProviderGCS
