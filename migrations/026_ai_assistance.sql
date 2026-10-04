@@ -77,6 +77,9 @@ CREATE TABLE IF NOT EXISTS ai_evaluation_runs (
     provider TEXT NOT NULL,
     model TEXT NOT NULL DEFAULT '',
     score_basis_points INTEGER NOT NULL CHECK (score_basis_points BETWEEN 0 AND 10000),
+    input_units BIGINT NOT NULL DEFAULT 0 CHECK (input_units >= 0),
+    output_units BIGINT NOT NULL DEFAULT 0 CHECK (output_units >= 0),
+    actual_cost_cents BIGINT NOT NULL DEFAULT 0 CHECK (actual_cost_cents >= 0),
     passed BOOLEAN NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(metadata) = 'object'),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
