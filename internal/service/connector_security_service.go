@@ -507,9 +507,14 @@ func (s *ConnectorSecurityService) persistCredential(connection model.Integratio
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	encrypted, err := s.cipher.Encrypt(raw)
-	if err != nil {
+	meta, err := s.repo.GetCredentialMetadata(connection.OrganizationID, connection.ID)
+	if errors.Is(err, repository.ErrConnectorCredentialNotFound) {
+		meta = defaultCredentialMetadata(connection)
+	} else if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
+	}
+	if !s.backendConfigured(meta.SecretBackend) {
+		return model.ConnectorCredentialMetadata{}, ErrConnectorSecretBackendUnavailable
 	}
 	now := time.Now().UTC()
 	connection.Status = model.IntegrationConnectionActive
@@ -517,14 +522,22 @@ func (s *ConnectorSecurityService) persistCredential(connection model.Integratio
 		connection.UpdatedByUserID = actorUserID
 	}
 	connection.UpdatedAt = now
-	if _, err := s.integrations.UpdateIntegrationConnection(connection, &encrypted); err != nil {
+	ref := strings.TrimSpace(meta.SecretRef)
+	if ref == "" {
+		ref = connectorSecretRef(connection.OrganizationID, connection.ID)
+	}
+	keyVersion, err := s.writeCredentialPayload(context.Background(), connection, meta.SecretBackend, ref, raw)
+	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	meta, err := s.repo.GetCredentialMetadata(connection.OrganizationID, connection.ID)
-	if errors.Is(err, repository.ErrConnectorCredentialNotFound) {
-		meta = defaultCredentialMetadata(connection)
-	} else if err != nil {
-		return model.ConnectorCredentialMetadata{}, err
+	if meta.SecretBackend != model.ConnectorSecretBackendDatabase {
+		if _, err := s.integrations.UpdateIntegrationConnection(connection, nil); err != nil {
+			return model.ConnectorCredentialMetadata{}, err
+		}
+	}
+	meta.SecretRef = ref
+	if keyVersion > 0 {
+		meta.KeyVersion = keyVersion
 	}
 	meta.Status = model.ConnectorCredentialActive
 	meta.GrantedScopes = append([]string(nil), scopes...)
@@ -546,12 +559,51 @@ func (s *ConnectorSecurityService) persistCredential(connection model.Integratio
 	return meta, err
 }
 
-func (s *ConnectorSecurityService) readCredentials(connectionID int64) (map[string]any, error) {
+func (s *ConnectorSecurityService) CredentialsForConnection(ctx context.Context, connectionID int64) (map[string]any, error) {
 	secretRow, err := s.integrations.GetIntegrationConnectionSecret(connectionID)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := s.cipher.Decrypt(secretRow.EncryptedCredentials)
+	meta, metaErr := s.repo.GetCredentialMetadata(secretRow.OrganizationID, connectionID)
+	if errors.Is(metaErr, repository.ErrConnectorCredentialNotFound) || meta.SecretBackend == "" ||
+		meta.SecretBackend == model.ConnectorSecretBackendDatabase {
+		return s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+	}
+	if metaErr != nil {
+		return nil, metaErr
+	}
+	store, ok := s.secretStores[meta.SecretBackend]
+	if !ok {
+		if strings.TrimSpace(secretRow.EncryptedCredentials) != "" {
+			return s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+		}
+		return nil, ErrConnectorSecretBackendUnavailable
+	}
+	raw, version, err := store.Get(ctx, meta.SecretRef)
+	if err != nil {
+		return nil, err
+	}
+	if version > 0 && meta.KeyVersion != version {
+		meta.KeyVersion = version
+		meta.UpdatedAt = time.Now().UTC()
+		_, _ = s.repo.UpsertCredentialMetadata(meta)
+	}
+	var credentials map[string]any
+	if err := json.Unmarshal(raw, &credentials); err != nil {
+		return nil, fmt.Errorf("%w: invalid connector credential payload", ErrConnectorSecretStore)
+	}
+	return credentials, nil
+}
+
+func (s *ConnectorSecurityService) readCredentials(connectionID int64) (map[string]any, error) {
+	return s.CredentialsForConnection(context.Background(), connectionID)
+}
+
+func (s *ConnectorSecurityService) decryptDatabaseCredentials(encrypted string) (map[string]any, error) {
+	if strings.TrimSpace(encrypted) == "" {
+		return nil, ErrConnectorSecretBackendUnavailable
+	}
+	raw, err := s.cipher.Decrypt(encrypted)
 	if err != nil {
 		return nil, err
 	}
@@ -560,6 +612,39 @@ func (s *ConnectorSecurityService) readCredentials(connectionID int64) (map[stri
 		return nil, err
 	}
 	return credentials, nil
+}
+
+func (s *ConnectorSecurityService) writeCredentialPayload(ctx context.Context, connection model.IntegrationConnection, backend, ref string, raw []byte) (int, error) {
+	if backend == model.ConnectorSecretBackendDatabase {
+		encrypted, err := s.cipher.Encrypt(raw)
+		if err != nil {
+			return 0, err
+		}
+		if _, err := s.integrations.UpdateIntegrationConnection(connection, &encrypted); err != nil {
+			return 0, err
+		}
+		return maxConnectorInt(1, time.Now().UTC().Nanosecond()), nil
+	}
+	store, ok := s.secretStores[backend]
+	if !ok {
+		return 0, ErrConnectorSecretBackendUnavailable
+	}
+	version, err := store.Put(ctx, ref, raw)
+	if err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+func connectorSecretRef(organizationID, connectionID int64) string {
+	return fmt.Sprintf("org/%d/integration/%d", organizationID, connectionID)
+}
+
+func maxConnectorInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (s *ConnectorSecurityService) exchangeToken(connection model.IntegrationConnection, values url.Values) (map[string]any, error) {
