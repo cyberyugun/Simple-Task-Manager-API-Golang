@@ -1,5 +1,21 @@
 # API Changelog
 
+## 1.6.0 — Phase 42
+
+Compatibility line: **v1**.
+
+Additive global multi-region and data-residency release:
+
+- adds organization home-region, allowed-region, failover-region, RPO and RTO policy
+- adds regional resource-placement inventory for database, storage, metadata and other governed resources
+- adds governed region-migration request, approval/rejection, checkpoint and completion lifecycle
+- adds governed cross-region transfer approval, audit and completion lifecycle
+- adds failover game-day evidence with measured RPO/RTO compliance
+- integrates attached workspace `allowed_data_regions` and `restrict_cross_region_transfer` governance controls
+- adds provider-neutral primary/failover routing intent and residency compliance reporting
+- preserves all existing v1 paths, operation IDs, request requirements and response fields
+
+
 ## 1.5.0 — Phase 24
 
 Compatibility line: **v1**.
