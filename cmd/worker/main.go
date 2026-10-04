@@ -99,6 +99,21 @@ func main() {
 		logger.Error("notification_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	attachmentPoll, err := durationEnv("ATTACHMENT_SCAN_POLL_INTERVAL", 5*time.Second)
+	if err != nil {
+		logger.Error("attachment_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	attachmentRetentionPoll, err := durationEnv("ATTACHMENT_RETENTION_POLL_INTERVAL", time.Hour)
+	if err != nil {
+		logger.Error("attachment_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	attachmentBatch, err := intEnv("ATTACHMENT_BATCH_SIZE", 50)
+	if err != nil {
+		logger.Error("attachment_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	allowInsecure, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("WEBHOOK_ALLOW_INSECURE_HTTP")))
 	host, _ := os.Hostname()
 	workerID := fmt.Sprintf("%s-%d", host, os.Getpid())
@@ -163,6 +178,35 @@ func main() {
 		notificationBatch,
 		logger,
 	)
+
+	attachmentConfig := service.AttachmentConfig{
+		Provider: strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_PROVIDER")),
+		Bucket: strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BUCKET")),
+		BaseURL: strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BASE_URL")),
+		SigningSecret: strings.TrimSpace(os.Getenv("ATTACHMENT_SIGNING_SECRET")),
+		Encryption: strings.TrimSpace(os.Getenv("ATTACHMENT_ENCRYPTION")),
+		EncryptionKeyID: strings.TrimSpace(os.Getenv("ATTACHMENT_ENCRYPTION_KEY_ID")),
+		Deduplicate: strings.EqualFold(strings.TrimSpace(os.Getenv("ATTACHMENT_DEDUPLICATE")), "true"),
+		AllowInsecure: allowInsecure,
+	}
+	if attachmentConfig.SigningSecret == "" {
+		attachmentConfig.SigningSecret = strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	}
+	attachmentStore, err := service.NewSignedObjectStore(attachmentConfig)
+	if err != nil {
+		logger.Error("attachment_storage_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	attachmentService := service.NewAttachmentService(
+		repository.NewPostgresAttachmentRepository(db),
+		repository.NewPostgresTaskRepository(db),
+		repository.NewPostgresTaskCollaborationRepository(db),
+		repository.NewPostgresWorkspaceRepository(db),
+		attachmentStore,
+		service.NoopAttachmentScanner{},
+		attachmentConfig,
+	)
+	go runAttachmentPlatform(ctx, attachmentService, attachmentPoll, attachmentRetentionPoll, attachmentBatch, logger)
 
 	integrationCipher, err := service.NewIntegrationCredentialCipher(os.Getenv("JWT_SECRET"))
 	if err != nil {
@@ -369,6 +413,49 @@ func runNotificationPlatform(
 			processDeliveries()
 		case <-scheduleTicker.C:
 			processScheduled()
+		}
+	}
+}
+
+
+func runAttachmentPlatform(ctx context.Context, attachments *service.AttachmentService, scanPoll, retentionPoll time.Duration, batch int, logger *slog.Logger) {
+	logger.Info("attachment_worker_started", "scan_poll_interval", scanPoll, "retention_poll_interval", retentionPoll, "batch_size", batch)
+	scanTicker := time.NewTicker(scanPoll)
+	retentionTicker := time.NewTicker(retentionPoll)
+	defer scanTicker.Stop()
+	defer retentionTicker.Stop()
+
+	runScan := func() {
+		items, err := attachments.ProcessPendingScans(batch)
+		if err != nil {
+			logger.Error("attachment_scan_batch_failed", "error", err)
+			return
+		}
+		for _, item := range items {
+			logger.Info("attachment_scan_completed", "workspace_id", item.WorkspaceID, "attachment_id", item.ID, "status", item.Status, "engine", item.ScanEngine)
+		}
+	}
+	runRetention := func() {
+		items, err := attachments.ProcessRetention(batch)
+		if err != nil {
+			logger.Error("attachment_retention_batch_failed", "error", err)
+			return
+		}
+		for _, item := range items {
+			logger.Info("attachment_retention_deleted", "workspace_id", item.WorkspaceID, "attachment_id", item.ID)
+		}
+	}
+	runScan()
+	runRetention()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("attachment_worker_stopped")
+			return
+		case <-scanTicker.C:
+			runScan()
+		case <-retentionTicker.C:
+			runRetention()
 		}
 	}
 }
