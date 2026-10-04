@@ -86,7 +86,7 @@ func TestIntegrationPostgresZeroTrustSecurity(t *testing.T) {
 
 	workload, err := zero.CreateWorkload(owner.ID, org.ID, model.CreateWorkloadIdentityRequest{
 		WorkspaceID: workspace.ID, Name: "integration-worker",
-		SPIFFEID: "spiffe://simple-task-manager/workload/integration",
+		SPIFFEID:      "spiffe://simple-task-manager/workload/integration",
 		AllowedScopes: []string{model.ScopeTasksRead}, MTLSRequired: true,
 	})
 	if err != nil {
@@ -157,12 +157,12 @@ func integrationWorkloadCertificate(t *testing.T, spiffeID string) (string, stri
 	now := time.Now().UTC()
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(4301),
-		Subject: pkix.Name{CommonName: "phase43-integration-worker"},
-		NotBefore: now.Add(-time.Minute),
-		NotAfter: now.Add(24 * time.Hour),
-		KeyUsage: x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-		URIs: []*url.URL{uri},
+		Subject:      pkix.Name{CommonName: "phase43-integration-worker"},
+		NotBefore:    now.Add(-time.Minute),
+		NotAfter:     now.Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		URIs:         []*url.URL{uri},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
