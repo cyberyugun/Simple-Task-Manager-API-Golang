@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -245,4 +246,113 @@ func TestGCPSecretManagerRejectsUnsafeConfiguration(t *testing.T) {
 
 func strconvItoa(value int) string {
 	return fmt.Sprintf("%d", value)
+}
+
+
+func TestConnectorGCPMigrationBecomesAuthoritativeForRuntimeDelivery(t *testing.T) {
+	secrets, _ := newGCPSecretManagerTestServer(t, "gcp-runtime-token")
+	defer secrets.Close()
+
+	var seenAuthorization string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenAuthorization = r.Header.Get("Authorization")
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+
+	now := time.Now().UTC()
+	orgs := repository.NewInMemoryOrganizationRepository()
+	org, err := orgs.CreateOrganization(model.Organization{
+		Name: "GCP Secret Org", Status: model.OrganizationStatusActive, OwnerUserID: 7,
+		CreatedByUserID: 7, MaxMembers: 20, MaxWorkspaces: 20, CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	integrations := repository.NewInMemoryIntegrationRepository()
+	securityRepo := repository.NewInMemoryConnectorSecurityRepository()
+	cipher, err := NewIntegrationCredentialCipher("unit-test-gcp-runtime-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	integrationSvc := NewIntegrationService(integrations, orgs, cipher, true)
+	connection, err := integrationSvc.CreateConnection(7, org.ID, model.CreateIntegrationConnectionRequest{
+		Provider: model.IntegrationProviderGitHub, Name: "GCP-backed GitHub",
+		AuthType: model.IntegrationAuthBearerToken, Config: map[string]any{"target_url": target.URL},
+		Credentials: map[string]any{"access_token": "token-before-gcp"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	securitySvc := NewConnectorSecurityService(securityRepo, integrations, orgs, cipher, true)
+	gcpStore, err := NewGCPSecretManagerSecretStore(GCPSecretManagerConfig{
+		ProjectID: "test-project", Endpoint: secrets.URL,
+		AccessToken: "gcp-runtime-token", AllowInsecure: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	securitySvc.RegisterSecretStore(gcpStore)
+	integrationSvc.SetCredentialProvider(securitySvc)
+
+	var configured bool
+	for _, backend := range securitySvc.SecretBackends() {
+		if backend.Key == model.ConnectorSecretBackendGCP {
+			configured = backend.Configured && backend.NativeAdapter
+		}
+	}
+	if !configured {
+		t.Fatal("GCP backend should be configured and native")
+	}
+
+	meta, err := securitySvc.Rotate(7, org.ID, connection.ID, model.RotateConnectorCredentialRequest{
+		SecretBackend: model.ConnectorSecretBackendGCP,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.SecretBackend != model.ConnectorSecretBackendGCP || meta.KeyVersion != 1 {
+		t.Fatalf("metadata=%+v", meta)
+	}
+	dbSecret, err := integrations.GetIntegrationConnectionSecret(connection.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dbSecret.EncryptedCredentials != "" {
+		t.Fatal("database credential copy was not scrubbed after GCP migration")
+	}
+
+	if _, err := integrationSvc.QueueDelivery(7, org.ID, model.CreateIntegrationDeliveryRequest{
+		ConnectionID: connection.ID, EventType: "task.updated", Payload: map[string]any{"id": 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := integrationSvc.ProcessBatch("gcp-test-worker", 10); err != nil {
+		t.Fatal(err)
+	}
+	if seenAuthorization != "Bearer token-before-gcp" {
+		t.Fatalf("authorization=%q", seenAuthorization)
+	}
+
+	connection, err = integrationSvc.UpdateConnection(7, org.ID, connection.ID, model.UpdateIntegrationConnectionRequest{
+		Name: connection.Name, Status: model.IntegrationConnectionActive,
+		Config: map[string]any{"target_url": target.URL},
+		Credentials: map[string]any{"access_token": "token-after-gcp"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := integrationSvc.QueueDelivery(7, org.ID, model.CreateIntegrationDeliveryRequest{
+		ConnectionID: connection.ID, EventType: "task.completed", Payload: map[string]any{"id": 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := integrationSvc.ProcessBatch("gcp-test-worker", 10); err != nil {
+		t.Fatal(err)
+	}
+	if seenAuthorization != "Bearer token-after-gcp" {
+		t.Fatalf("updated authorization=%q", seenAuthorization)
+	}
 }
