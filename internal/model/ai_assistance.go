@@ -43,80 +43,80 @@ type AIPolicy struct {
 }
 
 type AIProviderCapability struct {
-	Key                       string   `json:"key"`
-	DisplayName               string   `json:"display_name"`
-	Configured                bool     `json:"configured"`
-	External                  bool     `json:"external"`
-	StructuredOutput          bool     `json:"structured_output"`
-	SupportedClassifications  []string `json:"supported_classifications"`
+	Key                      string   `json:"key"`
+	DisplayName              string   `json:"display_name"`
+	Configured               bool     `json:"configured"`
+	External                 bool     `json:"external"`
+	StructuredOutput         bool     `json:"structured_output"`
+	SupportedClassifications []string `json:"supported_classifications"`
 }
 
 type AIRequest struct {
-	ID                int64          `json:"id"`
-	OrganizationID    int64          `json:"organization_id"`
-	WorkspaceID       *int64         `json:"workspace_id,omitempty"`
-	Feature           string         `json:"feature"`
-	Status            string         `json:"status"`
-	Provider          string         `json:"provider"`
-	Model             string         `json:"model"`
-	Classification    string         `json:"classification"`
-	InputHash         string         `json:"input_hash"`
-	RedactionCount    int            `json:"redaction_count"`
-	PromptMetadata    map[string]any `json:"prompt_metadata"`
-	StructuredResult  map[string]any `json:"structured_result"`
-	ProposedAction    map[string]any `json:"proposed_action,omitempty"`
-	RequiresApproval  bool           `json:"requires_approval"`
-	DestructiveAction bool           `json:"destructive_action"`
-	InputUnits        int64          `json:"input_units"`
-	OutputUnits       int64          `json:"output_units"`
-	EstimatedCostCents int64         `json:"estimated_cost_cents"`
-	ActualCostCents   int64          `json:"actual_cost_cents"`
-	CreatedByUserID   int64          `json:"created_by_user_id"`
-	CreatedAt         time.Time      `json:"created_at"`
-	DecidedByUserID   *int64         `json:"decided_by_user_id,omitempty"`
-	DecisionComment   string         `json:"decision_comment,omitempty"`
-	DecidedAt         *time.Time     `json:"decided_at,omitempty"`
+	ID                 int64          `json:"id"`
+	OrganizationID     int64          `json:"organization_id"`
+	WorkspaceID        *int64         `json:"workspace_id,omitempty"`
+	Feature            string         `json:"feature"`
+	Status             string         `json:"status"`
+	Provider           string         `json:"provider"`
+	Model              string         `json:"model"`
+	Classification     string         `json:"classification"`
+	InputHash          string         `json:"input_hash"`
+	RedactionCount     int            `json:"redaction_count"`
+	PromptMetadata     map[string]any `json:"prompt_metadata"`
+	StructuredResult   map[string]any `json:"structured_result"`
+	ProposedAction     map[string]any `json:"proposed_action,omitempty"`
+	RequiresApproval   bool           `json:"requires_approval"`
+	DestructiveAction  bool           `json:"destructive_action"`
+	InputUnits         int64          `json:"input_units"`
+	OutputUnits        int64          `json:"output_units"`
+	EstimatedCostCents int64          `json:"estimated_cost_cents"`
+	ActualCostCents    int64          `json:"actual_cost_cents"`
+	CreatedByUserID    int64          `json:"created_by_user_id"`
+	CreatedAt          time.Time      `json:"created_at"`
+	DecidedByUserID    *int64         `json:"decided_by_user_id,omitempty"`
+	DecisionComment    string         `json:"decision_comment,omitempty"`
+	DecidedAt          *time.Time     `json:"decided_at,omitempty"`
 }
 
 type AIUsageSummary struct {
-	OrganizationID     int64  `json:"organization_id"`
-	Month              string `json:"month"`
-	BudgetCents        int64  `json:"budget_cents"`
-	SpentCents         int64  `json:"spent_cents"`
-	RemainingCents     int64  `json:"remaining_cents"`
-	RequestCount       int64  `json:"request_count"`
-	InputUnits         int64  `json:"input_units"`
-	OutputUnits        int64  `json:"output_units"`
-	BudgetUtilization  int    `json:"budget_utilization_percent"`
+	OrganizationID    int64  `json:"organization_id"`
+	Month             string `json:"month"`
+	BudgetCents       int64  `json:"budget_cents"`
+	SpentCents        int64  `json:"spent_cents"`
+	RemainingCents    int64  `json:"remaining_cents"`
+	RequestCount      int64  `json:"request_count"`
+	InputUnits        int64  `json:"input_units"`
+	OutputUnits       int64  `json:"output_units"`
+	BudgetUtilization int    `json:"budget_utilization_percent"`
 }
 
 type AIEvaluationCase struct {
-	ID                int64          `json:"id"`
-	OrganizationID    int64          `json:"organization_id"`
-	Name              string         `json:"name"`
-	Feature           string         `json:"feature"`
-	Input             string         `json:"input"`
-	Classification    string         `json:"classification"`
-	ExpectedKeywords  []string       `json:"expected_keywords"`
-	Metadata          map[string]any `json:"metadata,omitempty"`
-	CreatedByUserID   int64          `json:"created_by_user_id"`
-	CreatedAt         time.Time      `json:"created_at"`
-	UpdatedAt         time.Time      `json:"updated_at"`
+	ID               int64          `json:"id"`
+	OrganizationID   int64          `json:"organization_id"`
+	Name             string         `json:"name"`
+	Feature          string         `json:"feature"`
+	Input            string         `json:"input"`
+	Classification   string         `json:"classification"`
+	ExpectedKeywords []string       `json:"expected_keywords"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
+	CreatedByUserID  int64          `json:"created_by_user_id"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
 }
 
 type AIEvaluationRun struct {
-	ID             int64          `json:"id"`
-	OrganizationID int64          `json:"organization_id"`
-	CaseID         int64          `json:"case_id"`
-	Provider       string         `json:"provider"`
-	Model          string         `json:"model"`
-	ScoreBasisPoints int          `json:"score_basis_points"`
+	ID               int64          `json:"id"`
+	OrganizationID   int64          `json:"organization_id"`
+	CaseID           int64          `json:"case_id"`
+	Provider         string         `json:"provider"`
+	Model            string         `json:"model"`
+	ScoreBasisPoints int            `json:"score_basis_points"`
 	InputUnits       int64          `json:"input_units"`
 	OutputUnits      int64          `json:"output_units"`
 	ActualCostCents  int64          `json:"actual_cost_cents"`
-	Passed         bool           `json:"passed"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
+	Passed           bool           `json:"passed"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
 }
 
 type AIQualitySummary struct {

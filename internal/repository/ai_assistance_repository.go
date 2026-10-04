@@ -45,13 +45,13 @@ type InMemoryAIAssistanceRepository struct {
 
 func NewInMemoryAIAssistanceRepository() *InMemoryAIAssistanceRepository {
 	return &InMemoryAIAssistanceRepository{
-		policies: make(map[int64]model.AIPolicy),
-		requests: make(map[int64]model.AIRequest),
-		cases: make(map[int64]model.AIEvaluationCase),
-		runs: make(map[int64]model.AIEvaluationRun),
-		nextReqID: 1,
+		policies:   make(map[int64]model.AIPolicy),
+		requests:   make(map[int64]model.AIRequest),
+		cases:      make(map[int64]model.AIEvaluationCase),
+		runs:       make(map[int64]model.AIEvaluationRun),
+		nextReqID:  1,
 		nextCaseID: 1,
-		nextRunID: 1,
+		nextRunID:  1,
 	}
 }
 

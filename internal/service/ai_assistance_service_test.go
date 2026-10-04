@@ -15,7 +15,7 @@ type externalTestAIProvider struct{}
 
 func (externalTestAIProvider) Key() string         { return "external_test" }
 func (externalTestAIProvider) DisplayName() string { return "External Test" }
-func (externalTestAIProvider) External() bool       { return true }
+func (externalTestAIProvider) External() bool      { return true }
 func (externalTestAIProvider) SupportedClassifications() []string {
 	return []string{
 		model.DataClassificationPublic,
@@ -27,8 +27,8 @@ func (externalTestAIProvider) SupportedClassifications() []string {
 func (externalTestAIProvider) EstimateCostCents(AIProviderRequest) int64 { return 1 }
 func (externalTestAIProvider) Generate(_ context.Context, req AIProviderRequest) (AIProviderResponse, error) {
 	return AIProviderResponse{
-		Model: "external-test-v1",
-		Result: map[string]any{"summary": req.Text},
+		Model:      "external-test-v1",
+		Result:     map[string]any{"summary": req.Text},
 		InputUnits: 1, OutputUnits: 1, ActualCostCents: 1,
 	}, nil
 }
@@ -74,7 +74,7 @@ func TestAIAssistanceRedactionApprovalSemanticSearchAndQuality(t *testing.T) {
 			model.DataClassificationInternal,
 			model.DataClassificationConfidential,
 		},
-		ExternalMaxClassification: model.DataClassificationInternal,
+		ExternalMaxClassification:      model.DataClassificationInternal,
 		RequireHumanApprovalForActions: true,
 	})
 	if err != nil || !policy.Enabled {
@@ -85,7 +85,7 @@ func TestAIAssistanceRedactionApprovalSemanticSearchAndQuality(t *testing.T) {
 	task, err := tasks.Create(model.Task{
 		WorkspaceID: workspaceID, UserID: 7, Title: "Fix login authentication issue",
 		Description: "contact dev@example.com password=demo123 before release",
-		Status: model.TaskStatusTodo, Priority: model.TaskPriorityMedium,
+		Status:      model.TaskStatusTodo, Priority: model.TaskPriorityMedium,
 		CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
@@ -148,7 +148,7 @@ func TestAIAssistanceRedactionApprovalSemanticSearchAndQuality(t *testing.T) {
 
 	testCase, err := svc.CreateEvaluationCase(7, orgID, model.CreateAIEvaluationCaseRequest{
 		Name: "Summary baseline", Feature: model.AIFeatureTaskSummary,
-		Input: "Ship the governed AI assistance implementation",
+		Input:            "Ship the governed AI assistance implementation",
 		ExpectedKeywords: []string{"governed", "assistance"},
 	})
 	if err != nil {
@@ -169,8 +169,8 @@ func TestAIAssistanceBudgetAndClassificationRouting(t *testing.T) {
 	if _, err := svc.UpdatePolicy(7, orgID, model.UpdateAIPolicyRequest{
 		Enabled: true, Provider: model.AIProviderLocalRules, MonthlyBudgetCents: 1,
 		RedactionEnabled: true, MaxInputChars: 12000,
-		AllowedClassifications: []string{model.DataClassificationInternal},
-		ExternalMaxClassification: model.DataClassificationInternal,
+		AllowedClassifications:         []string{model.DataClassificationInternal},
+		ExternalMaxClassification:      model.DataClassificationInternal,
 		RequireHumanApprovalForActions: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -194,7 +194,7 @@ func TestAIAssistanceBudgetAndClassificationRouting(t *testing.T) {
 			model.DataClassificationConfidential,
 			model.DataClassificationRestricted,
 		},
-		ExternalMaxClassification: model.DataClassificationInternal,
+		ExternalMaxClassification:      model.DataClassificationInternal,
 		RequireHumanApprovalForActions: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -212,8 +212,8 @@ func TestAIAssistanceDestructiveActionRequiresExplicitApproval(t *testing.T) {
 	if _, err := svc.UpdatePolicy(7, orgID, model.UpdateAIPolicyRequest{
 		Enabled: true, Provider: model.AIProviderLocalRules, MonthlyBudgetCents: 100,
 		RedactionEnabled: true, MaxInputChars: 12000,
-		AllowedClassifications: []string{model.DataClassificationInternal},
-		ExternalMaxClassification: model.DataClassificationInternal,
+		AllowedClassifications:         []string{model.DataClassificationInternal},
+		ExternalMaxClassification:      model.DataClassificationInternal,
 		RequireHumanApprovalForActions: true,
 	}); err != nil {
 		t.Fatal(err)

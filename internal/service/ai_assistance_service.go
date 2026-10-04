@@ -98,7 +98,7 @@ type localRulesAIProvider struct{}
 
 func (localRulesAIProvider) Key() string         { return model.AIProviderLocalRules }
 func (localRulesAIProvider) DisplayName() string { return "Local Rules Intelligence" }
-func (localRulesAIProvider) External() bool       { return false }
+func (localRulesAIProvider) External() bool      { return false }
 func (localRulesAIProvider) SupportedClassifications() []string {
 	return []string{
 		model.DataClassificationPublic,
@@ -234,7 +234,7 @@ func (s *AIAssistanceService) UpdatePolicy(actorUserID, organizationID int64, re
 		MonthlyBudgetCents: req.MonthlyBudgetCents, RedactionEnabled: req.RedactionEnabled,
 		MaxInputChars: maxInput, AllowedClassifications: allowed, ExternalMaxClassification: externalMax,
 		RequireHumanApprovalForActions: req.RequireHumanApprovalForActions,
-		UpdatedByUserID: actorUserID, CreatedAt: createdAt, UpdatedAt: now,
+		UpdatedByUserID:                actorUserID, CreatedAt: createdAt, UpdatedAt: now,
 	})
 	if err == nil {
 		_ = s.audit(organizationID, &actorUserID, "ai.policy.updated", "ai_policy", fmt.Sprint(organizationID), map[string]any{
@@ -560,7 +560,7 @@ func (s *AIAssistanceService) RunEvaluation(ctx context.Context, actorUserID, or
 		OrganizationID: organizationID, CaseID: caseID, Provider: provider.Key(), Model: result.Model,
 		ScoreBasisPoints: score, InputUnits: result.InputUnits, OutputUnits: result.OutputUnits,
 		ActualCostCents: result.ActualCostCents, Passed: score >= 7000,
-		Metadata: map[string]any{"expected_keywords": len(testCase.ExpectedKeywords), "matched_keywords": matched, "redaction_count": redactionCount},
+		Metadata:  map[string]any{"expected_keywords": len(testCase.ExpectedKeywords), "matched_keywords": matched, "redaction_count": redactionCount},
 		CreatedAt: now,
 	})
 	if err == nil {
@@ -760,8 +760,8 @@ func (s *AIAssistanceService) policyOrDefault(organizationID int64) (model.AIPol
 	return model.AIPolicy{
 		OrganizationID: organizationID, Enabled: false, Provider: model.AIProviderLocalRules,
 		MonthlyBudgetCents: 0, RedactionEnabled: true, MaxInputChars: 12000,
-		AllowedClassifications: []string{model.DataClassificationPublic, model.DataClassificationInternal},
-		ExternalMaxClassification: model.DataClassificationInternal,
+		AllowedClassifications:         []string{model.DataClassificationPublic, model.DataClassificationInternal},
+		ExternalMaxClassification:      model.DataClassificationInternal,
 		RequireHumanApprovalForActions: true,
 	}, nil
 }
@@ -882,8 +882,8 @@ func containsAIString(values []string, target string) bool {
 }
 
 var (
-	aiEmailPattern = regexp.MustCompile(`(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b`)
-	aiPhonePattern = regexp.MustCompile(`\b(?:\+?\d[\d .()-]{7,}\d)\b`)
+	aiEmailPattern  = regexp.MustCompile(`(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b`)
+	aiPhonePattern  = regexp.MustCompile(`\b(?:\+?\d[\d .()-]{7,}\d)\b`)
 	aiBearerPattern = regexp.MustCompile(`(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}\b`)
 	aiSecretPattern = regexp.MustCompile(`(?i)\b(api[_-]?key|secret|token|password)\s*[:=]\s*[^\s,;]{4,}`)
 )

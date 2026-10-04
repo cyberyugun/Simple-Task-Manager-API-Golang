@@ -81,7 +81,7 @@ func TestIntegrationPostgresAIAssistance(t *testing.T) {
 			model.DataClassificationInternal,
 			model.DataClassificationConfidential,
 		},
-		ExternalMaxClassification: model.DataClassificationInternal,
+		ExternalMaxClassification:      model.DataClassificationInternal,
 		RequireHumanApprovalForActions: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -90,7 +90,7 @@ func TestIntegrationPostgresAIAssistance(t *testing.T) {
 	task, err := tasks.Create(model.Task{
 		WorkspaceID: workspace.ID, UserID: owner.ID, Title: "Fix payment login",
 		Description: "Reach finance@example.com and improve this customer issue",
-		Status: model.TaskStatusTodo, Priority: model.TaskPriorityMedium,
+		Status:      model.TaskStatusTodo, Priority: model.TaskPriorityMedium,
 		CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
