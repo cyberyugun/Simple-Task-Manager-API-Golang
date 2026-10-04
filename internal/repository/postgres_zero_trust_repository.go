@@ -119,15 +119,15 @@ func (r *PostgresZeroTrustRepository) CreateWorkload(item model.WorkloadIdentity
 	var out []byte
 	err = r.db.QueryRow(`
 		INSERT INTO workload_identities (
-			organization_id, name, spiffe_id, status, allowed_scopes, mtls_required,
+			organization_id, workspace_id, name, spiffe_id, status, allowed_scopes, mtls_required,
 			created_by_user_id, created_at, updated_at, revoked_at, last_authenticated_at
-		) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11)
-		RETURNING id, organization_id, name, spiffe_id, status, allowed_scopes, mtls_required,
+		) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12)
+		RETURNING id, organization_id, workspace_id, name, spiffe_id, status, allowed_scopes, mtls_required,
 		          created_by_user_id, created_at, updated_at, revoked_at, last_authenticated_at
-	`, item.OrganizationID, item.Name, item.SPIFFEID, item.Status, string(raw), item.MTLSRequired,
+	`, item.OrganizationID, item.WorkspaceID, item.Name, item.SPIFFEID, item.Status, string(raw), item.MTLSRequired,
 		item.CreatedByUserID, item.CreatedAt, item.UpdatedAt, item.RevokedAt, item.LastAuthenticatedAt,
 	).Scan(
-		&item.ID, &item.OrganizationID, &item.Name, &item.SPIFFEID, &item.Status, &out, &item.MTLSRequired,
+		&item.ID, &item.OrganizationID, &item.WorkspaceID, &item.Name, &item.SPIFFEID, &item.Status, &out, &item.MTLSRequired,
 		&item.CreatedByUserID, &item.CreatedAt, &item.UpdatedAt, &item.RevokedAt, &item.LastAuthenticatedAt,
 	)
 	if err != nil {
@@ -141,7 +141,7 @@ func (r *PostgresZeroTrustRepository) CreateWorkload(item model.WorkloadIdentity
 
 func (r *PostgresZeroTrustRepository) GetWorkload(organizationID, workloadID int64) (model.WorkloadIdentity, error) {
 	item, err := scanWorkload(r.db.QueryRow(`
-		SELECT id, organization_id, name, spiffe_id, status, allowed_scopes, mtls_required,
+		SELECT id, organization_id, workspace_id, name, spiffe_id, status, allowed_scopes, mtls_required,
 		       created_by_user_id, created_at, updated_at, revoked_at, last_authenticated_at
 		FROM workload_identities
 		WHERE organization_id=$1 AND id=$2
@@ -154,7 +154,7 @@ func (r *PostgresZeroTrustRepository) GetWorkload(organizationID, workloadID int
 
 func (r *PostgresZeroTrustRepository) ListWorkloads(organizationID int64) ([]model.WorkloadIdentity, error) {
 	rows, err := r.db.Query(`
-		SELECT id, organization_id, name, spiffe_id, status, allowed_scopes, mtls_required,
+		SELECT id, organization_id, workspace_id, name, spiffe_id, status, allowed_scopes, mtls_required,
 		       created_by_user_id, created_at, updated_at, revoked_at, last_authenticated_at
 		FROM workload_identities
 		WHERE organization_id=$1
@@ -233,7 +233,7 @@ func scanWorkload(scanner zeroTrustScanner) (model.WorkloadIdentity, error) {
 	var item model.WorkloadIdentity
 	var raw []byte
 	err := scanner.Scan(
-		&item.ID, &item.OrganizationID, &item.Name, &item.SPIFFEID, &item.Status, &raw, &item.MTLSRequired,
+		&item.ID, &item.OrganizationID, &item.WorkspaceID, &item.Name, &item.SPIFFEID, &item.Status, &raw, &item.MTLSRequired,
 		&item.CreatedByUserID, &item.CreatedAt, &item.UpdatedAt, &item.RevokedAt, &item.LastAuthenticatedAt,
 	)
 	if err != nil {
@@ -335,7 +335,7 @@ func (r *PostgresZeroTrustRepository) FindActiveCertificateByFingerprint(fingerp
 	var cert model.WorkloadCertificate
 	var scopesRaw []byte
 	err := r.db.QueryRow(`
-		SELECT w.id, w.organization_id, w.name, w.spiffe_id, w.status, w.allowed_scopes, w.mtls_required,
+		SELECT w.id, w.organization_id, w.workspace_id, w.name, w.spiffe_id, w.status, w.allowed_scopes, w.mtls_required,
 		       w.created_by_user_id, w.created_at, w.updated_at, w.revoked_at, w.last_authenticated_at,
 		       c.id, c.organization_id, c.workload_id, c.serial_number, c.sha256_fingerprint, c.subject,
 		       c.not_before, c.not_after, c.created_by_user_id, c.created_at, c.revoked_at, c.replaced_by_id
@@ -348,7 +348,7 @@ func (r *PostgresZeroTrustRepository) FindActiveCertificateByFingerprint(fingerp
 		  AND w.status='active'
 		  AND w.revoked_at IS NULL
 	`, fingerprint, now).Scan(
-		&workload.ID, &workload.OrganizationID, &workload.Name, &workload.SPIFFEID, &workload.Status,
+		&workload.ID, &workload.OrganizationID, &workload.WorkspaceID, &workload.Name, &workload.SPIFFEID, &workload.Status,
 		&scopesRaw, &workload.MTLSRequired, &workload.CreatedByUserID, &workload.CreatedAt,
 		&workload.UpdatedAt, &workload.RevokedAt, &workload.LastAuthenticatedAt,
 		&cert.ID, &cert.OrganizationID, &cert.WorkloadID, &cert.SerialNumber, &cert.SHA256Fingerprint,
