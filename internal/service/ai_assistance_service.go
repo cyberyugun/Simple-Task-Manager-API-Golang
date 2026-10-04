@@ -616,8 +616,7 @@ func (s *AIAssistanceService) prepareRequestContext(organizationID int64, featur
 			contextData["due_at"] = task.DueAt.UTC().Format(time.RFC3339)
 		}
 		if text == "" {
-			text = task.Title + "
-" + task.Description
+			text = task.Title + "\n" + task.Description
 		}
 	}
 	switch feature {
@@ -660,8 +659,7 @@ func (s *AIAssistanceService) prepareRequestContext(organizationID int64, featur
 				contextData["status"] = incident.Status
 				contextData["summary"] = incident.Summary
 				if text == "" {
-					text = incident.Title + "
-" + incident.Summary
+					text = incident.Title + "\n" + incident.Summary
 				}
 				found = true
 				break
