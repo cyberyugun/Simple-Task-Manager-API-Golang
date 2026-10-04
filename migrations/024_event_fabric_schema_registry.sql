@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS event_fabric_deliveries (
     payload JSONB NOT NULL,
     correlation_id TEXT NOT NULL,
     causation_id TEXT NOT NULL DEFAULT '',
+    occurred_at TIMESTAMPTZ NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('pending','retry','delivered','dead_letter')),
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     max_attempts INTEGER NOT NULL CHECK (max_attempts BETWEEN 1 AND 50),
