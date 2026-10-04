@@ -33,52 +33,52 @@ type GlobalRegion struct {
 }
 
 type OrganizationRegionPolicy struct {
-	OrganizationID             int64     `json:"organization_id"`
-	HomeRegion                 string    `json:"home_region"`
-	AllowedRegions             []string  `json:"allowed_regions"`
-	FailoverRegions            []string  `json:"failover_regions"`
-	DataResidencyEnforced      bool      `json:"data_residency_enforced"`
-	CrossRegionApprovalRequired bool     `json:"cross_region_approval_required"`
-	RPOSeconds                 int       `json:"rpo_seconds"`
-	RTOSeconds                 int       `json:"rto_seconds"`
-	UpdatedByUserID            int64     `json:"updated_by_user_id"`
-	CreatedAt                  time.Time `json:"created_at"`
-	UpdatedAt                  time.Time `json:"updated_at"`
+	OrganizationID              int64     `json:"organization_id"`
+	HomeRegion                  string    `json:"home_region"`
+	AllowedRegions              []string  `json:"allowed_regions"`
+	FailoverRegions             []string  `json:"failover_regions"`
+	DataResidencyEnforced       bool      `json:"data_residency_enforced"`
+	CrossRegionApprovalRequired bool      `json:"cross_region_approval_required"`
+	RPOSeconds                  int       `json:"rpo_seconds"`
+	RTOSeconds                  int       `json:"rto_seconds"`
+	UpdatedByUserID             int64     `json:"updated_by_user_id"`
+	CreatedAt                   time.Time `json:"created_at"`
+	UpdatedAt                   time.Time `json:"updated_at"`
 }
 
 type RegionalPlacement struct {
-	ID                 int64      `json:"id"`
-	OrganizationID     int64      `json:"organization_id"`
-	ResourceType       string     `json:"resource_type"`
-	ResourceID         string     `json:"resource_id"`
-	PrimaryRegion      string     `json:"primary_region"`
-	ReplicaRegions     []string   `json:"replica_regions"`
-	Status             string     `json:"status"`
-	LastReplicatedAt   *time.Time `json:"last_replicated_at,omitempty"`
-	LastVerifiedAt     *time.Time `json:"last_verified_at,omitempty"`
-	UpdatedByUserID    int64      `json:"updated_by_user_id"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	ID               int64      `json:"id"`
+	OrganizationID   int64      `json:"organization_id"`
+	ResourceType     string     `json:"resource_type"`
+	ResourceID       string     `json:"resource_id"`
+	PrimaryRegion    string     `json:"primary_region"`
+	ReplicaRegions   []string   `json:"replica_regions"`
+	Status           string     `json:"status"`
+	LastReplicatedAt *time.Time `json:"last_replicated_at,omitempty"`
+	LastVerifiedAt   *time.Time `json:"last_verified_at,omitempty"`
+	UpdatedByUserID  int64      `json:"updated_by_user_id"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 type RegionMigration struct {
-	ID               int64      `json:"id"`
-	OrganizationID   int64      `json:"organization_id"`
-	Scope            string     `json:"scope"`
-	ResourceType     string     `json:"resource_type,omitempty"`
-	ResourceID       string     `json:"resource_id,omitempty"`
-	SourceRegion     string     `json:"source_region"`
-	TargetRegion     string     `json:"target_region"`
-	Status           string     `json:"status"`
-	Reason           string     `json:"reason"`
-	Checkpoint       map[string]any `json:"checkpoint,omitempty"`
-	RequestedByUserID int64     `json:"requested_by_user_id"`
-	RequestedAt      time.Time  `json:"requested_at"`
-	DecidedByUserID  *int64     `json:"decided_by_user_id,omitempty"`
-	DecisionComment  string     `json:"decision_comment,omitempty"`
-	DecidedAt        *time.Time `json:"decided_at,omitempty"`
-	CompletedAt      *time.Time `json:"completed_at,omitempty"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID                int64          `json:"id"`
+	OrganizationID    int64          `json:"organization_id"`
+	Scope             string         `json:"scope"`
+	ResourceType      string         `json:"resource_type,omitempty"`
+	ResourceID        string         `json:"resource_id,omitempty"`
+	SourceRegion      string         `json:"source_region"`
+	TargetRegion      string         `json:"target_region"`
+	Status            string         `json:"status"`
+	Reason            string         `json:"reason"`
+	Checkpoint        map[string]any `json:"checkpoint,omitempty"`
+	RequestedByUserID int64          `json:"requested_by_user_id"`
+	RequestedAt       time.Time      `json:"requested_at"`
+	DecidedByUserID   *int64         `json:"decided_by_user_id,omitempty"`
+	DecisionComment   string         `json:"decision_comment,omitempty"`
+	DecidedAt         *time.Time     `json:"decided_at,omitempty"`
+	CompletedAt       *time.Time     `json:"completed_at,omitempty"`
+	UpdatedAt         time.Time      `json:"updated_at"`
 }
 
 type CrossRegionTransfer struct {
@@ -117,20 +117,20 @@ type FailoverExercise struct {
 }
 
 type RegionRouteDecision struct {
-	OrganizationID int64     `json:"organization_id"`
-	PrimaryRegion  string    `json:"primary_region"`
-	FailoverRegion string    `json:"failover_region,omitempty"`
-	AllowedRegions []string  `json:"allowed_regions"`
-	ResidencyEnforced bool   `json:"residency_enforced"`
-	GeneratedAt    time.Time `json:"generated_at"`
+	OrganizationID    int64     `json:"organization_id"`
+	PrimaryRegion     string    `json:"primary_region"`
+	FailoverRegion    string    `json:"failover_region,omitempty"`
+	AllowedRegions    []string  `json:"allowed_regions"`
+	ResidencyEnforced bool      `json:"residency_enforced"`
+	GeneratedAt       time.Time `json:"generated_at"`
 }
 
 type ResidencyViolation struct {
-	WorkspaceID int64  `json:"workspace_id,omitempty"`
+	WorkspaceID  int64  `json:"workspace_id,omitempty"`
 	ResourceType string `json:"resource_type,omitempty"`
-	ResourceID string `json:"resource_id,omitempty"`
-	Region string `json:"region"`
-	Message string `json:"message"`
+	ResourceID   string `json:"resource_id,omitempty"`
+	Region       string `json:"region"`
+	Message      string `json:"message"`
 }
 
 type RegionComplianceReport struct {
@@ -153,11 +153,11 @@ type UpdateOrganizationRegionPolicyRequest struct {
 }
 
 type UpsertRegionalPlacementRequest struct {
-	ResourceType     string   `json:"resource_type"`
-	ResourceID       string   `json:"resource_id"`
-	PrimaryRegion    string   `json:"primary_region"`
-	ReplicaRegions   []string `json:"replica_regions"`
-	Status           string   `json:"status,omitempty"`
+	ResourceType   string   `json:"resource_type"`
+	ResourceID     string   `json:"resource_id"`
+	PrimaryRegion  string   `json:"primary_region"`
+	ReplicaRegions []string `json:"replica_regions"`
+	Status         string   `json:"status,omitempty"`
 }
 
 type CreateRegionMigrationRequest struct {
