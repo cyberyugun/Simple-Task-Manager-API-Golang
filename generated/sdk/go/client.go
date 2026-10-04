@@ -9,7 +9,7 @@ import (
 )
 
 const OpenAPIVersion = "1.5.0"
-const OpenAPIPathCount = 199
+const OpenAPIPathCount = 209
 
 type Client struct {
 	BaseURL     string
