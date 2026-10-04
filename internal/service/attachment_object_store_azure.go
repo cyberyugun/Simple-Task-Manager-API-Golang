@@ -436,7 +436,7 @@ func (s *AzureBlobObjectStore) serviceSAS(u *url.URL, objectKey, permission stri
 	se := azureSASTime(expiry)
 	spr := "https"
 	if u.Scheme == "http" {
-		spr = "http,https"
+		spr = "https,http"
 	}
 	canonicalResource := "/blob/" + s.accountName + "/" + s.container + "/" + objectKey
 	encryptionScope := s.signedEncryptionScope(permission)
@@ -468,7 +468,7 @@ func (s *AzureBlobObjectStore) userDelegationSAS(u *url.URL, objectKey, permissi
 	se := azureSASTime(expiry)
 	spr := "https"
 	if u.Scheme == "http" {
-		spr = "http,https"
+		spr = "https,http"
 	}
 	canonicalResource := "/blob/" + s.accountName + "/" + s.container + "/" + objectKey
 	encryptionScope := s.signedEncryptionScope(permission)
