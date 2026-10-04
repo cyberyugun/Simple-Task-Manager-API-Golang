@@ -281,6 +281,15 @@ func main() {
 	}
 	integrationService := service.NewIntegrationService(integrationRepo, organizationRepo, integrationCipher, cfg.WebhookAllowInsecure)
 	connectorSecurityService := service.NewConnectorSecurityService(connectorSecurityRepo, integrationRepo, organizationRepo, integrationCipher, cfg.WebhookAllowInsecure)
+	vaultSecretStore, err := service.NewHashiCorpVaultSecretStoreFromEnv(cfg.WebhookAllowInsecure)
+	if err != nil {
+		logger.Error("connector_vault_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if vaultSecretStore != nil {
+		connectorSecurityService.RegisterSecretStore(vaultSecretStore)
+	}
+	integrationService.SetCredentialProvider(connectorSecurityService)
 	organizationService.SetEntitlementProvider(billingService)
 	workspaceService.SetDeletionGuard(governanceService)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
