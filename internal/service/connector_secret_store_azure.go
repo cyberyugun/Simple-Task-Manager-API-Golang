@@ -3,6 +3,9 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -182,10 +185,12 @@ func (e *azureKeyVaultAPIError) Error() string {
 }
 
 type azureStoredConnectorSecret struct {
-	Payload  string `json:"payload"`
-	Version  int    `json:"version"`
-	Encoding string `json:"encoding"`
-	KeyID    string `json:"key_id,omitempty"`
+	Payload    string `json:"payload"`
+	Version    int    `json:"version"`
+	Encoding   string `json:"encoding"`
+	KeyID      string `json:"key_id,omitempty"`
+	WrappedKey string `json:"wrapped_key,omitempty"`
+	Nonce      string `json:"nonce,omitempty"`
 }
 
 func NewAzureKeyVaultSecretStore(cfg AzureKeyVaultConfig) (*AzureKeyVaultSecretStore, error) {
@@ -324,12 +329,14 @@ func (s *AzureKeyVaultSecretStore) Put(ctx context.Context, ref string, plaintex
 	}
 	stored := azureStoredConnectorSecret{Version: version, Encoding: "base64"}
 	if s.cmkKeyID != nil {
-		ciphertext, keyID, err := s.encryptWithCMK(ctx, plaintext)
+		ciphertext, wrappedKey, nonce, keyID, err := s.encryptWithCMK(ctx, plaintext)
 		if err != nil {
 			return 0, err
 		}
 		stored.Payload = ciphertext
-		stored.Encoding = "azure-kv-cmk-rsa-oaep-256"
+		stored.WrappedKey = wrappedKey
+		stored.Nonce = nonce
+		stored.Encoding = "azure-kv-cmk-aes-gcm-rsa-oaep-256"
 		stored.KeyID = keyID
 	} else {
 		stored.Payload = base64.RawStdEncoding.EncodeToString(plaintext)
@@ -370,11 +377,11 @@ func (s *AzureKeyVaultSecretStore) Get(ctx context.Context, ref string) ([]byte,
 			return nil, 0, fmt.Errorf("%w: invalid Azure secret encoding", ErrConnectorSecretStore)
 		}
 		return plaintext, stored.Version, nil
-	case "azure-kv-cmk-rsa-oaep-256":
-		if strings.TrimSpace(stored.KeyID) == "" {
-			return nil, 0, fmt.Errorf("%w: missing Azure CMK key id", ErrConnectorSecretStore)
+	case "azure-kv-cmk-aes-gcm-rsa-oaep-256":
+		if strings.TrimSpace(stored.KeyID) == "" || strings.TrimSpace(stored.WrappedKey) == "" || strings.TrimSpace(stored.Nonce) == "" {
+			return nil, 0, fmt.Errorf("%w: incomplete Azure CMK envelope metadata", ErrConnectorSecretStore)
 		}
-		plaintext, err := s.decryptWithCMK(ctx, stored.KeyID, stored.Payload)
+		plaintext, err := s.decryptWithCMK(ctx, stored.KeyID, stored.Payload, stored.WrappedKey, stored.Nonce)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -410,47 +417,85 @@ func (s *AzureKeyVaultSecretStore) secretURL(name string) string {
 	return u.String()
 }
 
-func (s *AzureKeyVaultSecretStore) encryptWithCMK(ctx context.Context, plaintext []byte) (string, string, error) {
-	endpoint := azureKeyOperationURL(s.cmkKeyID, "encrypt")
+func (s *AzureKeyVaultSecretStore) encryptWithCMK(ctx context.Context, plaintext []byte) (string, string, string, string, error) {
+	dataKey := make([]byte, 32)
+	if _, err := rand.Read(dataKey); err != nil {
+		return "", "", "", "", err
+	}
+	block, err := aes.NewCipher(dataKey)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", "", "", "", err
+	}
+	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
+
+	endpoint := azureKeyOperationURL(s.cmkKeyID, "wrapkey")
 	var response struct {
 		KID   string `json:"kid"`
 		Value string `json:"value"`
 	}
-	err := s.call(ctx, http.MethodPost, endpoint, map[string]any{
+	if err := s.call(ctx, http.MethodPost, endpoint, map[string]any{
 		"alg":   "RSA-OAEP-256",
-		"value": base64.RawURLEncoding.EncodeToString(plaintext),
-	}, &response)
-	if err != nil {
-		return "", "", err
+		"value": base64.RawURLEncoding.EncodeToString(dataKey),
+	}, &response); err != nil {
+		return "", "", "", "", err
 	}
 	if strings.TrimSpace(response.Value) == "" {
-		return "", "", fmt.Errorf("%w: Azure CMK encrypt returned empty ciphertext", ErrConnectorSecretStore)
+		return "", "", "", "", fmt.Errorf("%w: Azure CMK wrap returned empty key", ErrConnectorSecretStore)
 	}
 	keyID := strings.TrimSpace(response.KID)
 	if keyID == "" {
 		keyID = s.cmkKeyID.String()
 	}
-	return response.Value, keyID, nil
+	return base64.RawStdEncoding.EncodeToString(ciphertext), response.Value,
+		base64.RawStdEncoding.EncodeToString(nonce), keyID, nil
 }
 
-func (s *AzureKeyVaultSecretStore) decryptWithCMK(ctx context.Context, keyID, ciphertext string) ([]byte, error) {
+func (s *AzureKeyVaultSecretStore) decryptWithCMK(ctx context.Context, keyID, ciphertext, wrappedKey, nonceText string) ([]byte, error) {
 	parsedKey, err := parseAzureCMKKeyID(keyID, s.vaultURL, s.vaultURL.Scheme == "http")
 	if err != nil {
 		return nil, err
 	}
-	endpoint := azureKeyOperationURL(parsedKey, "decrypt")
+	endpoint := azureKeyOperationURL(parsedKey, "unwrapkey")
 	var response struct {
 		Value string `json:"value"`
 	}
 	if err := s.call(ctx, http.MethodPost, endpoint, map[string]any{
 		"alg":   "RSA-OAEP-256",
-		"value": ciphertext,
+		"value": wrappedKey,
 	}, &response); err != nil {
 		return nil, err
 	}
-	plaintext, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(response.Value))
+	dataKey, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(response.Value))
+	if err != nil || len(dataKey) != 32 {
+		return nil, fmt.Errorf("%w: invalid Azure CMK unwrapped key", ErrConnectorSecretStore)
+	}
+	block, err := aes.NewCipher(dataKey)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid Azure CMK decrypt response", ErrConnectorSecretStore)
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce, err := base64.RawStdEncoding.DecodeString(nonceText)
+	if err != nil || len(nonce) != gcm.NonceSize() {
+		return nil, fmt.Errorf("%w: invalid Azure CMK envelope nonce", ErrConnectorSecretStore)
+	}
+	ciphertextRaw, err := base64.RawStdEncoding.DecodeString(ciphertext)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid Azure CMK envelope ciphertext", ErrConnectorSecretStore)
+	}
+	plaintext, err := gcm.Open(nil, nonce, ciphertextRaw, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: Azure CMK envelope decrypt failed", ErrConnectorSecretStore)
 	}
 	return plaintext, nil
 }
