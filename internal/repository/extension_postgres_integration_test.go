@@ -86,7 +86,7 @@ func TestIntegrationPostgresPlatformExtensionsMarketplace(t *testing.T) {
 		Summary: "Marketplace integration test", Description: "Remote extension using scoped API and event webhooks.",
 		Version: "1.0.0", Categories: []string{"automation", "reporting"},
 		RequestedScopes: []string{model.ScopeTasksRead, model.ScopeWorkspaceRead},
-		EventTypes: []string{model.EventTaskCreated},
+		EventTypes:      []string{model.EventTaskCreated},
 		ConfigSchema: []model.ExtensionConfigField{
 			{Key: "region", Label: "Region", Required: true},
 			{Key: "api-secret", Label: "API Secret", Required: true, Secret: true},
@@ -111,8 +111,8 @@ func TestIntegrationPostgresPlatformExtensionsMarketplace(t *testing.T) {
 	installed, err := marketplace.Install(owner.ID, org.ID, model.InstallExtensionRequest{
 		ApplicationID: app.ID, WorkspaceID: workspace.ID,
 		GrantedScopes: []string{model.ScopeTasksRead},
-		Config: map[string]string{"region": "ap-southeast"},
-		SecretRefs: map[string]string{"api-secret": "secret://phase45/app"},
+		Config:        map[string]string{"region": "ap-southeast"},
+		SecretRefs:    map[string]string{"api-secret": "secret://phase45/app"},
 	})
 	if err != nil {
 		t.Fatal(err)
