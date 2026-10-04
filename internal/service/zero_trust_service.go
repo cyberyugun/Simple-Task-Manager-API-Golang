@@ -22,23 +22,23 @@ import (
 )
 
 var (
-	ErrZeroTrustForbidden       = errors.New("zero trust administration requires organization owner or admin")
-	ErrZeroTrustMemberRequired  = errors.New("zero trust risk evaluation requires organization membership")
-	ErrInvalidZeroTrustPolicy   = errors.New("invalid zero trust policy")
-	ErrInvalidWorkloadIdentity  = errors.New("invalid workload identity")
-	ErrInvalidWorkloadCert      = errors.New("invalid workload certificate")
-	ErrInvalidDeviceTrust       = errors.New("invalid device trust record")
-	ErrInvalidRiskEvaluation    = errors.New("invalid risk evaluation")
-	ErrNoSecurityEvents         = errors.New("no new security events to checkpoint")
-	ErrInvalidSIEMDestination   = errors.New("invalid siem destination")
-	ErrSIEMFederationDisabled   = errors.New("siem federation is disabled by zero trust policy")
+	ErrZeroTrustForbidden      = errors.New("zero trust administration requires organization owner or admin")
+	ErrZeroTrustMemberRequired = errors.New("zero trust risk evaluation requires organization membership")
+	ErrInvalidZeroTrustPolicy  = errors.New("invalid zero trust policy")
+	ErrInvalidWorkloadIdentity = errors.New("invalid workload identity")
+	ErrInvalidWorkloadCert     = errors.New("invalid workload certificate")
+	ErrInvalidDeviceTrust      = errors.New("invalid device trust record")
+	ErrInvalidRiskEvaluation   = errors.New("invalid risk evaluation")
+	ErrNoSecurityEvents        = errors.New("no new security events to checkpoint")
+	ErrInvalidSIEMDestination  = errors.New("invalid siem destination")
+	ErrSIEMFederationDisabled  = errors.New("siem federation is disabled by zero trust policy")
 )
 
 type ZeroTrustService struct {
-	repo      repository.ZeroTrustRepository
-	orgs      repository.OrganizationRepository
-	refreshes repository.RefreshTokenRepository
-	tokens    *auth.TokenManager
+	repo       repository.ZeroTrustRepository
+	orgs       repository.OrganizationRepository
+	refreshes  repository.RefreshTokenRepository
+	tokens     *auth.TokenManager
 	signingKey []byte
 }
 
@@ -532,16 +532,16 @@ func (s *ZeroTrustService) EvaluateRisk(
 		"risk_score": score, "action": action, "session_revoked": sessionRevoked,
 	})
 	return model.RiskEvaluation{
-		OrganizationID: organizationID,
-		UserID:         actorUserID,
-		SessionID:      req.SessionID,
-		RiskScore:      score,
-		RiskLevel:      severity,
-		Action:         action,
-		Indicators:     indicators,
+		OrganizationID:   organizationID,
+		UserID:           actorUserID,
+		SessionID:        req.SessionID,
+		RiskScore:        score,
+		RiskLevel:        severity,
+		Action:           action,
+		Indicators:       indicators,
 		MFAAuthenticated: mfaAuthenticated,
-		SessionRevoked: sessionRevoked,
-		EvaluatedAt:    now,
+		SessionRevoked:   sessionRevoked,
+		EvaluatedAt:      now,
 	}, nil
 }
 
