@@ -1,0 +1,26 @@
+name: Phase 36 Go Format
+on:
+  pull_request:
+permissions:
+  contents: write
+jobs:
+  gofmt:
+    if: github.head_ref == 'phase-36-files-attachments-content-security'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: phase-36-files-attachments-content-security
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Format and push
+        run: |
+          gofmt -w cmd/api/main.go cmd/worker/main.go internal/model/attachment.go internal/repository/attachment_repository.go internal/repository/postgres_attachment_repository.go internal/service/attachment_service.go internal/service/attachment_service_test.go internal/handler/attachment_handler.go
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cmd/api/main.go cmd/worker/main.go internal/model/attachment.go internal/repository/attachment_repository.go internal/repository/postgres_attachment_repository.go internal/service/attachment_service.go internal/service/attachment_service_test.go internal/handler/attachment_handler.go
+          git commit -m "style(phase-36): gofmt attachment platform"
+          git push origin HEAD:phase-36-files-attachments-content-security
