@@ -2767,6 +2767,98 @@ paths:
         '200':
           description: Inbound integration event history
 
+  /api/integrations/secret-backends:
+    get:
+      tags: [Enterprise Integrations]
+      summary: List connector secret-backend capabilities
+      operationId: listConnectorSecretBackends
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Secret backend catalog
+  /api/organizations/{id}/integrations/connections/{connection_id}/oauth/start:
+    post:
+      tags: [Enterprise Integrations]
+      summary: Start OAuth authorization-code flow with PKCE
+      operationId: startConnectorOAuth
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: OAuth authorization URL and single-use state
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/organizations/{id}/integrations/connections/{connection_id}/oauth/callback:
+    post:
+      tags: [Enterprise Integrations]
+      summary: Complete OAuth code exchange and scope verification
+      operationId: completeConnectorOAuth
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Credential lifecycle metadata
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/organizations/{id}/integrations/connections/{connection_id}/credential:
+    get:
+      tags: [Enterprise Integrations]
+      summary: Get connector credential metadata without secret material
+      operationId: getConnectorCredentialMetadata
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Credential metadata
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{id}/integrations/connections/{connection_id}/credential/rotate:
+    post:
+      tags: [Enterprise Integrations]
+      summary: Rotate the encrypted credential envelope and key version metadata
+      operationId: rotateConnectorCredential
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Rotated credential metadata
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/organizations/{id}/integrations/connections/{connection_id}/credential/revoke:
+    post:
+      tags: [Enterprise Integrations]
+      summary: Revoke connector credentials and disable the connection
+      operationId: revokeConnectorCredential
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Revoked credential metadata
+        '409':
+          description: Credential state conflict
+  /api/organizations/{id}/integrations/connections/{connection_id}/test:
+    post:
+      tags: [Enterprise Integrations]
+      summary: Validate connector scopes and provider health
+      operationId: testConnectorConnection
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Connector health result
+  /api/organizations/{id}/integrations/connections/{connection_id}/credential-audit:
+    get:
+      tags: [Enterprise Integrations]
+      summary: List credential access and lifecycle audit records
+      operationId: listConnectorCredentialAudit
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Credential audit records
 
   /api/task-projects:
     get:
