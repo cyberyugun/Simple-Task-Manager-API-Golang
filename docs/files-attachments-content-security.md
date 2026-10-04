@@ -25,11 +25,13 @@ Two storage modes are available:
 - provider-neutral signed gateway mode, which keeps the original HMAC-signed upload/download URL contract for `s3`, `s3_compatible`, `azure_blob`, `gcs`, and `development`;
 - native object-store mode, enabled with `ATTACHMENT_STORAGE_NATIVE=true`.
 
-Native mode currently implements AWS S3 and S3-compatible providers. It generates AWS SigV4 presigned PUT/GET URLs, supports static credentials for local/S3-compatible environments and AWS web-identity credentials for EKS/IRSA deployments, verifies object size plus server-side SHA-256 metadata with a signed HEAD request before marking an upload complete, and verifies deletion with a post-delete HEAD request.
+Native mode implements AWS S3/S3-compatible and Azure Blob Storage providers.
 
-Native upload presigning includes `x-amz-meta-sha256`. Clients must send every returned header exactly as provided. Optional server-side encryption supports `AES256` and `aws:kms`; when KMS is selected, `ATTACHMENT_ENCRYPTION_KEY_ID` is included in the signed request.
+S3 generates AWS SigV4 presigned PUT/GET URLs, supports static credentials for local/S3-compatible environments and AWS web-identity credentials for EKS/IRSA deployments, verifies object size plus server-side SHA-256 metadata with a signed HEAD request before marking an upload complete, and verifies deletion with a post-delete HEAD request. Upload presigning includes `x-amz-meta-sha256`; optional server-side encryption supports `AES256` and `aws:kms`.
 
-Azure Blob and GCS remain on the signed-gateway contract until their native adapters are added. Setting native mode for an unimplemented provider fails startup rather than silently falling back.
+Azure Blob generates service SAS URLs when an account key is explicitly configured, or user-delegation SAS URLs when AKS workload identity / Azure Managed Identity is used. Workload-identity token exchange requests the `https://storage.azure.com/.default` scope and user-delegation keys are cached within their provider expiry. Uploads require `BlockBlob`, persist `x-ms-meta-sha256`, and can bind a signed encryption scope via `ATTACHMENT_ENCRYPTION_KEY_ID`. Upload completion and deletion are verified through authenticated HEAD/DELETE calls.
+
+GCS remains on the signed-gateway contract until its native adapter is added. Setting native mode for an unimplemented provider fails startup rather than silently falling back.
 
 The core API never accepts raw file bytes.
 
