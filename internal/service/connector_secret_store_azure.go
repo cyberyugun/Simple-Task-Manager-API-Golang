@@ -260,18 +260,18 @@ func NewAzureKeyVaultSecretStoreFromEnv(allowInsecure bool) (*AzureKeyVaultSecre
 		useManagedIdentity = value
 	}
 	return NewAzureKeyVaultSecretStore(AzureKeyVaultConfig{
-		VaultURL:                 os.Getenv("CONNECTOR_AZURE_KEY_VAULT_URL"),
-		Prefix:                   os.Getenv("CONNECTOR_AZURE_SECRET_PREFIX"),
-		AccessToken:              os.Getenv("CONNECTOR_AZURE_ACCESS_TOKEN"),
-		TenantID:                 os.Getenv("AZURE_TENANT_ID"),
-		ClientID:                 os.Getenv("AZURE_CLIENT_ID"),
-		FederatedTokenFile:       os.Getenv("AZURE_FEDERATED_TOKEN_FILE"),
-		AuthorityHost:            os.Getenv("AZURE_AUTHORITY_HOST"),
-		UseManagedIdentity:       useManagedIdentity,
-		ManagedIdentityEndpoint:  os.Getenv("CONNECTOR_AZURE_MANAGED_IDENTITY_ENDPOINT"),
-		CMKKeyID:                 os.Getenv("CONNECTOR_AZURE_CMK_KEY_ID"),
-		Timeout:                  timeout,
-		AllowInsecure:            allowInsecure,
+		VaultURL:                os.Getenv("CONNECTOR_AZURE_KEY_VAULT_URL"),
+		Prefix:                  os.Getenv("CONNECTOR_AZURE_SECRET_PREFIX"),
+		AccessToken:             os.Getenv("CONNECTOR_AZURE_ACCESS_TOKEN"),
+		TenantID:                os.Getenv("AZURE_TENANT_ID"),
+		ClientID:                os.Getenv("AZURE_CLIENT_ID"),
+		FederatedTokenFile:      os.Getenv("AZURE_FEDERATED_TOKEN_FILE"),
+		AuthorityHost:           os.Getenv("AZURE_AUTHORITY_HOST"),
+		UseManagedIdentity:      useManagedIdentity,
+		ManagedIdentityEndpoint: os.Getenv("CONNECTOR_AZURE_MANAGED_IDENTITY_ENDPOINT"),
+		CMKKeyID:                os.Getenv("CONNECTOR_AZURE_CMK_KEY_ID"),
+		Timeout:                 timeout,
+		AllowInsecure:           allowInsecure,
 	})
 }
 
