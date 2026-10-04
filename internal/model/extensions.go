@@ -68,33 +68,33 @@ type ExtensionConfigField struct {
 }
 
 type MarketplaceApplication struct {
-	ID                  int64                  `json:"id"`
-	PublisherID         int64                  `json:"publisher_id"`
-	PublisherWorkspaceID int64                 `json:"publisher_workspace_id"`
-	Slug                string                 `json:"slug"`
-	Name                string                 `json:"name"`
-	Summary             string                 `json:"summary"`
-	Description         string                 `json:"description"`
-	Version             string                 `json:"version"`
-	ManifestVersion     int                    `json:"manifest_version"`
-	ExecutionModel      string                 `json:"execution_model"`
-	HomepageURL         string                 `json:"homepage_url,omitempty"`
-	PrivacyURL          string                 `json:"privacy_url,omitempty"`
-	Categories          []string               `json:"categories"`
-	RequestedScopes     []string               `json:"requested_scopes"`
-	EventTypes          []string               `json:"event_types"`
-	ConfigSchema        []ExtensionConfigField `json:"config_schema"`
-	Packs               []ExtensionPack        `json:"packs"`
-	DailyRequestLimit   int64                  `json:"daily_request_limit"`
-	MonthlyRequestLimit int64                  `json:"monthly_request_limit"`
-	Status              string                 `json:"status"`
-	CreatedByUserID     int64                  `json:"created_by_user_id"`
-	ReviewedByUserID    *int64                 `json:"reviewed_by_user_id,omitempty"`
-	ReviewNote          string                 `json:"review_note,omitempty"`
-	CreatedAt           time.Time              `json:"created_at"`
-	UpdatedAt           time.Time              `json:"updated_at"`
-	SubmittedAt         *time.Time             `json:"submitted_at,omitempty"`
-	ReviewedAt          *time.Time             `json:"reviewed_at,omitempty"`
+	ID                   int64                  `json:"id"`
+	PublisherID          int64                  `json:"publisher_id"`
+	PublisherWorkspaceID int64                  `json:"publisher_workspace_id"`
+	Slug                 string                 `json:"slug"`
+	Name                 string                 `json:"name"`
+	Summary              string                 `json:"summary"`
+	Description          string                 `json:"description"`
+	Version              string                 `json:"version"`
+	ManifestVersion      int                    `json:"manifest_version"`
+	ExecutionModel       string                 `json:"execution_model"`
+	HomepageURL          string                 `json:"homepage_url,omitempty"`
+	PrivacyURL           string                 `json:"privacy_url,omitempty"`
+	Categories           []string               `json:"categories"`
+	RequestedScopes      []string               `json:"requested_scopes"`
+	EventTypes           []string               `json:"event_types"`
+	ConfigSchema         []ExtensionConfigField `json:"config_schema"`
+	Packs                []ExtensionPack        `json:"packs"`
+	DailyRequestLimit    int64                  `json:"daily_request_limit"`
+	MonthlyRequestLimit  int64                  `json:"monthly_request_limit"`
+	Status               string                 `json:"status"`
+	CreatedByUserID      int64                  `json:"created_by_user_id"`
+	ReviewedByUserID     *int64                 `json:"reviewed_by_user_id,omitempty"`
+	ReviewNote           string                 `json:"review_note,omitempty"`
+	CreatedAt            time.Time              `json:"created_at"`
+	UpdatedAt            time.Time              `json:"updated_at"`
+	SubmittedAt          *time.Time             `json:"submitted_at,omitempty"`
+	ReviewedAt           *time.Time             `json:"reviewed_at,omitempty"`
 }
 
 type CreateMarketplaceApplicationRequest struct {
@@ -122,7 +122,7 @@ type ReviewMarketplaceApplicationRequest struct {
 
 type MarketplaceListing struct {
 	Application MarketplaceApplication `json:"application"`
-	Publisher   ExtensionPublisher      `json:"publisher"`
+	Publisher   ExtensionPublisher     `json:"publisher"`
 }
 
 type ExtensionInstallation struct {
@@ -141,7 +141,7 @@ type ExtensionInstallation struct {
 	InstalledAt         time.Time         `json:"installed_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`
 	UninstalledByUserID *int64            `json:"uninstalled_by_user_id,omitempty"`
-	UninstalledAt       *time.Time         `json:"uninstalled_at,omitempty"`
+	UninstalledAt       *time.Time        `json:"uninstalled_at,omitempty"`
 }
 
 type InstallExtensionRequest struct {
@@ -162,12 +162,12 @@ type ExtensionTokenRequest struct {
 }
 
 type ExtensionTokenResult struct {
-	AccessToken string   `json:"access_token"`
-	TokenType   string   `json:"token_type"`
-	ExpiresIn   int64    `json:"expires_in"`
-	Scopes      []string `json:"scopes"`
-	WorkspaceID int64    `json:"workspace_id"`
-	InstallationID int64 `json:"installation_id"`
+	AccessToken    string   `json:"access_token"`
+	TokenType      string   `json:"token_type"`
+	ExpiresIn      int64    `json:"expires_in"`
+	Scopes         []string `json:"scopes"`
+	WorkspaceID    int64    `json:"workspace_id"`
+	InstallationID int64    `json:"installation_id"`
 }
 
 type ExtensionEventSubscription struct {
@@ -204,22 +204,22 @@ type ExtensionUsageDaily struct {
 }
 
 type ExtensionUsageSummary struct {
-	InstallationID       int64                 `json:"installation_id"`
-	DailyRequestLimit    int64                 `json:"daily_request_limit"`
-	MonthlyRequestLimit  int64                 `json:"monthly_request_limit"`
-	TodayRequests        int64                 `json:"today_requests"`
-	MonthRequests        int64                 `json:"month_requests"`
-	TotalRequests        int64                 `json:"total_requests"`
-	TotalErrors          int64                 `json:"total_errors"`
-	AverageLatencyMS     float64               `json:"average_latency_ms"`
-	Daily                []ExtensionUsageDaily `json:"daily"`
+	InstallationID      int64                 `json:"installation_id"`
+	DailyRequestLimit   int64                 `json:"daily_request_limit"`
+	MonthlyRequestLimit int64                 `json:"monthly_request_limit"`
+	TodayRequests       int64                 `json:"today_requests"`
+	MonthRequests       int64                 `json:"month_requests"`
+	TotalRequests       int64                 `json:"total_requests"`
+	TotalErrors         int64                 `json:"total_errors"`
+	AverageLatencyMS    float64               `json:"average_latency_ms"`
+	Daily               []ExtensionUsageDaily `json:"daily"`
 }
 
 type ExtensionRequestDecision struct {
-	IsExtension   bool
-	Allowed       bool
+	IsExtension    bool
+	Allowed        bool
 	InstallationID int64
-	WorkspaceID   int64
-	Message       string
-	StatusCode    int
+	WorkspaceID    int64
+	Message        string
+	StatusCode     int
 }
