@@ -12,12 +12,12 @@ import (
 )
 
 var (
-	ErrExtensionPublisherNotFound      = errors.New("extension publisher not found")
-	ErrMarketplaceApplicationNotFound  = errors.New("marketplace application not found")
-	ErrExtensionInstallationNotFound   = errors.New("extension installation not found")
-	ErrExtensionSubscriptionNotFound   = errors.New("extension event subscription not found")
-	ErrExtensionQuotaExceeded          = errors.New("extension installation quota exceeded")
-	ErrExtensionInstallationExists     = errors.New("extension application is already installed for this workspace")
+	ErrExtensionPublisherNotFound     = errors.New("extension publisher not found")
+	ErrMarketplaceApplicationNotFound = errors.New("marketplace application not found")
+	ErrExtensionInstallationNotFound  = errors.New("extension installation not found")
+	ErrExtensionSubscriptionNotFound  = errors.New("extension event subscription not found")
+	ErrExtensionQuotaExceeded         = errors.New("extension installation quota exceeded")
+	ErrExtensionInstallationExists    = errors.New("extension application is already installed for this workspace")
 )
 
 type ExtensionRepository interface {
