@@ -533,7 +533,8 @@ func (s *ConnectorSecurityService) persistCredential(connection model.Integratio
 		return model.ConnectorCredentialMetadata{}, err
 	}
 	if meta.SecretBackend != model.ConnectorSecretBackendDatabase {
-		if _, err := s.integrations.UpdateIntegrationConnection(connection, nil); err != nil {
+		empty := ""
+		if _, err := s.integrations.UpdateIntegrationConnection(connection, &empty); err != nil {
 			return model.ConnectorCredentialMetadata{}, err
 		}
 	}
@@ -634,6 +635,9 @@ func (s *ConnectorSecurityService) CredentialsForConnection(ctx context.Context,
 	}
 	raw, version, err := store.Get(ctx, meta.SecretRef)
 	if err != nil {
+		if strings.TrimSpace(secretRow.EncryptedCredentials) != "" {
+			return s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+		}
 		return nil, err
 	}
 	if version > 0 && meta.KeyVersion != version {
