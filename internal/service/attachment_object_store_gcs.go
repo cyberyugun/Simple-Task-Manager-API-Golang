@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 )
 
 const gcsV4Algorithm = "GOOG4-RSA-SHA256"
