@@ -31,6 +31,7 @@ var (
 
 type IntegrationCredentialProvider interface {
 	CredentialsForConnection(context.Context, int64) (map[string]any, error)
+	StoreCredentialsForConnection(context.Context, model.IntegrationConnection, int64, map[string]any) error
 }
 
 type IntegrationService struct {
@@ -136,10 +137,19 @@ func (s *IntegrationService) UpdateConnection(actorUserID, organizationID, conne
 	item.Config = req.Config
 	item.UpdatedByUserID = actorUserID
 	item.UpdatedAt = time.Now().UTC()
-	var encrypted *string
 	if req.Credentials != nil {
 		if err := validateIntegrationCredentials(item.AuthType, req.Credentials); err != nil {
 			return model.IntegrationConnection{}, err
+		}
+		if s.credentialProvider != nil {
+			if err := s.credentialProvider.StoreCredentialsForConnection(context.Background(), item, actorUserID, req.Credentials); err != nil {
+				return model.IntegrationConnection{}, err
+			}
+			updated, err := s.repo.GetIntegrationConnection(organizationID, connectionID)
+			if err == nil {
+				s.audit(organizationID, actorUserID, "integration.connection.updated", "integration_connection", fmt.Sprint(connectionID), map[string]any{"status": status})
+			}
+			return updated, err
 		}
 		raw, err := json.Marshal(req.Credentials)
 		if err != nil {
@@ -149,9 +159,13 @@ func (s *IntegrationService) UpdateConnection(actorUserID, organizationID, conne
 		if err != nil {
 			return model.IntegrationConnection{}, err
 		}
-		encrypted = &value
+		updated, err := s.repo.UpdateIntegrationConnection(item, &value)
+		if err == nil {
+			s.audit(organizationID, actorUserID, "integration.connection.updated", "integration_connection", fmt.Sprint(connectionID), map[string]any{"status": status})
+		}
+		return updated, err
 	}
-	updated, err := s.repo.UpdateIntegrationConnection(item, encrypted)
+	updated, err := s.repo.UpdateIntegrationConnection(item, nil)
 	if err == nil {
 		s.audit(organizationID, actorUserID, "integration.connection.updated", "integration_connection", fmt.Sprint(connectionID), map[string]any{"status": status})
 	}
