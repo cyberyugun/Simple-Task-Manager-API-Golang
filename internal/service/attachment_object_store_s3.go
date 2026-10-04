@@ -113,8 +113,8 @@ func NewS3ObjectStoreFromEnv(cfg AttachmentConfig) (*S3ObjectStore, error) {
 		AccessKeyID: os.Getenv("AWS_ACCESS_KEY_ID"), SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		SessionToken: os.Getenv("AWS_SESSION_TOKEN"), RoleARN: firstNonEmpty(os.Getenv("ATTACHMENT_S3_ROLE_ARN"), os.Getenv("AWS_ROLE_ARN")),
 		WebIdentityTokenFile: firstNonEmpty(os.Getenv("ATTACHMENT_S3_WEB_IDENTITY_TOKEN_FILE"), os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE")),
-		RoleSessionName: firstNonEmpty(os.Getenv("ATTACHMENT_S3_ROLE_SESSION_NAME"), os.Getenv("AWS_ROLE_SESSION_NAME")),
-		STSEndpoint: os.Getenv("ATTACHMENT_S3_STS_ENDPOINT"), ForcePathStyle: forcePathStyle,
+		RoleSessionName:      firstNonEmpty(os.Getenv("ATTACHMENT_S3_ROLE_SESSION_NAME"), os.Getenv("AWS_ROLE_SESSION_NAME")),
+		STSEndpoint:          os.Getenv("ATTACHMENT_S3_STS_ENDPOINT"), ForcePathStyle: forcePathStyle,
 		Timeout: timeout, AllowInsecure: cfg.AllowInsecure,
 		Encryption: cfg.Encryption, EncryptionKeyID: cfg.EncryptionKeyID,
 	})
@@ -140,8 +140,8 @@ func (s *S3ObjectStore) PresignUpload(objectKey, contentType, sha256 string, siz
 		return "", nil, ErrInvalidAttachment
 	}
 	headers := map[string]string{
-		"content-type":        contentType,
-		"x-amz-meta-sha256":  strings.ToLower(strings.TrimSpace(sha256)),
+		"content-type":      contentType,
+		"x-amz-meta-sha256": strings.ToLower(strings.TrimSpace(sha256)),
 	}
 	switch strings.ToLower(s.encryption) {
 	case "", "none":
@@ -160,7 +160,7 @@ func (s *S3ObjectStore) PresignUpload(objectKey, contentType, sha256 string, siz
 		return "", nil, err
 	}
 	publicHeaders := map[string]string{
-		"Content-Type":       contentType,
+		"Content-Type":      contentType,
 		"x-amz-meta-sha256": strings.ToLower(strings.TrimSpace(sha256)),
 	}
 	if value := headers["x-amz-server-side-encryption"]; value != "" {
