@@ -1,9 +1,9 @@
 package service
 
 import (
-	"fmt"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -100,7 +100,7 @@ func newGCPSecretManagerTestServer(t *testing.T, token string) (*httptest.Server
 			state.versionCalls++
 			version := len(state.secrets[secretID])
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"name": "projects/test-project/secrets/" + secretID + "/versions/" + strconvItoa(version),
+				"name":  "projects/test-project/secrets/" + secretID + "/versions/" + strconvItoa(version),
 				"state": "ENABLED",
 			})
 
@@ -248,7 +248,6 @@ func strconvItoa(value int) string {
 	return fmt.Sprintf("%d", value)
 }
 
-
 func TestConnectorGCPMigrationBecomesAuthoritativeForRuntimeDelivery(t *testing.T) {
 	secrets, _ := newGCPSecretManagerTestServer(t, "gcp-runtime-token")
 	defer secrets.Close()
@@ -338,7 +337,7 @@ func TestConnectorGCPMigrationBecomesAuthoritativeForRuntimeDelivery(t *testing.
 
 	connection, err = integrationSvc.UpdateConnection(7, org.ID, connection.ID, model.UpdateIntegrationConnectionRequest{
 		Name: connection.Name, Status: model.IntegrationConnectionActive,
-		Config: map[string]any{"target_url": target.URL},
+		Config:      map[string]any{"target_url": target.URL},
 		Credentials: map[string]any{"access_token": "token-after-gcp"},
 	})
 	if err != nil {
