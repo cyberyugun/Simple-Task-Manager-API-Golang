@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -117,7 +118,8 @@ func TestAzureBlobObjectStoreAccountKeyPresignVerifyAndDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	if parsed.Query().Get("sig") == "" || parsed.Query().Get("sp") != "cw" ||
-		parsed.Query().Get("sr") != "b" || parsed.Query().Get("sv") != azureBlobAPIVersion {
+		parsed.Query().Get("sr") != "b" || parsed.Query().Get("sv") != azureBlobAPIVersion ||
+		parsed.Query().Get("ses") != "attachment-scope" {
 		t.Fatalf("unexpected Azure SAS query: %v", parsed.Query())
 	}
 	if headers["x-ms-blob-type"] != "BlockBlob" ||
