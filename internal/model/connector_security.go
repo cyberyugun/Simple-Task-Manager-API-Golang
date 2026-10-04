@@ -88,4 +88,6 @@ type ConnectorSecretBackend struct {
 	ExternalVault      bool   `json:"external_vault"`
 	EnvelopeEncryption bool   `json:"envelope_encryption"`
 	CustomerManagedKey bool   `json:"customer_managed_key"`
+	Configured         bool   `json:"configured"`
+	NativeAdapter      bool   `json:"native_adapter"`
 }
