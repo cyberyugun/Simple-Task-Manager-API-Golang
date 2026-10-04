@@ -76,6 +76,7 @@ func main() {
 	var workflowRepo repository.WorkflowRepository
 	var notificationRepo repository.NotificationRepository
 	var attachmentRepo repository.AttachmentRepository
+	var searchAnalyticsRepo repository.SearchAnalyticsRepository
 	var integrationRepo repository.IntegrationRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
@@ -110,6 +111,7 @@ func main() {
 		workflowRepo = repository.NewPostgresWorkflowRepository(db)
 		notificationRepo = repository.NewPostgresNotificationRepository(db)
 		attachmentRepo = repository.NewPostgresAttachmentRepository(db)
+		searchAnalyticsRepo = repository.NewPostgresSearchAnalyticsRepository(db)
 		integrationRepo = repository.NewPostgresIntegrationRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
@@ -137,6 +139,7 @@ func main() {
 		workflowRepo = repository.NewInMemoryWorkflowRepository()
 		notificationRepo = repository.NewInMemoryNotificationRepository()
 		attachmentRepo = repository.NewInMemoryAttachmentRepository()
+		searchAnalyticsRepo = repository.NewInMemorySearchAnalyticsRepository(taskRepo)
 		integrationRepo = repository.NewInMemoryIntegrationRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
@@ -227,6 +230,7 @@ func main() {
 		os.Exit(1)
 	}
 	attachmentService := service.NewAttachmentService(attachmentRepo, taskRepo, taskCollaborationRepo, workspaceRepo, attachmentStore, service.NoopAttachmentScanner{}, attachmentConfig)
+	searchAnalyticsService := service.NewSearchAnalyticsService(searchAnalyticsRepo, workspaceRepo)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {
 		logger.Error("integration_cipher_configuration_failed", "error", err)
@@ -250,6 +254,7 @@ func main() {
 	workflowHandler := handler.NewWorkflowHandler(workflowService)
 	notificationHandler := handler.NewNotificationHandler(notificationService)
 	attachmentHandler := handler.NewAttachmentHandler(attachmentService)
+	searchAnalyticsHandler := handler.NewSearchAnalyticsHandler(searchAnalyticsService)
 	integrationHandler := handler.NewIntegrationHandler(integrationService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
@@ -455,6 +460,17 @@ func main() {
 	mux.Handle("/api/task-lists/{list_id}", protectedWorkspace(taskCollaborationHandler.ListByID))
 	mux.Handle("/api/task-labels", protectedWorkspaceIdempotent(taskCollaborationHandler.Labels))
 	mux.Handle("/api/task-custom-fields", protectedWorkspaceIdempotent(taskCollaborationHandler.CustomFields))
+
+	mux.Handle("/api/search/tasks", protectedWorkspace(searchAnalyticsHandler.SearchTasks))
+	mux.Handle("/api/search/saved-views", protectedWorkspace(searchAnalyticsHandler.SavedViews))
+	mux.Handle("/api/search/saved-views/{view_id}", protectedWorkspace(searchAnalyticsHandler.SavedViewByID))
+	mux.Handle("/api/analytics/dashboard", protectedWorkspace(searchAnalyticsHandler.Dashboard))
+	mux.Handle("/api/analytics/workload", protectedWorkspace(searchAnalyticsHandler.Workload))
+	mux.Handle("/api/analytics/trends", protectedWorkspace(searchAnalyticsHandler.Trends))
+	mux.Handle("/api/reports/export", protectedWorkspace(searchAnalyticsHandler.Export))
+	mux.Handle("/api/reports/schedules", protectedWorkspace(searchAnalyticsHandler.Schedules))
+	mux.Handle("/api/reports/schedules/{report_id}", protectedWorkspace(searchAnalyticsHandler.ScheduleByID))
+	mux.Handle("/api/reports/runs", protectedWorkspace(searchAnalyticsHandler.ReportRuns))
 
 	mux.Handle("/api/attachments/uploads", protectedWorkspaceIdempotent(attachmentHandler.Uploads))
 	mux.Handle("/api/attachments", protectedWorkspace(attachmentHandler.Attachments))

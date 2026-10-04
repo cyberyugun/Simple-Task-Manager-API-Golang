@@ -400,6 +400,21 @@ func TestIntegrationPostgresRepositories(t *testing.T) {
 
 func resetDatabase(db *sql.DB) error {
 	for _, statement := range []string{
+		"DROP TABLE IF EXISTS report_runs CASCADE",
+		"DROP TABLE IF EXISTS scheduled_reports CASCADE",
+		"DROP TABLE IF EXISTS saved_search_views CASCADE",
+		"DROP TABLE IF EXISTS attachments CASCADE",
+		"DROP TABLE IF EXISTS notification_deliveries CASCADE",
+		"DROP TABLE IF EXISTS notifications CASCADE",
+		"DROP TABLE IF EXISTS notification_templates CASCADE",
+		"DROP TABLE IF EXISTS notification_endpoints CASCADE",
+		"DROP TABLE IF EXISTS notification_preferences CASCADE",
+		"DROP TABLE IF EXISTS workflow_checkpoints CASCADE",
+		"DROP TABLE IF EXISTS workflow_approvals CASCADE",
+		"DROP TABLE IF EXISTS workflow_node_executions CASCADE",
+		"DROP TABLE IF EXISTS workflow_executions CASCADE",
+		"DROP TABLE IF EXISTS workflow_versions CASCADE",
+		"DROP TABLE IF EXISTS workflow_definitions CASCADE",
 		"DROP TABLE IF EXISTS task_activities CASCADE",
 		"DROP TABLE IF EXISTS task_custom_field_values CASCADE",
 		"DROP TABLE IF EXISTS task_custom_field_definitions CASCADE",
@@ -485,6 +500,10 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"016_enterprise_automation_policy_orchestration.sql",
 		"017_enterprise_integration_hub.sql",
 		"018_task_management_collaboration.sql",
+		"019_workflow_engine.sql",
+		"020_notification_reminder_communication.sql",
+		"021_file_attachment_platform.sql",
+		"022_search_reporting_analytics.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {

@@ -29,6 +29,7 @@ tags:
   - name: Enterprise Workflows
   - name: Enterprise Notifications
   - name: Files & Attachments
+  - name: Advanced Search & Analytics
   - name: Enterprise Integrations
 
 paths:
@@ -3074,6 +3075,114 @@ paths:
       responses:
         '200': { description: Custom field value updated }
         '400': { $ref: '#/components/responses/BadRequest' }
+
+
+  /api/search/tasks:
+    get:
+      tags: [Advanced Search & Analytics]
+      summary: Full-text search tasks in the current workspace
+      operationId: searchTasks
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Ranked task search results }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/search/saved-views:
+    get:
+      tags: [Advanced Search & Analytics]
+      summary: List private and shared saved search views
+      operationId: listSavedSearchViews
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Saved search views }
+    post:
+      tags: [Advanced Search & Analytics]
+      summary: Create a saved search view
+      operationId: createSavedSearchView
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Saved search view created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/search/saved-views/{view_id}:
+    delete:
+      tags: [Advanced Search & Analytics]
+      summary: Delete an owned saved search view
+      operationId: deleteSavedSearchView
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: view_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Saved search view deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/analytics/dashboard:
+    get:
+      tags: [Advanced Search & Analytics]
+      summary: Get workspace task analytics dashboard
+      operationId: getTaskAnalyticsDashboard
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Task analytics dashboard }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/analytics/workload:
+    get:
+      tags: [Advanced Search & Analytics]
+      summary: Get assignment workload analytics
+      operationId: getTaskWorkloadAnalytics
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workload metrics }
+  /api/analytics/trends:
+    get:
+      tags: [Advanced Search & Analytics]
+      summary: Get created completed and overdue task trends
+      operationId: getTaskTrendAnalytics
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Daily task trend metrics }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/reports/export:
+    get:
+      tags: [Advanced Search & Analytics]
+      summary: Export filtered workspace task data as JSON or CSV
+      operationId: exportTaskReport
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: JSON or CSV task export }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/reports/schedules:
+    get:
+      tags: [Advanced Search & Analytics]
+      summary: List scheduled task reports
+      operationId: listScheduledTaskReports
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Scheduled reports }
+    post:
+      tags: [Advanced Search & Analytics]
+      summary: Create a timezone-aware scheduled task report
+      operationId: createScheduledTaskReport
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Scheduled report created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/reports/schedules/{report_id}:
+    delete:
+      tags: [Advanced Search & Analytics]
+      summary: Delete an owned scheduled task report
+      operationId: deleteScheduledTaskReport
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: report_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Scheduled report deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/reports/runs:
+    get:
+      tags: [Advanced Search & Analytics]
+      summary: List scheduled report execution history
+      operationId: listScheduledReportRuns
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Scheduled report run history }
 
 components:
   securitySchemes:

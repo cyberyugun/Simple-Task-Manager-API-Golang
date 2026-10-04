@@ -687,6 +687,49 @@ jobs:
           usage="$(curl --fail --silent http://localhost:8080/api/attachments/usage -H "Authorization: Bearer $token")"
           printf '%s' "$usage" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["used_bytes"] >= 128; assert d["quota_bytes"] > 0'
 
+      - name: Smoke test advanced search reporting analytics
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          analytics_task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"title":"Phase 37 analytics search target","description":"search reporting dashboard metrics","status":"IN_PROGRESS","priority":"HIGH"}')"
+          analytics_task_id="$(printf '%s' "$analytics_task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          search="$(curl --fail --silent 'http://localhost:8080/api/search/tasks?q=analytics&limit=20' -H "Authorization: Bearer $token")"
+          printf '%s' "$search" | TASK_ID="$analytics_task_id" python3 -c 'import json,os,sys; d=json.load(sys.stdin)["data"]; tid=int(os.environ["TASK_ID"]); assert d["pagination"]["total"] >= 1; hit=next(x for x in d["items"] if x["task"]["id"]==tid); assert hit["rank"] > 0'
+
+          saved="$(curl --fail --silent -X POST http://localhost:8080/api/search/saved-views -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI High Priority","query":{"priority":"HIGH"},"shared":true}')"
+          saved_id="$(printf '%s' "$saved" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["shared"] is True; print(d["id"])')"
+          views="$(curl --fail --silent http://localhost:8080/api/search/saved-views -H "Authorization: Bearer $token")"
+          printf '%s' "$views" | SAVED_ID="$saved_id" python3 -c 'import json,os,sys; sid=int(os.environ["SAVED_ID"]); assert any(x["id"]==sid for x in json.load(sys.stdin)["data"])'
+
+          dashboard="$(curl --fail --silent 'http://localhost:8080/api/analytics/dashboard?days=30' -H "Authorization: Bearer $token")"
+          printf '%s' "$dashboard" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["summary"]["total_tasks"] >= 1; assert "IN_PROGRESS" in d["by_status"]; assert len(d["trend"])==30'
+
+          workload="$(curl --fail --silent http://localhost:8080/api/analytics/workload -H "Authorization: Bearer $token")"
+          printf '%s' "$workload" | python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin)["data"], list)'
+          trends="$(curl --fail --silent 'http://localhost:8080/api/analytics/trends?days=30' -H "Authorization: Bearer $token")"
+          printf '%s' "$trends" | python3 -c 'import json,sys; assert len(json.load(sys.stdin)["data"])==30'
+
+          json_export="$(curl --fail --silent 'http://localhost:8080/api/reports/export?format=json&priority=HIGH' -H "Authorization: Bearer $token")"
+          printf '%s' "$json_export" | TASK_ID="$analytics_task_id" python3 -c 'import json,os,sys; tid=int(os.environ["TASK_ID"]); rows=json.load(sys.stdin)["rows"]; assert any(x["id"]==tid for x in rows)'
+          curl --fail --silent 'http://localhost:8080/api/reports/export?format=csv' -H "Authorization: Bearer $token" | head -n 1 | grep -q 'id,title,status,priority'
+
+          schedule="$(curl --fail --silent -X POST http://localhost:8080/api/reports/schedules -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Daily Report","format":"json","frequency":"daily","timezone":"UTC","hour":8,"filters":{"priority":"HIGH"},"run_now":true}')"
+          schedule_id="$(printf '%s' "$schedule" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          run_status=""
+          for attempt in $(seq 1 30); do
+            runs="$(curl --fail --silent 'http://localhost:8080/api/reports/runs?limit=50' -H "Authorization: Bearer $token")"
+            run_status="$(printf '%s' "$runs" | SCHEDULE_ID="$schedule_id" python3 -c 'import json,os,sys; sid=int(os.environ["SCHEDULE_ID"]); matches=[x for x in json.load(sys.stdin)["data"] if x["schedule_id"]==sid]; print(matches[0]["status"] if matches else "")')"
+            if [ "$run_status" = "succeeded" ]; then
+              printf '%s' "$runs" | SCHEDULE_ID="$schedule_id" python3 -c 'import json,os,sys; sid=int(os.environ["SCHEDULE_ID"]); run=next(x for x in json.load(sys.stdin)["data"] if x["schedule_id"]==sid); assert run["row_count"] >= 1'
+              break
+            fi
+            sleep 1
+          done
+          test "$run_status" = "succeeded"
+
       - name: Smoke test idempotent task and outbox worker
         run: |
           login_response="$(curl --fail --silent \
@@ -729,11 +772,12 @@ jobs:
           docker compose logs worker | grep '"msg":"workflow_worker_started"'
           docker compose logs worker | grep '"msg":"notification_worker_started"'
           docker compose logs worker | grep '"msg":"attachment_worker_started"'
+          docker compose logs worker | grep '"msg":"report_worker_started"'
 
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "21"
+          test "$migration_count" = "22"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
