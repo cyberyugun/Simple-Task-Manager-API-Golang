@@ -17,18 +17,18 @@ import (
 )
 
 var (
-	ErrExtensionWorkspaceForbidden   = errors.New("marketplace publishing requires workspace owner or admin")
+	ErrExtensionWorkspaceForbidden    = errors.New("marketplace publishing requires workspace owner or admin")
 	ErrExtensionOrganizationForbidden = errors.New("extension installation requires organization owner or admin")
-	ErrInvalidExtensionPublisher     = errors.New("invalid extension publisher")
-	ErrInvalidExtensionPublisherFlow = errors.New("invalid extension publisher lifecycle transition")
-	ErrInvalidMarketplaceApplication = errors.New("invalid marketplace application manifest")
-	ErrInvalidMarketplaceReview      = errors.New("invalid marketplace application lifecycle transition")
+	ErrInvalidExtensionPublisher      = errors.New("invalid extension publisher")
+	ErrInvalidExtensionPublisherFlow  = errors.New("invalid extension publisher lifecycle transition")
+	ErrInvalidMarketplaceApplication  = errors.New("invalid marketplace application manifest")
+	ErrInvalidMarketplaceReview       = errors.New("invalid marketplace application lifecycle transition")
 	ErrMarketplacePublisherUnverified = errors.New("marketplace publisher must be verified")
 	ErrMarketplaceApplicationApproval = errors.New("marketplace application must be approved")
-	ErrInvalidExtensionInstallation  = errors.New("invalid extension installation")
-	ErrInvalidExtensionConfiguration = errors.New("invalid extension configuration")
-	ErrInvalidExtensionSecret        = errors.New("invalid extension installation secret")
-	ErrInvalidExtensionSubscription  = errors.New("invalid extension event subscription")
+	ErrInvalidExtensionInstallation   = errors.New("invalid extension installation")
+	ErrInvalidExtensionConfiguration  = errors.New("invalid extension configuration")
+	ErrInvalidExtensionSecret         = errors.New("invalid extension installation secret")
+	ErrInvalidExtensionSubscription   = errors.New("invalid extension event subscription")
 )
 
 type ExtensionService struct {
@@ -920,4 +920,3 @@ func extensionContains(values []string, target string) bool {
 	}
 	return false
 }
-
