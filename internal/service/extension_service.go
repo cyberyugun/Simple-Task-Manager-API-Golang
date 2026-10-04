@@ -744,8 +744,7 @@ func extensionNormalizeEventTypes(values []string) ([]string, error) {
 		if item == "*" {
 			continue
 		}
-		if len(item) > 160 || !strings.Contains(item, ".") || strings.ContainsAny(item, " 	
-") {
+		if len(item) > 160 || !strings.Contains(item, ".") || strings.ContainsAny(item, " \\t\\r\\n") {
 			return nil, ErrInvalidMarketplaceApplication
 		}
 	}
