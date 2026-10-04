@@ -859,8 +859,7 @@ func extensionNormalizeStringMap(input map[string]string) map[string]string {
 
 func extensionValidSecretRef(value string) bool {
 	value = strings.TrimSpace(value)
-	return len(value) >= 5 && len(value) <= 1000 && !strings.ContainsAny(value, "
-")
+	return len(value) >= 5 && len(value) <= 1000 && !strings.ContainsAny(value, "\\r\\n")
 }
 
 func extensionGenerateSecret() (string, string, string, error) {
