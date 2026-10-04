@@ -236,7 +236,7 @@ func main() {
 	if attachmentConfig.SigningSecret == "" {
 		attachmentConfig.SigningSecret = strings.TrimSpace(os.Getenv("JWT_SECRET"))
 	}
-	attachmentStore, err := service.NewSignedObjectStore(attachmentConfig)
+	attachmentStore, err := service.NewAttachmentObjectStore(attachmentConfig)
 	if err != nil {
 		logger.Error("attachment_storage_configuration_failed", "error", err)
 		os.Exit(1)
