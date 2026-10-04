@@ -560,7 +560,6 @@ func runIntegrationDeliveries(ctx context.Context, integrations *service.Integra
 	}
 }
 
-
 func runConnectorCredentialRefresh(ctx context.Context, connectors *service.ConnectorSecurityService, poll time.Duration, batch int, logger *slog.Logger) {
 	run := func() {
 		items, err := connectors.RefreshDueSystem(batch)

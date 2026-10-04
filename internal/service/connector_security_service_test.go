@@ -27,11 +27,11 @@ func TestConnectorOAuthPKCERefreshRotationAndHealth(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"access_token": "runtime-access-token",
+				"access_token":  "runtime-access-token",
 				"refresh_token": "runtime-refresh-token",
-				"scope": "tasks:read tasks:write",
-				"expires_in": 1,
-				"token_type": "Bearer",
+				"scope":         "tasks:read tasks:write",
+				"expires_in":    1,
+				"token_type":    "Bearer",
 			})
 		case "/health":
 			if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
@@ -63,15 +63,15 @@ func TestConnectorOAuthPKCERefreshRotationAndHealth(t *testing.T) {
 	integrationSvc := NewIntegrationService(integrations, orgs, cipher, true)
 	connection, err := integrationSvc.CreateConnection(7, org.ID, model.CreateIntegrationConnectionRequest{
 		Provider: model.IntegrationProviderGitHub,
-		Name: "GitHub OAuth",
+		Name:     "GitHub OAuth",
 		AuthType: model.IntegrationAuthOAuth2,
 		Config: map[string]any{
 			"authorize_url": server.URL + "/authorize",
-			"token_url": server.URL + "/token",
-			"health_url": server.URL + "/health",
-			"client_id": "client-id",
-			"redirect_uri": "http://localhost/callback",
-			"scopes": []any{"tasks:read", "tasks:write"},
+			"token_url":     server.URL + "/token",
+			"health_url":    server.URL + "/health",
+			"client_id":     "client-id",
+			"redirect_uri":  "http://localhost/callback",
+			"scopes":        []any{"tasks:read", "tasks:write"},
 		},
 		Credentials: map[string]any{"client_secret": "runtime-client-secret"},
 	})
@@ -112,7 +112,7 @@ func TestConnectorOAuthPKCERefreshRotationAndHealth(t *testing.T) {
 
 	rotated, err := svc.Rotate(7, org.ID, connection.ID, model.RotateConnectorCredentialRequest{
 		SecretBackend: model.ConnectorSecretBackendAWS,
-		KeyVersion: 2,
+		KeyVersion:    2,
 	})
 	if err != nil {
 		t.Fatal(err)

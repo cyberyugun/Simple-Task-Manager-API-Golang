@@ -16,17 +16,17 @@ const (
 )
 
 type ConnectorOAuthSession struct {
-	ID                int64     `json:"id"`
-	OrganizationID    int64     `json:"organization_id"`
-	ConnectionID      int64     `json:"connection_id"`
-	StateHash         string    `json:"-"`
-	EncryptedVerifier string    `json:"-"`
-	RedirectURI       string    `json:"redirect_uri"`
-	RequestedScopes   []string  `json:"requested_scopes"`
-	CreatedByUserID   int64     `json:"created_by_user_id"`
-	ExpiresAt         time.Time `json:"expires_at"`
+	ID                int64      `json:"id"`
+	OrganizationID    int64      `json:"organization_id"`
+	ConnectionID      int64      `json:"connection_id"`
+	StateHash         string     `json:"-"`
+	EncryptedVerifier string     `json:"-"`
+	RedirectURI       string     `json:"redirect_uri"`
+	RequestedScopes   []string   `json:"requested_scopes"`
+	CreatedByUserID   int64      `json:"created_by_user_id"`
+	ExpiresAt         time.Time  `json:"expires_at"`
 	ConsumedAt        *time.Time `json:"consumed_at,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
+	CreatedAt         time.Time  `json:"created_at"`
 }
 
 type ConnectorCredentialMetadata struct {
@@ -83,9 +83,9 @@ type ConnectorConnectionTest struct {
 }
 
 type ConnectorSecretBackend struct {
-	Key                  string `json:"key"`
-	DisplayName          string `json:"display_name"`
-	ExternalVault        bool   `json:"external_vault"`
-	EnvelopeEncryption   bool   `json:"envelope_encryption"`
-	CustomerManagedKey   bool   `json:"customer_managed_key"`
+	Key                string `json:"key"`
+	DisplayName        string `json:"display_name"`
+	ExternalVault      bool   `json:"external_vault"`
+	EnvelopeEncryption bool   `json:"envelope_encryption"`
+	CustomerManagedKey bool   `json:"customer_managed_key"`
 }

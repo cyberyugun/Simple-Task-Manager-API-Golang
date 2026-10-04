@@ -572,8 +572,8 @@ func defaultCredentialMetadata(connection model.IntegrationConnection) model.Con
 	return model.ConnectorCredentialMetadata{
 		ConnectionID: connection.ID, OrganizationID: connection.OrganizationID,
 		SecretBackend: model.ConnectorSecretBackendDatabase,
-		SecretRef: fmt.Sprintf("org/%d/integration/%d", connection.OrganizationID, connection.ID),
-		KeyVersion: 1, CredentialVersion: 0, Status: model.ConnectorCredentialActive,
+		SecretRef:     fmt.Sprintf("org/%d/integration/%d", connection.OrganizationID, connection.ID),
+		KeyVersion:    1, CredentialVersion: 0, Status: model.ConnectorCredentialActive,
 		GrantedScopes: []string{}, UpdatedAt: time.Now().UTC(),
 	}
 }
