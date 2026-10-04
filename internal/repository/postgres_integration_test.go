@@ -504,6 +504,8 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"020_notification_reminder_communication.sql",
 		"021_file_attachment_platform.sql",
 		"022_search_reporting_analytics.sql",
+		"023_connector_secret_governance.sql",
+		"024_event_fabric_schema_registry.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {
