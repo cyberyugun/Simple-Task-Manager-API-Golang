@@ -226,33 +226,33 @@ func TestGCSWorkloadIdentityMetadataTokenIsCached(t *testing.T) {
 
 func TestGCSObjectStoreRejectsUnsafeConfiguration(t *testing.T) {
 	if _, err := NewGCSObjectStore(GCSObjectStoreConfig{
-		Bucket: "Bad_Bucket",
+		Bucket:              "Bad_Bucket",
 		ServiceAccountEmail: "signer@test-project.iam.gserviceaccount.com",
-		AccessToken: "token",
+		AccessToken:         "token",
 	}); err == nil {
 		t.Fatal("expected invalid bucket rejection")
 	}
 	if _, err := NewGCSObjectStore(GCSObjectStoreConfig{
-		Bucket: "test-bucket",
+		Bucket:              "test-bucket",
 		ServiceAccountEmail: "invalid-email",
-		AccessToken: "token",
+		AccessToken:         "token",
 	}); err == nil {
 		t.Fatal("expected invalid service account email rejection")
 	}
 	if _, err := NewGCSObjectStore(GCSObjectStoreConfig{
-		Bucket: "test-bucket",
+		Bucket:              "test-bucket",
 		ServiceAccountEmail: "signer@test-project.iam.gserviceaccount.com",
-		Endpoint: "http://storage.example.test",
-		AccessToken: "token",
+		Endpoint:            "http://storage.example.test",
+		AccessToken:         "token",
 	}); err == nil {
 		t.Fatal("expected insecure GCS endpoint rejection")
 	}
 	if _, err := NewGCSObjectStore(GCSObjectStoreConfig{
-		Bucket: "test-bucket",
+		Bucket:              "test-bucket",
 		ServiceAccountEmail: "signer@test-project.iam.gserviceaccount.com",
-		AccessToken: "token",
-		Encryption: "gcp_cmek",
-		EncryptionKeyID: "../unsafe",
+		AccessToken:         "token",
+		Encryption:          "gcp_cmek",
+		EncryptionKeyID:     "../unsafe",
 	}); err == nil {
 		t.Fatal("expected invalid CMEK rejection")
 	}
