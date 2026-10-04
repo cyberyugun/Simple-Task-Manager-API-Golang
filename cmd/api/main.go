@@ -69,6 +69,7 @@ func main() {
 	var eventFabricRepo repository.EventFabricRepository
 	var enterpriseRepo repository.EnterpriseIdentityRepository
 	var developerPlatformRepo repository.DeveloperPlatformRepository
+	var aiAssistanceRepo repository.AIAssistanceRepository
 	var governanceRepo repository.GovernanceRepository
 	var lifecycleRepo repository.LifecycleRepository
 	var organizationRepo repository.OrganizationRepository
@@ -107,6 +108,7 @@ func main() {
 		eventFabricRepo = repository.NewPostgresEventFabricRepository(db)
 		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
 		developerPlatformRepo = repository.NewPostgresDeveloperPlatformRepository(db)
+		aiAssistanceRepo = repository.NewPostgresAIAssistanceRepository(db)
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
 		organizationRepo = repository.NewPostgresOrganizationRepository(db)
@@ -138,6 +140,7 @@ func main() {
 		eventFabricRepo = repository.NewInMemoryEventFabricRepository()
 		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
 		developerPlatformRepo = repository.NewInMemoryDeveloperPlatformRepository()
+		aiAssistanceRepo = repository.NewInMemoryAIAssistanceRepository()
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
 		organizationRepo = repository.NewInMemoryOrganizationRepository()
@@ -216,6 +219,9 @@ func main() {
 	developerPlatformService := service.NewDeveloperPlatformService(
 		developerPlatformRepo, workspaceRepo, enterpriseService, cfg.WebhookAllowInsecure, apidocs.Spec(),
 	)
+	aiAssistanceService := service.NewAIAssistanceService(
+		aiAssistanceRepo, organizationRepo, operationsRepo, taskRepo, taskService, service.NewAIProviderRegistry(),
+	)
 	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
 	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)
 	organizationService := service.NewOrganizationService(organizationRepo, userRepo, workspaceRepo)
@@ -261,6 +267,7 @@ func main() {
 	eventFabricHandler := handler.NewEventFabricHandler(eventFabricService)
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
 	developerPlatformHandler := handler.NewDeveloperPlatformHandler(developerPlatformService)
+	aiAssistanceHandler := handler.NewAIAssistanceHandler(aiAssistanceService)
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
 	organizationHandler := handler.NewOrganizationHandler(organizationService)
@@ -404,6 +411,16 @@ func main() {
 	mux.Handle("/api/organizations/{id}/domains/{domain_id}/verify", protectedFirstParty(organizationHandler.VerifyDomain))
 	mux.Handle("/api/organizations/{id}/dashboard", protectedFirstParty(organizationHandler.Dashboard))
 	mux.Handle("/api/organizations/{id}/audit", protectedFirstParty(organizationHandler.Audit))
+	mux.Handle("/api/organizations/{id}/ai/providers", protectedFirstParty(aiAssistanceHandler.Providers))
+	mux.Handle("/api/organizations/{id}/ai/policy", protectedFirstParty(aiAssistanceHandler.Policy))
+	mux.Handle("/api/organizations/{id}/ai/assist", protectedFirstParty(aiAssistanceHandler.Assist))
+	mux.Handle("/api/organizations/{id}/ai/requests", protectedFirstParty(aiAssistanceHandler.Requests))
+	mux.Handle("/api/organizations/{id}/ai/requests/{request_id}/decision", protectedFirstParty(aiAssistanceHandler.Decide))
+	mux.Handle("/api/organizations/{id}/ai/usage", protectedFirstParty(aiAssistanceHandler.Usage))
+	mux.Handle("/api/organizations/{id}/ai/semantic-search", protectedFirstParty(aiAssistanceHandler.SemanticSearch))
+	mux.Handle("/api/organizations/{id}/ai/evaluation-cases", protectedFirstParty(aiAssistanceHandler.EvaluationCases))
+	mux.Handle("/api/organizations/{id}/ai/evaluation-cases/{case_id}/run", protectedFirstParty(aiAssistanceHandler.RunEvaluation))
+	mux.Handle("/api/organizations/{id}/ai/quality", protectedFirstParty(aiAssistanceHandler.Quality))
 	mux.Handle("/api/organizations/{id}/billing/subscription", protectedFirstParty(billingHandler.Subscription))
 	mux.Handle("/api/organizations/{id}/billing/subscription/cancel", protectedFirstParty(billingHandler.CancelSubscription))
 	mux.Handle("/api/organizations/{id}/billing/entitlements", protectedFirstParty(billingHandler.Entitlements))
