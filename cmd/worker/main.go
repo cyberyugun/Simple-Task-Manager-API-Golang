@@ -291,6 +291,15 @@ func main() {
 		integrationCipher,
 		allowInsecure,
 	)
+	vaultSecretStore, err := service.NewHashiCorpVaultSecretStoreFromEnv(allowInsecure)
+	if err != nil {
+		logger.Error("connector_vault_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if vaultSecretStore != nil {
+		connectorSecurityService.RegisterSecretStore(vaultSecretStore)
+	}
+	integrationService.SetCredentialProvider(connectorSecurityService)
 	go runIntegrationDeliveries(ctx, integrationService, workerID+"-integration", integrationPoll, integrationBatch, logger)
 	go runConnectorCredentialRefresh(ctx, connectorSecurityService, connectorOAuthPoll, connectorOAuthBatch, logger)
 
