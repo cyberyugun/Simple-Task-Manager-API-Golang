@@ -297,6 +297,14 @@ func main() {
 	if awsSecretStore != nil {
 		connectorSecurityService.RegisterSecretStore(awsSecretStore)
 	}
+	azureSecretStore, err := service.NewAzureKeyVaultSecretStoreFromEnv(cfg.WebhookAllowInsecure)
+	if err != nil {
+		logger.Error("connector_azure_key_vault_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if azureSecretStore != nil {
+		connectorSecurityService.RegisterSecretStore(azureSecretStore)
+	}
 	integrationService.SetCredentialProvider(connectorSecurityService)
 	organizationService.SetEntitlementProvider(billingService)
 	workspaceService.SetDeletionGuard(governanceService)
