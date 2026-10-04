@@ -29,11 +29,7 @@ func TestDeveloperPlatformLifecycleCredentialSandboxQuotaAndPortal(t *testing.T)
 	identityRepo := repository.NewInMemoryEnterpriseIdentityRepository()
 	identity := NewEnterpriseIdentityService(identityRepo, workspaces, users, auth.NewTokenManager("developer-platform-test-secret", 15*time.Minute))
 	repo := repository.NewInMemoryDeveloperPlatformRepository()
-	svc := NewDeveloperPlatformService(repo, workspaces, identity, false, []byte("paths:
-  /api/tasks:
-    get:
-      summary: List tasks
-"))
+	svc := NewDeveloperPlatformService(repo, workspaces, identity, false, []byte("paths:\n  /api/tasks:\n    get:\n      summary: List tasks\n"))
 
 	app, err := svc.CreateApplication(user.ID, access.ID, model.CreateDeveloperApplicationRequest{
 		Name: "Task Companion", AllowedScopes: []string{model.ScopeTasksRead, model.ScopeTasksWrite},
