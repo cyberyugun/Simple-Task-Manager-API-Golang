@@ -348,6 +348,180 @@ func (s *GCPSecretManagerSecretStore) secretResourceURL(secretID string) string 
 	return s.projectURL("/secrets/" + url.PathEscape(secretID))
 }
 
+func (s *GCPSecretManagerSecretStore) call(ctx context.Context, method, endpoint string, body any, output any) error {
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
+	if err != nil {
+		return err
+	}
+	token, err := s.tokens.Token(ctx)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "simple-task-manager-gcp-secret-manager/1")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: GCP Secret Manager request failed: %v", ErrConnectorSecretStore, err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		apiErr := &gcpSecretManagerAPIError{Status: resp.StatusCode, StatusText: http.StatusText(resp.StatusCode)}
+		var decoded struct {
+			Error struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+				Status  string `json:"status"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(raw, &decoded) == nil {
+			apiErr.Code = decoded.Error.Code
+			apiErr.Message = strings.TrimSpace(decoded.Error.Message)
+			if strings.TrimSpace(decoded.Error.Status) != "" {
+				apiErr.StatusText = strings.TrimSpace(decoded.Error.Status)
+			}
+		}
+		return apiErr
+	}
+	if output != nil && len(raw) > 0 {
+		if err := json.Unmarshal(raw, output); err != nil {
+			return fmt.Errorf("%w: invalid GCP Secret Manager response", ErrConnectorSecretStore)
+		}
+	}
+	return nil
+}
+
+func gcpSecretVersionFromName(name string) (int, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0, fmt.Errorf("%w: missing GCP secret version name", ErrConnectorSecretStore)
+	}
+	parts := strings.Split(name, "/")
+	if len(parts) < 2 {
+		return 0, fmt.Errorf("%w: invalid GCP secret version name", ErrConnectorSecretStore)
+	}
+	version, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil || version <= 0 {
+		return 0, fmt.Errorf("%w: invalid GCP secret version", ErrConnectorSecretStore)
+	}
+	return version, nil
+}
+
+func parseGCPServiceEndpoint(raw string, allowInsecure bool) (*url.URL, error) {
+	endpoint, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || endpoint.Host == "" || endpoint.User != nil || endpoint.Fragment != "" || endpoint.RawQuery != "" {
+		return nil, fmt.Errorf("%w: invalid GCP Secret Manager endpoint", ErrConnectorSecretStore)
+	}
+	if endpoint.Scheme != "https" && !(allowInsecure && endpoint.Scheme == "http") {
+		return nil, fmt.Errorf("%w: GCP Secret Manager endpoint must use HTTPS", ErrConnectorSecretStore)
+	}
+	return endpoint, nil
+}
+
+func parseGCPMetadataEndpoint(raw string, allowInsecure bool) (*url.URL, error) {
+	endpoint, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || endpoint.Host == "" || endpoint.User != nil || endpoint.Fragment != "" {
+		return nil, fmt.Errorf("%w: invalid GCP metadata endpoint", ErrConnectorSecretStore)
+	}
+	if endpoint.Scheme == "https" {
+		return endpoint, nil
+	}
+	if endpoint.Scheme != "http" {
+		return nil, fmt.Errorf("%w: GCP metadata endpoint must use HTTP or HTTPS", ErrConnectorSecretStore)
+	}
+	host := strings.Split(endpoint.Host, ":")[0]
+	if host == "metadata.google.internal" || host == "169.254.169.254" {
+		return endpoint, nil
+	}
+	if allowInsecure {
+		return endpoint, nil
+	}
+	return nil, fmt.Errorf("%w: GCP metadata endpoint must be metadata service or HTTPS", ErrConnectorSecretStore)
+}
+
+func validGCPProjectID(value string) bool {
+	if value == "" || len(value) > 63 {
+		return false
+	}
+	for i, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			if (i == 0 || i == len(value)-1) && r == '-' {
+				return false
+			}
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validGCPSecretID(value string) bool {
+	if value == "" || len(value) > 255 {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validGCPKMSKeyName(value string) bool {
+	parts := strings.Split(strings.Trim(strings.TrimSpace(value), "/"), "/")
+	if len(parts) != 8 {
+		return false
+	}
+	if parts[0] != "projects" || parts[2] != "locations" || parts[4] != "keyRings" || parts[6] != "cryptoKeys" {
+		return false
+	}
+	for _, idx := range []int{1, 3, 5, 7} {
+		if parts[idx] == "" || strings.Contains(parts[idx], "..") {
+			return false
+		}
+		for _, r := range parts[idx] {
+			if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') &&
+				!(r >= '0' && r <= '9') && r != '-' && r != '_' && r != '.' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isGCPSecretNotFound(err error) bool {
+	var apiErr *gcpSecretManagerAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.Status == http.StatusNotFound || strings.EqualFold(apiErr.StatusText, "NOT_FOUND")
+}
+
+func isGCPSecretAlreadyExists(err error) bool {
+	var apiErr *gcpSecretManagerAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.Status == http.StatusConflict || strings.EqualFold(apiErr.StatusText, "ALREADY_EXISTS")
+}
+
 func (s *GCPSecretManagerSecretStore) Backend() string {
 	return model.ConnectorSecretBackendGCP
 }
