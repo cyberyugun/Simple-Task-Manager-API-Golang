@@ -304,7 +304,7 @@ func (s *S3ObjectStore) doSigned(ctx context.Context, method, objectKey string) 
 
 func (s *S3ObjectStore) objectURL(objectKey string) (*url.URL, error) {
 	objectKey = strings.Trim(strings.TrimSpace(objectKey), "/")
-	if objectKey == "" || strings.Contains(objectKey, "..") || strings.Contains(objectKey, "\\") {
+	if !validS3ObjectKey(objectKey) {
 		return nil, ErrInvalidAttachment
 	}
 	u := *s.endpoint
@@ -365,6 +365,23 @@ func signS3HeaderRequest(req *http.Request, credentials awsCredentials, region s
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+credentials.AccessKeyID+"/"+scope+
 		", SignedHeaders="+signedHeaders+", Signature="+signature)
 	return nil
+}
+
+func validS3ObjectKey(value string) bool {
+	if value == "" || strings.Contains(value, "\\") {
+		return false
+	}
+	for _, part := range strings.Split(value, "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+		for _, r := range part {
+			if r < 0x20 || r == 0x7f {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func validS3BucketName(value string) bool {
