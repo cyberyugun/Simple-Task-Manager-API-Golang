@@ -74,6 +74,16 @@ func main() {
 		logger.Error("integration_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	connectorOAuthPoll, err := durationEnv("CONNECTOR_OAUTH_REFRESH_POLL_INTERVAL", time.Minute)
+	if err != nil {
+		logger.Error("connector_oauth_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	connectorOAuthBatch, err := intEnv("CONNECTOR_OAUTH_REFRESH_BATCH_SIZE", 50)
+	if err != nil {
+		logger.Error("connector_oauth_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	notificationPoll, err := durationEnv("NOTIFICATION_POLL_INTERVAL", 2*time.Second)
 	if err != nil {
 		logger.Error("notification_worker_configuration_failed", "error", err)
@@ -229,13 +239,22 @@ func main() {
 		logger.Error("integration_cipher_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	integrationRepo := repository.NewPostgresIntegrationRepository(db)
 	integrationService := service.NewIntegrationService(
-		repository.NewPostgresIntegrationRepository(db),
+		integrationRepo,
+		organizationRepo,
+		integrationCipher,
+		allowInsecure,
+	)
+	connectorSecurityService := service.NewConnectorSecurityService(
+		repository.NewPostgresConnectorSecurityRepository(db),
+		integrationRepo,
 		organizationRepo,
 		integrationCipher,
 		allowInsecure,
 	)
 	go runIntegrationDeliveries(ctx, integrationService, workerID+"-integration", integrationPoll, integrationBatch, logger)
+	go runConnectorCredentialRefresh(ctx, connectorSecurityService, connectorOAuthPoll, connectorOAuthBatch, logger)
 
 	logger.Info("event_worker_started", "worker_id", workerID, "batch_size", batch, "poll_interval", poll)
 	if err := worker.Run(ctx); err != nil && ctx.Err() == nil {
@@ -534,6 +553,40 @@ func runIntegrationDeliveries(ctx context.Context, integrations *service.Integra
 		select {
 		case <-ctx.Done():
 			logger.Info("integration_worker_stopped")
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
+
+func runConnectorCredentialRefresh(ctx context.Context, connectors *service.ConnectorSecurityService, poll time.Duration, batch int, logger *slog.Logger) {
+	run := func() {
+		items, err := connectors.RefreshDueSystem(batch)
+		if err != nil {
+			logger.Error("connector_oauth_refresh_failed", "error", err)
+			return
+		}
+		for _, item := range items {
+			logger.Info(
+				"connector_oauth_refreshed",
+				"organization_id", item.OrganizationID,
+				"connection_id", item.ConnectionID,
+				"credential_version", item.CredentialVersion,
+				"expires_at", item.ExpiresAt,
+			)
+		}
+	}
+
+	logger.Info("connector_oauth_worker_started", "poll_interval", poll, "batch_size", batch)
+	run()
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("connector_oauth_worker_stopped")
 			return
 		case <-ticker.C:
 			run()
