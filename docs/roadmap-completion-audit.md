@@ -48,14 +48,16 @@ The scanner gateway receives object metadata rather than raw file bytes. A ClamA
 
 ### P1 — Phase 36 native object-store delivery
 
-`ObjectStore` is a real domain abstraction, but the bundled `SignedObjectStore` is a storage-gateway contract. It signs short-lived URLs and records provider metadata for S3, S3-compatible, Azure Blob and GCS; it does not embed native AWS/Azure/GCP storage SDK clients.
+The provider-neutral `SignedObjectStore` remains available for the original storage-gateway contract. Post-roadmap hardening now adds native S3 and S3-compatible delivery behind the same `ObjectStore` interface:
 
-This is acceptable for the roadmap definition-of-done because the provider boundary exists, but a production deployment still needs either:
+- AWS SigV4 presigned PUT/GET;
+- EKS/IRSA web-identity credentials or explicit local/test credentials;
+- optional S3 SSE-S3 or SSE-KMS request headers;
+- signed HEAD verification of content length and server-side SHA-256 metadata before upload completion;
+- signed delete plus post-delete HEAD verification;
+- fail-closed startup when native mode selects an unimplemented provider.
 
-1. a real storage gateway implementing this signed contract; or
-2. native provider adapters.
-
-Deletion should also be verified against the selected gateway/provider in live-provider testing.
+The remaining native provider work is Azure Blob and GCS. Live-provider IAM, outage, deletion-consistency and bucket-policy tests remain environment-level validation.
 
 ### P1 — Phase 38 native external secret backends
 
@@ -97,7 +99,7 @@ Production readiness therefore still requires real cloud-region game days and me
 
 ## Recommended post-Phase-45 execution order
 
-1. **Production Storage & Content Security Hardening** — finish scanner gateway rollout, live object-store adapter/gateway contract tests and deletion verification.
+1. **Production Storage & Content Security Hardening** — scanner gateway and native S3/S3-compatible storage are implemented; continue with native Azure Blob and GCS adapters plus live-provider contract validation.
 2. **Native Secret Vault & KMS Adapters** — complete at repository level: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager now share the same authoritative runtime credential contract.
 3. **Live Warehouse Delivery** — implement at least one real warehouse write adapter before broadening to all four providers.
 4. **External AI Provider Pack** — add one structured-output provider with classification and cost regression tests.
