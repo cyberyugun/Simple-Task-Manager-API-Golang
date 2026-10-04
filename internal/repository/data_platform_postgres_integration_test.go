@@ -83,11 +83,11 @@ func TestIntegrationPostgresEnterpriseDataPlatform(t *testing.T) {
 	}
 	connection, err := dataPlatform.CreateConnection(owner.ID, org.ID, model.CreateDataPlatformConnectionRequest{
 		Name: "Primary BigQuery", Provider: model.DataWarehouseBigQuery,
-		Target: "analytics.task_analytics",
-		BIContracts: []string{model.BIContractPowerBI, model.BIContractTableau},
-		Config: map[string]string{"project_id": "phase44-project", "dataset": "analytics"},
-		SecretRef: "secret://phase44/bigquery",
-		Masking: model.DataMaskingPolicy{Mode: model.MaskingHash, Fields: []string{"title"}},
+		Target:              "analytics.task_analytics",
+		BIContracts:         []string{model.BIContractPowerBI, model.BIContractTableau},
+		Config:              map[string]string{"project_id": "phase44-project", "dataset": "analytics"},
+		SecretRef:           "secret://phase44/bigquery",
+		Masking:             model.DataMaskingPolicy{Mode: model.MaskingHash, Fields: []string{"title"}},
 		FreshnessSLOMinutes: 60, MaxMonthlyCostUSD: 20,
 	})
 	if err != nil {
