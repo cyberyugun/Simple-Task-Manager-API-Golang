@@ -315,4 +315,3 @@ func TestGCSObjectStoreSignBlobPayloadIsBase64(t *testing.T) {
 		t.Fatalf("signature=%q", sig)
 	}
 }
-
