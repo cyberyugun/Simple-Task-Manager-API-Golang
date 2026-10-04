@@ -67,7 +67,25 @@ A direct token environment variable is also supported for deployments that do no
 
 Vault transport is HTTPS-only unless the explicit development-only insecure HTTP flag is enabled. Redirects are rejected, response bodies are bounded, logical paths are validated, and normal connector APIs never return stored credential material.
 
-AWS/Azure/GCP native secret/KMS adapters remain post-roadmap hardening work and should implement the same store contract with workload identity rather than provider credentials embedded in connector configuration.
+AWS Secrets Manager is also implemented as a native adapter. It uses direct AWS Secrets Manager JSON API calls with SigV4 signing, supports a customer-managed KMS key when creating connector secrets, and supports EKS/IRSA-style workload identity through `AWS_ROLE_ARN` + `AWS_WEB_IDENTITY_TOKEN_FILE`. Static AWS access keys remain available for local/test environments only.
+
+### AWS Secrets Manager configuration
+
+```text
+CONNECTOR_AWS_SECRETS_MANAGER_ENABLED=true
+CONNECTOR_AWS_REGION=ap-southeast-1
+CONNECTOR_AWS_SECRET_PREFIX=simple-task-manager/connectors
+CONNECTOR_AWS_KMS_KEY_ID=<optional-customer-managed-kms-key>
+AWS_ROLE_ARN=arn:aws:iam::<account>:role/<connector-role>
+AWS_WEB_IDENTITY_TOKEN_FILE=/var/run/secrets/eks.amazonaws.com/serviceaccount/token
+AWS_ROLE_SESSION_NAME=simple-task-manager-connectors
+CONNECTOR_AWS_TIMEOUT=10s
+CONNECTOR_AWS_RECOVERY_WINDOW_DAYS=7
+```
+
+The AWS adapter stores an application-level credential version inside each Secrets Manager value, signs every Secrets Manager request with SigV4, and uses a recovery window rather than force deletion. When migrated from the database envelope backend, the database credential copy is scrubbed after the external write and metadata cutover. Existing legacy records that previously used AWS only as metadata can still fall back to the old database envelope until their next successful external write migrates them.
+
+Azure Key Vault and GCP Secret Manager remain post-roadmap hardening work and should implement the same store contract with workload identity rather than provider credentials embedded in connector configuration.
 
 ## Worker
 

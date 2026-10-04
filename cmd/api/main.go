@@ -289,6 +289,14 @@ func main() {
 	if vaultSecretStore != nil {
 		connectorSecurityService.RegisterSecretStore(vaultSecretStore)
 	}
+	awsSecretStore, err := service.NewAWSSecretsManagerSecretStoreFromEnv(cfg.WebhookAllowInsecure)
+	if err != nil {
+		logger.Error("connector_aws_secrets_manager_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if awsSecretStore != nil {
+		connectorSecurityService.RegisterSecretStore(awsSecretStore)
+	}
 	integrationService.SetCredentialProvider(connectorSecurityService)
 	organizationService.SetEntitlementProvider(billingService)
 	workspaceService.SetDeletionGuard(governanceService)
