@@ -20,15 +20,15 @@ import (
 )
 
 type GCPSecretManagerConfig struct {
-	ProjectID         string
-	Prefix            string
-	CMEKKeyName       string
-	Endpoint          string
-	AccessToken       string
-	UseMetadata       bool
-	MetadataEndpoint  string
-	Timeout           time.Duration
-	AllowInsecure     bool
+	ProjectID        string
+	Prefix           string
+	CMEKKeyName      string
+	Endpoint         string
+	AccessToken      string
+	UseMetadata      bool
+	MetadataEndpoint string
+	Timeout          time.Duration
+	AllowInsecure    bool
 }
 
 type gcpAccessTokenProvider interface {
@@ -106,9 +106,9 @@ type GCPSecretManagerSecretStore struct {
 }
 
 type gcpSecretManagerAPIError struct {
-	Status  int
-	Code    int
-	Message string
+	Status     int
+	Code       int
+	Message    string
 	StatusText string
 }
 
