@@ -695,3 +695,8 @@ See [`docs/advanced-search-reporting-analytics.md`](docs/advanced-search-reporti
 ## Phase 38 — Connector OAuth Lifecycle & Enterprise Secret Governance
 
 Phase 38 adds OAuth authorization-code with PKCE, automatic credential renewal, permission checks, reconnect and health-test APIs, credential access audit, envelope rotation metadata, and a provider-neutral secret-backend boundary. See [docs/connector-oauth-secret-governance.md](docs/connector-oauth-secret-governance.md).
+
+
+## Phase 39 — Enterprise Event Fabric & Schema Registry
+
+Phase 39 adds governed event schemas/version compatibility, owner/deprecation metadata, routing rules, durable consumer subscriptions and offsets, correlation/causation IDs, retry/DLQ/redrive, range replay, retention, and a provider-neutral broker adapter boundary with PostgreSQL outbox as the default runtime. See [docs/enterprise-event-fabric-schema-registry.md](docs/enterprise-event-fabric-schema-registry.md).

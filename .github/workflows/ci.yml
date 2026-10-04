@@ -711,6 +711,54 @@ jobs:
 
           docker compose logs worker | grep -q connector_oauth_worker_started
 
+      - name: Smoke test enterprise event fabric and schema registry
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+          workspaces="$(curl --fail --silent http://localhost:8080/api/workspaces -H "Authorization: Bearer $token")"
+          workspace_id="$(printf '%s' "$workspaces" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; print(next(x["id"] for x in items if x["is_personal"]))')"
+
+          adapters="$(curl --fail --silent "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/adapters" -H "Authorization: Bearer $token")"
+          printf '%s' "$adapters" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; pg=next(x for x in d if x["key"]=="postgres_outbox"); assert pg["durable"] is True and pg["configured"] is True; assert any(x["key"]=="kafka" and x["configured"] is False for x in d)'
+
+          schema_payload='{"event_type":"task.created","compatibility":"backward","owner":"tasks","description":"CI Phase 39 task event","schema":{"required":["id","title"],"properties":{"id":{"type":"integer"},"title":{"type":"string"}}}}'
+          schema="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/schemas" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$schema_payload")"
+          printf '%s' "$schema" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["schema"]["version"]==1; assert d["compatibility"]["compatible"] is True'
+
+          subscription="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/subscriptions" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI task projection","consumer_key":"ci.task.projection","event_types":["task.created"],"adapter":"postgres_outbox","max_attempts":3,"retention_days":30}')"
+          subscription_id="$(printf '%s' "$subscription" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="active"; print(d["id"])')"
+
+          route_payload="$(python3 -c 'import json,sys; print(json.dumps({"name":"CI task created","event_pattern":"task.created","subscription_id":int(sys.argv[1])}))' "$subscription_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/routes" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$route_payload" >/dev/null
+
+          task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H "X-Workspace-ID: $workspace_id" -H 'Content-Type: application/json' -d '{"title":"Phase 39 routed task","description":"event fabric runtime smoke"}')"
+          task_id="$(printf '%s' "$task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          delivery_id=""
+          outbox_event_id=""
+          for attempt in $(seq 1 30); do
+            deliveries="$(curl --fail --silent "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/deliveries?subscription_id=$subscription_id" -H "Authorization: Bearer $token")"
+            values="$(printf '%s' "$deliveries" | TASK_ID="$task_id" python3 -c 'import json,os,sys; tid=int(os.environ["TASK_ID"]); items=json.load(sys.stdin)["data"]; matches=[x for x in items if x["event_type"]=="task.created" and int(x["payload"].get("id",0))==tid and x["status"]=="delivered"]; print((str(matches[0]["id"])+" "+str(matches[0]["outbox_event_id"])) if matches else "")')"
+            if [ -n "$values" ]; then
+              delivery_id="$(printf '%s' "$values" | cut -d' ' -f1)"
+              outbox_event_id="$(printf '%s' "$values" | cut -d' ' -f2)"
+              printf '%s' "$deliveries" | DELIVERY_ID="$delivery_id" python3 -c 'import json,os,sys; did=int(os.environ["DELIVERY_ID"]); item=next(x for x in json.load(sys.stdin)["data"] if x["id"]==did); assert item["correlation_id"]==item["event_key"]; assert item.get("causation_id","")==""'
+              break
+            fi
+            sleep 1
+          done
+          test -n "$delivery_id"
+          test -n "$outbox_event_id"
+
+          offset="$(curl --fail --silent "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/subscriptions/$subscription_id/offset" -H "Authorization: Bearer $token")"
+          printf '%s' "$offset" | OUTBOX_ID="$outbox_event_id" python3 -c 'import json,os,sys; d=json.load(sys.stdin)["data"]; assert d["last_event_id"]==int(os.environ["OUTBOX_ID"]); assert d["last_event_key"]'
+
+          replay_payload="$(python3 -c 'import json,sys; x=int(sys.argv[1]); print(json.dumps({"from_event_id":x,"to_event_id":x}))' "$outbox_event_id")"
+          replay="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/subscriptions/$subscription_id/replay" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$replay_payload")"
+          printf '%s' "$replay" | python3 -c 'import json,sys; assert json.load(sys.stdin)["data"]["queued"]==1'
+
+          docker compose logs worker | grep -q event_fabric_worker_started
+
       - name: Smoke test advanced search reporting analytics
         run: |
           login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
@@ -801,7 +849,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "23"
+          test "$migration_count" = "24"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"

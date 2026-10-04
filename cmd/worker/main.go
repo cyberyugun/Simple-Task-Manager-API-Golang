@@ -134,6 +134,21 @@ func main() {
 		logger.Error("report_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	eventFabricPoll, err := durationEnv("EVENT_FABRIC_POLL_INTERVAL", 2*time.Second)
+	if err != nil {
+		logger.Error("event_fabric_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	eventFabricRetentionPoll, err := durationEnv("EVENT_FABRIC_RETENTION_POLL_INTERVAL", time.Hour)
+	if err != nil {
+		logger.Error("event_fabric_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	eventFabricBatch, err := intEnv("EVENT_FABRIC_BATCH_SIZE", 50)
+	if err != nil {
+		logger.Error("event_fabric_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	allowInsecure, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("WEBHOOK_ALLOW_INSECURE_HTTP")))
 	host, _ := os.Hostname()
 	workerID := fmt.Sprintf("%s-%d", host, os.Getpid())
@@ -154,10 +169,15 @@ func main() {
 			ReminderHorizon:  reminderHorizon,
 		},
 	)
+	eventFabricService := service.NewEventFabricService(
+		repository.NewPostgresEventFabricRepository(db),
+		repository.NewPostgresWorkspaceRepository(db),
+		service.NewEventFabricAdapterRegistry(),
+	)
 	worker := events.NewWorker(repository.NewPostgresEventRepository(db), events.WorkerOptions{
 		WorkerID: workerID, BatchSize: batch, PollInterval: poll,
 		HTTPTimeout: timeout, AllowInsecure: allowInsecure, Logger: logger,
-		Consumers: []events.EventConsumer{notificationService},
+		Consumers: []events.EventConsumer{notificationService, eventFabricService},
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -233,6 +253,15 @@ func main() {
 		repository.NewPostgresWorkspaceRepository(db),
 	)
 	go runScheduledReports(ctx, searchAnalyticsService, reportPoll, reportBatch, logger)
+	go runEventFabricPlatform(
+		ctx,
+		eventFabricService,
+		workerID+"-event-fabric",
+		eventFabricPoll,
+		eventFabricRetentionPoll,
+		eventFabricBatch,
+		logger,
+	)
 
 	integrationCipher, err := service.NewIntegrationCredentialCipher(os.Getenv("JWT_SECRET"))
 	if err != nil {
@@ -589,6 +618,64 @@ func runConnectorCredentialRefresh(ctx context.Context, connectors *service.Conn
 			return
 		case <-ticker.C:
 			run()
+		}
+	}
+}
+
+func runEventFabricPlatform(
+	ctx context.Context,
+	fabric *service.EventFabricService,
+	workerID string,
+	poll time.Duration,
+	retentionPoll time.Duration,
+	batch int,
+	logger *slog.Logger,
+) {
+	process := func() {
+		items, err := fabric.ProcessBatch(ctx, workerID, batch)
+		if err != nil {
+			logger.Error("event_fabric_batch_failed", "error", err)
+			return
+		}
+		for _, item := range items {
+			logger.Info(
+				"event_fabric_delivery_processed",
+				"workspace_id", item.WorkspaceID,
+				"subscription_id", item.SubscriptionID,
+				"delivery_id", item.ID,
+				"event_key", item.EventKey,
+				"correlation_id", item.CorrelationID,
+				"status", item.Status,
+			)
+		}
+	}
+	purge := func() {
+		count, err := fabric.PurgeRetention(500)
+		if err != nil {
+			logger.Error("event_fabric_retention_failed", "error", err)
+			return
+		}
+		if count > 0 {
+			logger.Info("event_fabric_retention_completed", "purged", count)
+		}
+	}
+
+	logger.Info("event_fabric_worker_started", "poll_interval", poll, "batch_size", batch)
+	process()
+	purge()
+	processTicker := time.NewTicker(poll)
+	retentionTicker := time.NewTicker(retentionPoll)
+	defer processTicker.Stop()
+	defer retentionTicker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("event_fabric_worker_stopped")
+			return
+		case <-processTicker.C:
+			process()
+		case <-retentionTicker.C:
+			purge()
 		}
 	}
 }

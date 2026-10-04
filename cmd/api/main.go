@@ -66,6 +66,7 @@ func main() {
 	var actionRepo repository.AuthActionTokenRepository
 	var workspaceRepo repository.WorkspaceRepository
 	var eventRepo repository.EventRepository
+	var eventFabricRepo repository.EventFabricRepository
 	var enterpriseRepo repository.EnterpriseIdentityRepository
 	var governanceRepo repository.GovernanceRepository
 	var lifecycleRepo repository.LifecycleRepository
@@ -102,6 +103,7 @@ func main() {
 		actionRepo = repository.NewPostgresAuthActionTokenRepository(db)
 		workspaceRepo = repository.NewPostgresWorkspaceRepository(db)
 		eventRepo = repository.NewPostgresEventRepository(db)
+		eventFabricRepo = repository.NewPostgresEventFabricRepository(db)
 		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
@@ -131,6 +133,7 @@ func main() {
 		actionRepo = repository.NewInMemoryAuthActionTokenRepository()
 		workspaceRepo = repository.NewInMemoryWorkspaceRepository()
 		eventRepo = repository.NewInMemoryEventRepository()
+		eventFabricRepo = repository.NewInMemoryEventFabricRepository()
 		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
@@ -205,6 +208,7 @@ func main() {
 	taskService.SetCollaborationService(taskCollaborationService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, userRepo)
 	webhookService := service.NewWebhookService(workspaceRepo, eventRepo, cfg.WebhookAllowInsecure)
+	eventFabricService := service.NewEventFabricService(eventFabricRepo, workspaceRepo, service.NewEventFabricAdapterRegistry())
 	enterpriseService := service.NewEnterpriseIdentityService(enterpriseRepo, workspaceRepo, userRepo, tokenManager)
 	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
 	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)
@@ -248,6 +252,7 @@ func main() {
 	taskCollaborationHandler := handler.NewTaskCollaborationHandler(taskCollaborationService)
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
 	webhookHandler := handler.NewWebhookHandler(webhookService)
+	eventFabricHandler := handler.NewEventFabricHandler(eventFabricService)
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
@@ -446,6 +451,16 @@ func main() {
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
 	mux.Handle("/api/workspaces/{id}/webhooks/{subscription_id}", protected(webhookHandler.SubscriptionByID))
+	mux.Handle("/api/workspaces/{id}/event-fabric/adapters", protectedWorkspace(eventFabricHandler.Adapters))
+	mux.Handle("/api/workspaces/{id}/event-fabric/schemas", protectedWorkspace(eventFabricHandler.Schemas))
+	mux.Handle("/api/workspaces/{id}/event-fabric/schemas/{schema_id}/deprecate", protectedWorkspace(eventFabricHandler.DeprecateSchema))
+	mux.Handle("/api/workspaces/{id}/event-fabric/subscriptions", protectedWorkspace(eventFabricHandler.Subscriptions))
+	mux.Handle("/api/workspaces/{id}/event-fabric/subscriptions/{subscription_id}", protectedWorkspace(eventFabricHandler.SubscriptionByID))
+	mux.Handle("/api/workspaces/{id}/event-fabric/subscriptions/{subscription_id}/offset", protectedWorkspace(eventFabricHandler.Offset))
+	mux.Handle("/api/workspaces/{id}/event-fabric/subscriptions/{subscription_id}/replay", protectedWorkspace(eventFabricHandler.ReplaySubscription))
+	mux.Handle("/api/workspaces/{id}/event-fabric/routes", protectedWorkspace(eventFabricHandler.Routes))
+	mux.Handle("/api/workspaces/{id}/event-fabric/deliveries", protectedWorkspace(eventFabricHandler.Deliveries))
+	mux.Handle("/api/workspaces/{id}/event-fabric/deliveries/{delivery_id}/redrive", protectedWorkspace(eventFabricHandler.RedriveDelivery))
 	mux.Handle("/api/workspaces/{id}/identity/oauth-clients", protectedIdentityAdmin(enterpriseHandler.OAuthClients))
 	mux.Handle("/api/workspaces/{id}/identity/oauth/authorize", protectedFirstParty(enterpriseHandler.OAuthAuthorize))
 	mux.Handle("/api/workspaces/{id}/identity/api-keys", protectedIdentityAdmin(enterpriseHandler.APIKeys))
