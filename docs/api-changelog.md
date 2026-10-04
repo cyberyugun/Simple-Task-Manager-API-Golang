@@ -1,5 +1,24 @@
 # API Changelog
 
+## 1.9.0 — Phase 45
+
+Compatibility line: **v1**.
+
+Additive platform extensibility and application marketplace release:
+
+- adds remote-only marketplace application manifests that never execute arbitrary extension code in the core API process
+- adds publisher verification and application review lifecycle
+- adds marketplace metadata, categories and declarative workflow/compliance/reporting packs
+- adds organization-approved install, secret rotation and uninstall lifecycle
+- adds one-time hashed installation secrets and scoped short-lived extension token exchange
+- adds active-installation and quota enforcement for extension API traffic
+- adds manifest-constrained durable event webhook subscriptions using the existing outbox delivery runtime
+- adds separate extension configuration and external secret-reference storage
+- adds daily/monthly usage quota analytics and response latency/error tracking
+- adds organization/workspace audit records and extension installation lifecycle domain events
+- preserves all existing v1 paths, operation IDs, request requirements and response fields
+
+
 ## 1.8.0 — Phase 44
 
 Compatibility line: **v1**.
