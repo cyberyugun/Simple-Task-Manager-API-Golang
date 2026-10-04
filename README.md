@@ -53,6 +53,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - GitHub Actions CI
 - Enterprise billing, subscription, entitlement, usage-metering, invoice, and signed provider-webhook foundations
 - Enterprise platform operations, FinOps budgets, SLOs, incidents, maintenance, capacity forecasts, and operational alerts
+- Global multi-region control plane with tenant home regions, data-residency enforcement, governed migrations/transfers, regional placement inventory, routing decisions, and failover RPO/RTO evidence
 
 ## Environment
 
@@ -208,6 +209,8 @@ The public contract is compatibility line `v1`. Responses advertise `X-API-Versi
 Workspace tenancy, RBAC permissions, tenant-selection headers, rollout compatibility, and audit behavior are documented in [`docs/authorization-multitenancy.md`](docs/authorization-multitenancy.md).
 
 Transactional outbox semantics, webhook signatures, retries/dead letters, replay, SSRF controls, and task idempotency are documented in [`docs/event-driven-processing.md`](docs/event-driven-processing.md).
+
+Global region routing, residency policy, migration/transfer approval, placement inventory, and failover evidence are documented in [`docs/global-multi-region-data-residency.md`](docs/global-multi-region-data-residency.md).
 
 ## Public endpoints
 

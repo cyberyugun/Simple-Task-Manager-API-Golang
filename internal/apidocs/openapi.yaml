@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.5.0
+  version: 1.6.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -34,6 +34,7 @@ tags:
   - name: Enterprise Event Fabric
   - name: Developer Platform
   - name: AI Assistance
+  - name: Global Multi-Region
 
 paths:
   /health:
@@ -2024,6 +2025,199 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '503':
           description: Billing webhook secret is not configured
+  /api/regions:
+    get:
+      tags: [Global Multi-Region]
+      summary: List provider-neutral application regions
+      operationId: listGlobalRegions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Region catalog }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/organizations/{id}/regions/policy:
+    get:
+      tags: [Global Multi-Region]
+      summary: Get organization home-region and data-residency policy
+      operationId: getOrganizationRegionPolicy
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Organization region policy }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Global Multi-Region]
+      summary: Update organization home-region and data-residency policy
+      operationId: updateOrganizationRegionPolicy
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Updated organization region policy }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Region conflicts with attached workspace residency policy }
+
+  /api/organizations/{id}/regions/placements:
+    get:
+      tags: [Global Multi-Region]
+      summary: List regional resource placements
+      operationId: listRegionalPlacements
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Regional placement inventory }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Global Multi-Region]
+      summary: Create or update a regional resource placement
+      operationId: upsertRegionalPlacement
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Regional placement saved }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Placement violates residency policy }
+
+  /api/organizations/{id}/regions/migrations:
+    get:
+      tags: [Global Multi-Region]
+      summary: List organization region migrations
+      operationId: listRegionMigrations
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Region migration records }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Global Multi-Region]
+      summary: Request a governed region migration
+      operationId: createRegionMigration
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Region migration requested }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Migration violates residency policy }
+
+  /api/organizations/{id}/regions/migrations/{migration_id}/decision:
+    post:
+      tags: [Global Multi-Region]
+      summary: Approve or reject a region migration
+      operationId: decideRegionMigration
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Region migration decision recorded }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Migration is not pending approval }
+
+  /api/organizations/{id}/regions/migrations/{migration_id}/complete:
+    post:
+      tags: [Global Multi-Region]
+      summary: Record region migration completion and checkpoint evidence
+      operationId: completeRegionMigration
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Region migration completion recorded }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Migration is not approved or running }
+
+  /api/organizations/{id}/regions/transfers:
+    get:
+      tags: [Global Multi-Region]
+      summary: List governed cross-region data transfers
+      operationId: listCrossRegionTransfers
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Cross-region transfer records }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Global Multi-Region]
+      summary: Request a governed cross-region data transfer
+      operationId: createCrossRegionTransfer
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Cross-region transfer requested }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Transfer violates residency policy }
+
+  /api/organizations/{id}/regions/transfers/{transfer_id}/decision:
+    post:
+      tags: [Global Multi-Region]
+      summary: Approve or reject a cross-region data transfer
+      operationId: decideCrossRegionTransfer
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Cross-region transfer decision recorded }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Transfer is not pending approval }
+
+  /api/organizations/{id}/regions/transfers/{transfer_id}/complete:
+    post:
+      tags: [Global Multi-Region]
+      summary: Mark an approved cross-region data transfer complete
+      operationId: completeCrossRegionTransfer
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Cross-region transfer completed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Transfer is not approved }
+
+  /api/organizations/{id}/regions/failover-exercises:
+    get:
+      tags: [Global Multi-Region]
+      summary: List multi-region failover exercises and RPO RTO evidence
+      operationId: listRegionFailoverExercises
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Failover exercise records }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Global Multi-Region]
+      summary: Create a multi-region failover exercise
+      operationId: createRegionFailoverExercise
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Failover exercise created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/regions/failover-exercises/{exercise_id}/complete:
+    post:
+      tags: [Global Multi-Region]
+      summary: Record measured failover RPO and RTO results
+      operationId: completeRegionFailoverExercise
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Failover evidence recorded }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Failover exercise is already completed }
+
+  /api/organizations/{id}/regions/route:
+    get:
+      tags: [Global Multi-Region]
+      summary: Resolve organization primary and failover routing intent
+      operationId: getOrganizationRegionRoute
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Region routing decision }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/regions/report:
+    get:
+      tags: [Global Multi-Region]
+      summary: Get organization data-residency compliance report
+      operationId: getOrganizationRegionComplianceReport
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Region residency compliance report }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /api/organizations/{id}/ai/providers:
     get:
       tags: [AI Assistance]
