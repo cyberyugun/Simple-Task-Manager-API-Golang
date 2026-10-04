@@ -25,17 +25,22 @@ var (
 )
 
 type AttachmentConfig struct {
-	Provider            string
-	Bucket              string
-	BaseURL             string
-	SigningSecret       string
-	MaxFileBytes        int64
-	WorkspaceQuotaBytes int64
-	PresignTTL          time.Duration
-	Deduplicate         bool
-	Encryption          string
-	EncryptionKeyID     string
-	AllowInsecure       bool
+	Provider             string
+	Bucket               string
+	BaseURL              string
+	SigningSecret        string
+	MaxFileBytes         int64
+	WorkspaceQuotaBytes  int64
+	PresignTTL           time.Duration
+	Deduplicate          bool
+	Encryption           string
+	EncryptionKeyID      string
+	AllowInsecure        bool
+	ScannerURL           string
+	ScannerBearerToken   string
+	ScannerSigningSecret string
+	ScannerTimeout       time.Duration
+	ScannerRequired      bool
 }
 
 type ObjectStore interface {

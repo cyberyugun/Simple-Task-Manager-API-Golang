@@ -220,14 +220,18 @@ func main() {
 	)
 
 	attachmentConfig := service.AttachmentConfig{
-		Provider:        strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_PROVIDER")),
-		Bucket:          strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BUCKET")),
-		BaseURL:         strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BASE_URL")),
-		SigningSecret:   strings.TrimSpace(os.Getenv("ATTACHMENT_SIGNING_SECRET")),
-		Encryption:      strings.TrimSpace(os.Getenv("ATTACHMENT_ENCRYPTION")),
-		EncryptionKeyID: strings.TrimSpace(os.Getenv("ATTACHMENT_ENCRYPTION_KEY_ID")),
-		Deduplicate:     strings.EqualFold(strings.TrimSpace(os.Getenv("ATTACHMENT_DEDUPLICATE")), "true"),
-		AllowInsecure:   allowInsecure,
+		Provider:             strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_PROVIDER")),
+		Bucket:               strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BUCKET")),
+		BaseURL:              strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BASE_URL")),
+		SigningSecret:        strings.TrimSpace(os.Getenv("ATTACHMENT_SIGNING_SECRET")),
+		Encryption:           strings.TrimSpace(os.Getenv("ATTACHMENT_ENCRYPTION")),
+		EncryptionKeyID:      strings.TrimSpace(os.Getenv("ATTACHMENT_ENCRYPTION_KEY_ID")),
+		Deduplicate:          strings.EqualFold(strings.TrimSpace(os.Getenv("ATTACHMENT_DEDUPLICATE")), "true"),
+		AllowInsecure:        allowInsecure,
+		ScannerURL:           strings.TrimSpace(os.Getenv("ATTACHMENT_SCANNER_URL")),
+		ScannerBearerToken:   strings.TrimSpace(os.Getenv("ATTACHMENT_SCANNER_BEARER_TOKEN")),
+		ScannerSigningSecret: strings.TrimSpace(os.Getenv("ATTACHMENT_SCANNER_SIGNING_SECRET")),
+		ScannerRequired:      strings.EqualFold(strings.TrimSpace(os.Getenv("ATTACHMENT_SCANNER_REQUIRED")), "true"),
 	}
 	if attachmentConfig.SigningSecret == "" {
 		attachmentConfig.SigningSecret = strings.TrimSpace(os.Getenv("JWT_SECRET"))
@@ -237,13 +241,18 @@ func main() {
 		logger.Error("attachment_storage_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	attachmentScanner, err := service.NewAttachmentScanner(attachmentConfig)
+	if err != nil {
+		logger.Error("attachment_scanner_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	attachmentService := service.NewAttachmentService(
 		repository.NewPostgresAttachmentRepository(db),
 		repository.NewPostgresTaskRepository(db),
 		repository.NewPostgresTaskCollaborationRepository(db),
 		repository.NewPostgresWorkspaceRepository(db),
 		attachmentStore,
-		service.NoopAttachmentScanner{},
+		attachmentScanner,
 		attachmentConfig,
 	)
 	go runAttachmentPlatform(ctx, attachmentService, attachmentPoll, attachmentRetentionPoll, attachmentBatch, logger)

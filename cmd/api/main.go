@@ -253,6 +253,9 @@ func main() {
 		BaseURL: os.Getenv("ATTACHMENT_STORAGE_BASE_URL"), SigningSecret: os.Getenv("ATTACHMENT_SIGNING_SECRET"),
 		Encryption: os.Getenv("ATTACHMENT_ENCRYPTION"), EncryptionKeyID: os.Getenv("ATTACHMENT_ENCRYPTION_KEY_ID"),
 		Deduplicate: os.Getenv("ATTACHMENT_DEDUPLICATE") == "true", AllowInsecure: cfg.WebhookAllowInsecure,
+		ScannerURL: os.Getenv("ATTACHMENT_SCANNER_URL"), ScannerBearerToken: os.Getenv("ATTACHMENT_SCANNER_BEARER_TOKEN"),
+		ScannerSigningSecret: os.Getenv("ATTACHMENT_SCANNER_SIGNING_SECRET"),
+		ScannerRequired:      os.Getenv("ATTACHMENT_SCANNER_REQUIRED") == "true",
 	}
 	if attachmentConfig.SigningSecret == "" {
 		attachmentConfig.SigningSecret = cfg.JWTSecret
@@ -262,7 +265,12 @@ func main() {
 		logger.Error("attachment_storage_configuration_failed", "error", err)
 		os.Exit(1)
 	}
-	attachmentService := service.NewAttachmentService(attachmentRepo, taskRepo, taskCollaborationRepo, workspaceRepo, attachmentStore, service.NoopAttachmentScanner{}, attachmentConfig)
+	attachmentScanner, err := service.NewAttachmentScanner(attachmentConfig)
+	if err != nil {
+		logger.Error("attachment_scanner_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	attachmentService := service.NewAttachmentService(attachmentRepo, taskRepo, taskCollaborationRepo, workspaceRepo, attachmentStore, attachmentScanner, attachmentConfig)
 	searchAnalyticsService := service.NewSearchAnalyticsService(searchAnalyticsRepo, workspaceRepo)
 	dataPlatformService := service.NewDataPlatformService(dataPlatformRepo, organizationRepo, searchAnalyticsRepo, governanceRepo)
 	extensionService := service.NewExtensionService(extensionRepo, workspaceRepo, organizationRepo, eventRepo, tokenManager, cfg.WebhookAllowInsecure)
