@@ -20,7 +20,7 @@ import (
 
 var (
 	ErrConnectorSecretBackendUnavailable = errors.New("connector secret backend is not configured")
-	ErrConnectorSecretStore               = errors.New("connector secret store operation failed")
+	ErrConnectorSecretStore              = errors.New("connector secret store operation failed")
 )
 
 type ConnectorSecretStore interface {
@@ -87,7 +87,7 @@ func NewHashiCorpVaultSecretStore(cfg HashiCorpVaultSecretStoreConfig) (*HashiCo
 		baseURL: baseURL, token: token, tokenFile: tokenFile, namespace: strings.TrimSpace(cfg.Namespace),
 		mount: mount, prefix: prefix,
 		client: &http.Client{
-			Timeout: timeout,
+			Timeout:       timeout,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}, nil
