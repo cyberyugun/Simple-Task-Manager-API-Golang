@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
@@ -28,12 +29,17 @@ var (
 	ErrIntegrationConnectionDisabled = errors.New("integration connection is disabled")
 )
 
+type IntegrationCredentialProvider interface {
+	CredentialsForConnection(context.Context, int64) (map[string]any, error)
+}
+
 type IntegrationService struct {
-	repo          repository.IntegrationRepository
-	orgs          repository.OrganizationRepository
-	cipher        *IntegrationCredentialCipher
-	client        *http.Client
-	allowInsecure bool
+	repo               repository.IntegrationRepository
+	orgs               repository.OrganizationRepository
+	cipher             *IntegrationCredentialCipher
+	client             *http.Client
+	allowInsecure      bool
+	credentialProvider IntegrationCredentialProvider
 }
 
 func NewIntegrationService(repo repository.IntegrationRepository, orgs repository.OrganizationRepository, cipher *IntegrationCredentialCipher, allowInsecure bool) *IntegrationService {
@@ -50,6 +56,10 @@ func (s *IntegrationService) SetHTTPClient(client *http.Client) {
 	if client != nil {
 		s.client = client
 	}
+}
+
+func (s *IntegrationService) SetCredentialProvider(provider IntegrationCredentialProvider) {
+	s.credentialProvider = provider
 }
 
 func (s *IntegrationService) Connectors() []model.IntegrationConnector {
@@ -227,7 +237,7 @@ func (s *IntegrationService) AcceptInbound(connectionID int64, signature string,
 	if connection.Status != model.IntegrationConnectionActive {
 		return model.IntegrationInboundEvent{}, false, ErrIntegrationConnectionDisabled
 	}
-	credentials, err := s.decryptCredentials(secretRow.EncryptedCredentials)
+	credentials, err := s.credentialsForConnection(context.Background(), connectionID, secretRow.EncryptedCredentials)
 	if err != nil {
 		return model.IntegrationInboundEvent{}, false, err
 	}
@@ -322,7 +332,7 @@ func (s *IntegrationService) dispatch(delivery model.IntegrationDelivery) (model
 	if err != nil {
 		return delivery, err
 	}
-	credentials, err := s.decryptCredentials(secretRow.EncryptedCredentials)
+	credentials, err := s.credentialsForConnection(context.Background(), connection.ID, secretRow.EncryptedCredentials)
 	if err != nil {
 		return delivery, err
 	}
@@ -390,6 +400,13 @@ func (s *IntegrationService) updateFailureHealth(connection model.IntegrationCon
 	now := time.Now().UTC()
 	failures := connection.ConsecutiveFailures + 1
 	_ = s.repo.UpdateIntegrationHealth(connection.ID, model.IntegrationHealthDegraded, failures, now, connection.RateLimitRemaining, connection.RateLimitResetAt)
+}
+
+func (s *IntegrationService) credentialsForConnection(ctx context.Context, connectionID int64, encryptedFallback string) (map[string]any, error) {
+	if s.credentialProvider != nil {
+		return s.credentialProvider.CredentialsForConnection(ctx, connectionID)
+	}
+	return s.decryptCredentials(encryptedFallback)
 }
 
 func (s *IntegrationService) decryptCredentials(encrypted string) (map[string]any, error) {
