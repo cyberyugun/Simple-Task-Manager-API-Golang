@@ -1,5 +1,22 @@
 # API Changelog
 
+## 1.7.0 — Phase 43
+
+Compatibility line: **v1**.
+
+Additive zero-trust and advanced-security release:
+
+- adds organization zero-trust risk policy and network CIDR controls
+- adds workspace-scoped SPIFFE-style workload identities and X.509 certificate rotation
+- adds mTLS workload token exchange with certificate-thumbprint token binding
+- adds device trust, impossible-travel, anomaly, WAF and token-binding risk signals
+- adds adaptive allow / step-up / revoke decisions and automatic high-risk refresh-session revocation
+- adds tenant security posture dashboard and incremental security-event feed
+- adds signed SHA-256 hash-chained audit checkpoints and WORM export manifests
+- adds SIEM destination metadata and incremental federation feed
+- preserves all existing v1 paths, operation IDs, request requirements and response fields
+
+
 ## 1.6.0 — Phase 42
 
 Compatibility line: **v1**.
