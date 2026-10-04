@@ -100,7 +100,7 @@ func (r *PostgresSearchAnalyticsRepository) SearchTasks(workspaceID int64, query
 		return model.SearchPage{}, err
 	}
 	return model.SearchPage{
-		Items: items,
+		Items:      items,
 		Pagination: model.Pagination{Page: query.Page, Limit: query.Limit, Total: total, TotalPages: totalPages(total, query.Limit)},
 	}, nil
 }
