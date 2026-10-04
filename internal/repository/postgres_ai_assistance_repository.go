@@ -223,10 +223,19 @@ func (r *PostgresAIAssistanceRepository) UpdateRequest(item model.AIRequest) (mo
 func (r *PostgresAIAssistanceRepository) MonthlyUsage(organizationID int64, from, to time.Time) (model.AIUsageSummary, error) {
 	item := model.AIUsageSummary{OrganizationID: organizationID, Month: from.Format("2006-01")}
 	err := r.db.QueryRow(`
-		SELECT COUNT(*),COALESCE(SUM(actual_cost_cents),0),COALESCE(SUM(input_units),0),COALESCE(SUM(output_units),0)
-		FROM ai_requests
-		WHERE organization_id=$1 AND created_at >= $2 AND created_at < $3
-		  AND status IN ('completed','pending_approval','approved')
+		SELECT COALESCE(SUM(request_count),0),COALESCE(SUM(cost_cents),0),COALESCE(SUM(input_units),0),COALESCE(SUM(output_units),0)
+		FROM (
+			SELECT COUNT(*) AS request_count, COALESCE(SUM(actual_cost_cents),0) AS cost_cents,
+			       COALESCE(SUM(input_units),0) AS input_units, COALESCE(SUM(output_units),0) AS output_units
+			FROM ai_requests
+			WHERE organization_id=$1 AND created_at >= $2 AND created_at < $3
+			  AND status IN ('completed','pending_approval','approved')
+			UNION ALL
+			SELECT COUNT(*) AS request_count, COALESCE(SUM(actual_cost_cents),0) AS cost_cents,
+			       COALESCE(SUM(input_units),0) AS input_units, COALESCE(SUM(output_units),0) AS output_units
+			FROM ai_evaluation_runs
+			WHERE organization_id=$1 AND created_at >= $2 AND created_at < $3
+		) usage
 	`, organizationID, from, to).Scan(&item.RequestCount, &item.SpentCents, &item.InputUnits, &item.OutputUnits)
 	return item, err
 }
@@ -302,14 +311,14 @@ func (r *PostgresAIAssistanceRepository) CreateEvaluationRun(item model.AIEvalua
 	var metadataOut []byte
 	err = r.db.QueryRow(`
 		INSERT INTO ai_evaluation_runs (
-			organization_id,case_id,provider,model,score_basis_points,passed,metadata,created_at
+			organization_id,case_id,provider,model,score_basis_points,input_units,output_units,actual_cost_cents,passed,metadata,created_at
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
-		RETURNING id,organization_id,case_id,provider,model,score_basis_points,passed,metadata,created_at
-	`, item.OrganizationID, item.CaseID, item.Provider, item.Model, item.ScoreBasisPoints, item.Passed,
-		string(metadataRaw), item.CreatedAt,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+		RETURNING id,organization_id,case_id,provider,model,score_basis_points,input_units,output_units,actual_cost_cents,passed,metadata,created_at
+	`, item.OrganizationID, item.CaseID, item.Provider, item.Model, item.ScoreBasisPoints, item.InputUnits,
+		item.OutputUnits, item.ActualCostCents, item.Passed, string(metadataRaw), item.CreatedAt,
 	).Scan(&item.ID, &item.OrganizationID, &item.CaseID, &item.Provider, &item.Model, &item.ScoreBasisPoints,
-		&item.Passed, &metadataOut, &item.CreatedAt)
+		&item.InputUnits, &item.OutputUnits, &item.ActualCostCents, &item.Passed, &metadataOut, &item.CreatedAt)
 	if err != nil {
 		return model.AIEvaluationRun{}, err
 	}
@@ -321,7 +330,7 @@ func (r *PostgresAIAssistanceRepository) CreateEvaluationRun(item model.AIEvalua
 
 func (r *PostgresAIAssistanceRepository) ListEvaluationRuns(organizationID int64, limit int) ([]model.AIEvaluationRun, error) {
 	rows, err := r.db.Query(`
-		SELECT id,organization_id,case_id,provider,model,score_basis_points,passed,metadata,created_at
+		SELECT id,organization_id,case_id,provider,model,score_basis_points,input_units,output_units,actual_cost_cents,passed,metadata,created_at
 		FROM ai_evaluation_runs WHERE organization_id=$1
 		ORDER BY id DESC LIMIT $2
 	`, organizationID, limit)
@@ -397,7 +406,7 @@ func scanAIEvaluationRun(scanner aiScanner) (model.AIEvaluationRun, error) {
 	var item model.AIEvaluationRun
 	var metadataRaw []byte
 	err := scanner.Scan(&item.ID, &item.OrganizationID, &item.CaseID, &item.Provider, &item.Model,
-		&item.ScoreBasisPoints, &item.Passed, &metadataRaw, &item.CreatedAt)
+		&item.ScoreBasisPoints, &item.InputUnits, &item.OutputUnits, &item.ActualCostCents, &item.Passed, &metadataRaw, &item.CreatedAt)
 	if err != nil {
 		return model.AIEvaluationRun{}, err
 	}
