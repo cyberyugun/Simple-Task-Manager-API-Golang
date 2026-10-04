@@ -163,6 +163,78 @@ func NewGCPSecretManagerSecretStore(cfg GCPSecretManagerConfig) (*GCPSecretManag
 	}, nil
 }
 
+func NewGCPSecretManagerSecretStoreFromEnv(allowInsecure bool) (*GCPSecretManagerSecretStore, error) {
+	rawEnabled := strings.TrimSpace(os.Getenv("CONNECTOR_GCP_SECRET_MANAGER_ENABLED"))
+	if rawEnabled == "" {
+		return nil, nil
+	}
+	enabled, err := strconv.ParseBool(rawEnabled)
+	if err != nil {
+		return nil, fmt.Errorf("%w: CONNECTOR_GCP_SECRET_MANAGER_ENABLED must be true or false", ErrConnectorSecretStore)
+	}
+	if !enabled {
+		return nil, nil
+	}
+	timeout := 10 * time.Second
+	if raw := strings.TrimSpace(os.Getenv("CONNECTOR_GCP_TIMEOUT")); raw != "" {
+		parsed, parseErr := time.ParseDuration(raw)
+		if parseErr != nil || parsed <= 0 {
+			return nil, fmt.Errorf("%w: CONNECTOR_GCP_TIMEOUT must be a positive duration", ErrConnectorSecretStore)
+		}
+		timeout = parsed
+	}
+	useMetadata := true
+	if raw := strings.TrimSpace(os.Getenv("CONNECTOR_GCP_USE_METADATA")); raw != "" {
+		value, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			return nil, fmt.Errorf("%w: CONNECTOR_GCP_USE_METADATA must be true or false", ErrConnectorSecretStore)
+		}
+		useMetadata = value
+	}
+	projectID := firstNonEmpty(
+		os.Getenv("CONNECTOR_GCP_PROJECT_ID"),
+		os.Getenv("GOOGLE_CLOUD_PROJECT"),
+		os.Getenv("GCP_PROJECT_ID"),
+	)
+	return NewGCPSecretManagerSecretStore(GCPSecretManagerConfig{
+		ProjectID:        projectID,
+		Prefix:           os.Getenv("CONNECTOR_GCP_SECRET_PREFIX"),
+		CMEKKeyName:      os.Getenv("CONNECTOR_GCP_CMEK_KEY_NAME"),
+		Endpoint:         os.Getenv("CONNECTOR_GCP_SECRET_MANAGER_ENDPOINT"),
+		AccessToken:      os.Getenv("CONNECTOR_GCP_ACCESS_TOKEN"),
+		UseMetadata:      useMetadata,
+		MetadataEndpoint: os.Getenv("CONNECTOR_GCP_METADATA_ENDPOINT"),
+		Timeout:          timeout,
+		AllowInsecure:    allowInsecure,
+	})
+}
+
+func newGCPAccessTokenProvider(cfg GCPSecretManagerConfig, timeout time.Duration) (gcpAccessTokenProvider, error) {
+	if token := strings.TrimSpace(cfg.AccessToken); token != "" {
+		return gcpStaticTokenProvider{token: token}, nil
+	}
+	if !cfg.UseMetadata {
+		return nil, fmt.Errorf("%w: GCP workload identity metadata or access token is required", ErrConnectorSecretStore)
+	}
+	rawEndpoint := strings.TrimSpace(cfg.MetadataEndpoint)
+	if rawEndpoint == "" {
+		rawEndpoint = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+	}
+	endpoint, err := parseGCPMetadataEndpoint(rawEndpoint, cfg.AllowInsecure)
+	if err != nil {
+		return nil, err
+	}
+	return &gcpMetadataTokenProvider{
+		endpoint: endpoint,
+		client: &http.Client{
+			Timeout: timeout,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+	}, nil
+}
+
 func (s *GCPSecretManagerSecretStore) Backend() string {
 	return model.ConnectorSecretBackendGCP
 }
