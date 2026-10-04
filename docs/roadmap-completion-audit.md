@@ -57,7 +57,9 @@ The provider-neutral `SignedObjectStore` remains available for the original stor
 - signed delete plus post-delete HEAD verification;
 - fail-closed startup when native mode selects an unimplemented provider.
 
-The remaining native provider work is Azure Blob and GCS. Live-provider IAM, outage, deletion-consistency and bucket-policy tests remain environment-level validation.
+Native Azure Blob Storage is now also implemented with account-key service SAS or Microsoft Entra user-delegation SAS, AKS workload identity / managed identity, SHA-256 metadata verification, optional signed encryption scope, and verified deletion.
+
+The remaining native provider work is GCS. Live-provider IAM, outage, deletion-consistency, storage-policy and delegated-SAS contract tests remain environment-level validation.
 
 ### P1 — Phase 38 native external secret backends
 
@@ -99,7 +101,7 @@ Production readiness therefore still requires real cloud-region game days and me
 
 ## Recommended post-Phase-45 execution order
 
-1. **Production Storage & Content Security Hardening** — scanner gateway and native S3/S3-compatible storage are implemented; continue with native Azure Blob and GCS adapters plus live-provider contract validation.
+1. **Production Storage & Content Security Hardening** — scanner gateway plus native S3/S3-compatible and Azure Blob storage are implemented; continue with native GCS plus live-provider contract validation.
 2. **Native Secret Vault & KMS Adapters** — complete at repository level: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager now share the same authoritative runtime credential contract.
 3. **Live Warehouse Delivery** — implement at least one real warehouse write adapter before broadening to all four providers.
 4. **External AI Provider Pack** — add one structured-output provider with classification and cost regression tests.
