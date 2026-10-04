@@ -119,6 +119,19 @@ Install these components before the first application deployment:
 
 The repository intentionally does not vendor third-party controller installation manifests. Pin and manage those platform components through the cluster's infrastructure lifecycle so their upgrades are independent from application releases.
 
+## Attachment content-security readiness
+
+Production deployments that accept file attachments should enable fail-closed malware scanning:
+
+```text
+ATTACHMENT_SCANNER_REQUIRED=true
+ATTACHMENT_SCANNER_URL=https://scanner.internal.example/v1/scan
+ATTACHMENT_SCANNER_SIGNING_SECRET=<secret-manager value>
+# or ATTACHMENT_SCANNER_BEARER_TOKEN=<secret-manager value>
+```
+
+The scanner endpoint must be operator-controlled and HTTPS. Scanner transport/protocol failures quarantine attachments; they do not make files downloadable. Development/test environments may leave the scanner unconfigured and use the no-op implementation.
+
 ## Application secrets
 
 Before the first deploy, create `task-api-secrets` in the `task-manager` namespace.
