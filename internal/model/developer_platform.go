@@ -73,15 +73,15 @@ type DeveloperUsageDaily struct {
 }
 
 type DeveloperUsageSummary struct {
-	AppID                  int64                 `json:"app_id"`
-	DailyRequestLimit      int64                 `json:"daily_request_limit"`
-	MonthlyRequestLimit    int64                 `json:"monthly_request_limit"`
-	TodayRequests          int64                 `json:"today_requests"`
-	MonthRequests          int64                 `json:"month_requests"`
-	TotalRequests          int64                 `json:"total_requests"`
-	TotalErrors            int64                 `json:"total_errors"`
-	AverageLatencyMS       float64               `json:"average_latency_ms"`
-	Daily                  []DeveloperUsageDaily `json:"daily"`
+	AppID               int64                 `json:"app_id"`
+	DailyRequestLimit   int64                 `json:"daily_request_limit"`
+	MonthlyRequestLimit int64                 `json:"monthly_request_limit"`
+	TodayRequests       int64                 `json:"today_requests"`
+	MonthRequests       int64                 `json:"month_requests"`
+	TotalRequests       int64                 `json:"total_requests"`
+	TotalErrors         int64                 `json:"total_errors"`
+	AverageLatencyMS    float64               `json:"average_latency_ms"`
+	Daily               []DeveloperUsageDaily `json:"daily"`
 }
 
 type DeveloperWebhookTest struct {
@@ -101,12 +101,12 @@ type DeveloperWebhookTest struct {
 }
 
 type DeveloperSandboxContract struct {
-	AppID        int64    `json:"app_id"`
-	WorkspaceID  int64    `json:"workspace_id"`
-	Isolated     bool     `json:"isolated"`
-	BasePath     string   `json:"base_path"`
+	AppID         int64    `json:"app_id"`
+	WorkspaceID   int64    `json:"workspace_id"`
+	Isolated      bool     `json:"isolated"`
+	BasePath      string   `json:"base_path"`
 	AllowedScopes []string `json:"allowed_scopes"`
-	Notes        []string `json:"notes"`
+	Notes         []string `json:"notes"`
 }
 
 type DeveloperDocEntry struct {

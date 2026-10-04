@@ -59,7 +59,6 @@ func SwaggerUI(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(swaggerHTML))
 }
 
-
 func Spec() []byte {
 	return append([]byte(nil), openAPISpec...)
 }

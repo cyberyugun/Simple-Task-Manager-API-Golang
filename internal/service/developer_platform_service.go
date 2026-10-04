@@ -48,7 +48,7 @@ func NewDeveloperPlatformService(
 ) *DeveloperPlatformService {
 	return &DeveloperPlatformService{
 		repo: repo, workspaces: workspaces, identity: identity, allowInsecure: allowInsecure,
-		httpClient: events.NewWebhookHTTPClient(10*time.Second, allowInsecure),
+		httpClient:  events.NewWebhookHTTPClient(10*time.Second, allowInsecure),
 		openAPISpec: append([]byte(nil), openAPISpec...),
 	}
 }

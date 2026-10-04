@@ -37,23 +37,23 @@ type DeveloperPlatformRepository interface {
 }
 
 type InMemoryDeveloperPlatformRepository struct {
-	mu          sync.Mutex
-	apps        map[int64]model.DeveloperApplication
-	credentials map[int64]model.DeveloperCredential
-	usage       map[string]model.DeveloperUsageDaily
+	mu           sync.Mutex
+	apps         map[int64]model.DeveloperApplication
+	credentials  map[int64]model.DeveloperCredential
+	usage        map[string]model.DeveloperUsageDaily
 	webhookTests map[int64]model.DeveloperWebhookTest
-	nextApp     int64
-	nextCred    int64
-	nextWebhook int64
+	nextApp      int64
+	nextCred     int64
+	nextWebhook  int64
 }
 
 func NewInMemoryDeveloperPlatformRepository() *InMemoryDeveloperPlatformRepository {
 	return &InMemoryDeveloperPlatformRepository{
-		apps: make(map[int64]model.DeveloperApplication),
-		credentials: make(map[int64]model.DeveloperCredential),
-		usage: make(map[string]model.DeveloperUsageDaily),
+		apps:         make(map[int64]model.DeveloperApplication),
+		credentials:  make(map[int64]model.DeveloperCredential),
+		usage:        make(map[string]model.DeveloperUsageDaily),
 		webhookTests: make(map[int64]model.DeveloperWebhookTest),
-		nextApp: 1, nextCred: 1, nextWebhook: 1,
+		nextApp:      1, nextCred: 1, nextWebhook: 1,
 	}
 }
 

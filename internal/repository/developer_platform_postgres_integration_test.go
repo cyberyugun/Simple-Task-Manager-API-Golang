@@ -55,8 +55,8 @@ func TestIntegrationPostgresDeveloperPlatform(t *testing.T) {
 	platform := service.NewDeveloperPlatformService(developerRepo, workspaces, identity, false, []byte("paths:\n  /api/tasks:\n    get:\n      summary: List tasks\n"))
 
 	app, err := platform.CreateApplication(owner.ID, workspace.ID, model.CreateDeveloperApplicationRequest{
-		Name: "Integration App",
-		AllowedScopes: []string{model.ScopeTasksRead, model.ScopeTasksWrite},
+		Name:              "Integration App",
+		AllowedScopes:     []string{model.ScopeTasksRead, model.ScopeTasksWrite},
 		DailyRequestLimit: 2, MonthlyRequestLimit: 5,
 	})
 	if err != nil {
