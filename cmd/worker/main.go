@@ -307,6 +307,14 @@ func main() {
 	if awsSecretStore != nil {
 		connectorSecurityService.RegisterSecretStore(awsSecretStore)
 	}
+	azureSecretStore, err := service.NewAzureKeyVaultSecretStoreFromEnv(allowInsecure)
+	if err != nil {
+		logger.Error("connector_azure_key_vault_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if azureSecretStore != nil {
+		connectorSecurityService.RegisterSecretStore(azureSecretStore)
+	}
 	integrationService.SetCredentialProvider(connectorSecurityService)
 	go runIntegrationDeliveries(ctx, integrationService, workerID+"-integration", integrationPoll, integrationBatch, logger)
 	go runConnectorCredentialRefresh(ctx, connectorSecurityService, connectorOAuthPoll, connectorOAuthBatch, logger)
