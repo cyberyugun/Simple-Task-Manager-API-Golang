@@ -255,7 +255,7 @@ func main() {
 		Deduplicate: os.Getenv("ATTACHMENT_DEDUPLICATE") == "true", AllowInsecure: cfg.WebhookAllowInsecure,
 		ScannerURL: os.Getenv("ATTACHMENT_SCANNER_URL"), ScannerBearerToken: os.Getenv("ATTACHMENT_SCANNER_BEARER_TOKEN"),
 		ScannerSigningSecret: os.Getenv("ATTACHMENT_SCANNER_SIGNING_SECRET"),
-		ScannerRequired: os.Getenv("ATTACHMENT_SCANNER_REQUIRED") == "true",
+		ScannerRequired:      os.Getenv("ATTACHMENT_SCANNER_REQUIRED") == "true",
 	}
 	if attachmentConfig.SigningSecret == "" {
 		attachmentConfig.SigningSecret = cfg.JWTSecret
