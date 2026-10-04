@@ -700,3 +700,8 @@ Phase 38 adds OAuth authorization-code with PKCE, automatic credential renewal, 
 ## Phase 39 — Enterprise Event Fabric & Schema Registry
 
 Phase 39 adds governed event schemas/version compatibility, owner/deprecation metadata, routing rules, durable consumer subscriptions and offsets, correlation/causation IDs, retry/DLQ/redrive, range replay, retention, and a provider-neutral broker adapter boundary with PostgreSQL outbox as the default runtime. See [docs/enterprise-event-fabric-schema-registry.md](docs/enterprise-event-fabric-schema-registry.md).
+
+
+## Phase 40 — Developer Platform & Public API Management
+
+Phase 40 adds workspace developer applications, app review/approval, OAuth/API-key credentials linked to apps, per-app scopes and daily/monthly quotas, isolated sandbox credentials, API usage analytics, webhook developer-console testing, credential rotation, OpenAPI-backed documentation search, and deterministic SDK generation for TypeScript, Go, Python, Java and C#. See [docs/developer-platform-public-api.md](docs/developer-platform-public-api.md).

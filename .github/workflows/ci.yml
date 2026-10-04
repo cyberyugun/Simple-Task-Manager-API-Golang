@@ -25,6 +25,7 @@ jobs:
           bash -n scripts/dr-readiness-check.sh
           bash -n scripts/resilience-smoke.sh
           bash -n scripts/performance-policy-check.sh
+          bash -n scripts/generate-sdks.sh
           bash -n scripts/progressive-deploy.sh
           bash -n scripts/release-policy-check.sh
           bash -n scripts/rollback-drill.sh
@@ -105,6 +106,11 @@ jobs:
             gofmt -d $files
             exit 1
           fi
+
+      - name: Regenerate public SDKs
+        run: |
+          bash scripts/generate-sdks.sh
+          git diff --exit-code -- generated/sdk
 
       - name: Vet
         run: go vet ./...
@@ -759,6 +765,61 @@ jobs:
 
           docker compose logs worker | grep -q event_fabric_worker_started
 
+      - name: Smoke test developer platform and public API management
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+          workspaces="$(curl --fail --silent http://localhost:8080/api/workspaces -H "Authorization: Bearer $token")"
+          workspace_id="$(printf '%s' "$workspaces" | python3 -c 'import json,sys; items=json.load(sys.stdin)["data"]; print(next(x["id"] for x in items if x["is_personal"]))')"
+
+          app="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/developer/apps" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 40 App","description":"developer platform smoke","allowed_scopes":["tasks:read","tasks:write"],"daily_request_limit":100,"monthly_request_limit":1000,"sandbox_enabled":true}')"
+          app_id="$(printf '%s' "$app" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="draft"; assert d["sandbox_enabled"] is True; print(d["id"])')"
+
+          sandbox_credential="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/developer/apps/$app_id/credentials" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"kind":"api_key","environment":"sandbox","name":"CI Sandbox","scopes":["tasks:read"]}')"
+          sandbox_key="$(printf '%s' "$sandbox_credential" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["credential"]["environment"]=="sandbox"; print(d["api_key"])')"
+          sandbox_exchange="$(python3 -c 'import json,sys; print(json.dumps({"api_key":sys.argv[1]}))' "$sandbox_key")"
+          sandbox_token_response="$(curl --fail --silent -X POST http://localhost:8080/api/oauth/api-key -H 'Content-Type: application/json' -d "$sandbox_exchange")"
+          sandbox_token="$(printf '%s' "$sandbox_token_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          sandbox_echo="$(curl --fail --silent -X POST http://localhost:8080/api/developer/sandbox/echo -H "Authorization: Bearer $sandbox_token" -H 'Content-Type: application/json' -d '{"hello":"sandbox"}')"
+          printf '%s' "$sandbox_echo" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["contract"]["isolated"] is True; assert d["echo"]["hello"]=="sandbox"'
+
+          sandbox_task_status="$(curl --silent -o /tmp/phase40-sandbox-task.json -w '%{http_code}' http://localhost:8080/api/tasks -H "Authorization: Bearer $sandbox_token")"
+          test "$sandbox_task_status" = "403"
+
+          submitted="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/developer/apps/$app_id/submit" -H "Authorization: Bearer $token")"
+          printf '%s' "$submitted" | python3 -c 'import json,sys; assert json.load(sys.stdin)["data"]["status"]=="submitted"'
+          approved="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/developer/apps/$app_id/review" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"decision":"approve","note":"CI approval"}')"
+          printf '%s' "$approved" | python3 -c 'import json,sys; assert json.load(sys.stdin)["data"]["status"]=="approved"'
+
+          production_credential="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/developer/apps/$app_id/credentials" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"kind":"api_key","environment":"production","name":"CI Production","scopes":["tasks:read"]}')"
+          production_credential_id="$(printf '%s' "$production_credential" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["credential"]["id"])')"
+          production_key="$(printf '%s' "$production_credential" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["api_key"])')"
+          production_exchange="$(python3 -c 'import json,sys; print(json.dumps({"api_key":sys.argv[1]}))' "$production_key")"
+          production_token_response="$(curl --fail --silent -X POST http://localhost:8080/api/oauth/api-key -H 'Content-Type: application/json' -d "$production_exchange")"
+          production_token="$(printf '%s' "$production_token_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          tasks="$(curl --fail --silent http://localhost:8080/api/tasks -H "Authorization: Bearer $production_token")"
+          printf '%s' "$tasks" | python3 -c 'import json,sys; assert json.load(sys.stdin)["success"] is True'
+
+          analytics="$(curl --fail --silent "http://localhost:8080/api/workspaces/$workspace_id/developer/apps/$app_id/analytics?days=30" -H "Authorization: Bearer $token")"
+          printf '%s' "$analytics" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["today_requests"] >= 1; assert d["month_requests"] >= 1; assert d["daily_request_limit"]==100'
+
+          rotated="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/developer/apps/$app_id/credentials/$production_credential_id/rotate" -H "Authorization: Bearer $token")"
+          replacement_key="$(printf '%s' "$rotated" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["credential"]["rotated_from_id"] is not None; print(d["api_key"])')"
+          old_exchange_status="$(curl --silent -o /tmp/phase40-old-key.json -w '%{http_code}' -X POST http://localhost:8080/api/oauth/api-key -H 'Content-Type: application/json' -d "$production_exchange")"
+          test "$old_exchange_status" = "401"
+          replacement_exchange="$(python3 -c 'import json,sys; print(json.dumps({"api_key":sys.argv[1]}))' "$replacement_key")"
+          curl --fail --silent -X POST http://localhost:8080/api/oauth/api-key -H 'Content-Type: application/json' -d "$replacement_exchange" >/dev/null
+
+          webhook_test="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/developer/apps/$app_id/webhook-tests" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"url":"https://example.com/phase40-hook","event_type":"task.created","payload":{"source":"ci"},"dry_run":true}')"
+          printf '%s' "$webhook_test" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="validated"; assert d["dry_run"] is True'
+
+          docs="$(curl --fail --silent 'http://localhost:8080/api/developer/docs/search?q=developer' -H "Authorization: Bearer $token")"
+          printf '%s' "$docs" | python3 -c 'import json,sys; assert len(json.load(sys.stdin)["data"]) >= 1'
+          sdks="$(curl --fail --silent http://localhost:8080/api/developer/sdks -H "Authorization: Bearer $token")"
+          printf '%s' "$sdks" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert {x["slug"] for x in d}=={"typescript","go","python","java","csharp"}'
+
       - name: Smoke test advanced search reporting analytics
         run: |
           login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
@@ -849,7 +910,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "24"
+          test "$migration_count" = "25"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"

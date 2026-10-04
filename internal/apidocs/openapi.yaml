@@ -32,6 +32,7 @@ tags:
   - name: Advanced Search & Analytics
   - name: Enterprise Integrations
   - name: Enterprise Event Fabric
+  - name: Developer Platform
 
 paths:
   /health:
@@ -2970,6 +2971,198 @@ paths:
       responses:
         '202': { description: Durable event delivery queued for redrive }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/developer/docs/search:
+    get:
+      tags: [Developer Platform]
+      summary: Search public API documentation
+      operationId: searchDeveloperDocs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: q, required: false, schema: { type: string } }
+      responses:
+        '200': { description: Matching API documentation entries }
+  /api/developer/sdks:
+    get:
+      tags: [Developer Platform]
+      summary: List generated SDK targets
+      operationId: listDeveloperSDKs
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Generated SDK catalog }
+  /api/developer/sandbox:
+    get:
+      tags: [Developer Platform]
+      summary: Inspect the isolated sandbox contract for an app credential
+      operationId: getDeveloperSandboxContract
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Sandbox contract }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Developer Platform]
+      summary: Echo a sandbox request for authentication and quota testing
+      operationId: echoDeveloperSandboxRequest
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Sandbox echo result }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/developer/sandbox/echo:
+    get:
+      tags: [Developer Platform]
+      summary: Inspect the isolated sandbox contract
+      operationId: getDeveloperSandboxEchoContract
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Sandbox contract }
+    post:
+      tags: [Developer Platform]
+      summary: Echo a sandbox request body
+      operationId: developerSandboxEcho
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Sandbox echo result }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/workspaces/{id}/developer/apps:
+    get:
+      tags: [Developer Platform]
+      summary: List developer applications
+      operationId: listDeveloperApplications
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Developer applications }
+    post:
+      tags: [Developer Platform]
+      summary: Create a developer application
+      operationId: createDeveloperApplication
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '201': { description: Developer application created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/workspaces/{id}/developer/apps/{app_id}:
+    get:
+      tags: [Developer Platform]
+      summary: Get a developer application
+      operationId: getDeveloperApplication
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Developer application }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/workspaces/{id}/developer/apps/{app_id}/submit:
+    post:
+      tags: [Developer Platform]
+      summary: Submit a developer application for review
+      operationId: submitDeveloperApplication
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Developer application submitted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/workspaces/{id}/developer/apps/{app_id}/review:
+    post:
+      tags: [Developer Platform]
+      summary: Approve reject or suspend a developer application
+      operationId: reviewDeveloperApplication
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Developer application reviewed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/workspaces/{id}/developer/apps/{app_id}/credentials:
+    get:
+      tags: [Developer Platform]
+      summary: List app OAuth clients and API keys
+      operationId: listDeveloperCredentials
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Developer credentials }
+    post:
+      tags: [Developer Platform]
+      summary: Create a scoped app OAuth client or API key
+      operationId: createDeveloperCredential
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '201': { description: Credential created and one-time secret returned }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/workspaces/{id}/developer/apps/{app_id}/credentials/{credential_id}:
+    delete:
+      tags: [Developer Platform]
+      summary: Revoke a developer app credential
+      operationId: revokeDeveloperCredential
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: credential_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Credential revoked }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/workspaces/{id}/developer/apps/{app_id}/credentials/{credential_id}/rotate:
+    post:
+      tags: [Developer Platform]
+      summary: Rotate a developer app credential
+      operationId: rotateDeveloperCredential
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: credential_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '201': { description: Replacement credential and one-time secret }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/workspaces/{id}/developer/apps/{app_id}/analytics:
+    get:
+      tags: [Developer Platform]
+      summary: Get per-app quota and API usage analytics
+      operationId: getDeveloperApplicationAnalytics
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+        - { in: query, name: days, required: false, schema: { type: integer, minimum: 1, maximum: 366 } }
+      responses:
+        '200': { description: App usage dashboard }
+  /api/workspaces/{id}/developer/apps/{app_id}/webhook-tests:
+    get:
+      tags: [Developer Platform]
+      summary: List webhook developer-console test history
+      operationId: listDeveloperWebhookTests
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Webhook test history }
+    post:
+      tags: [Developer Platform]
+      summary: Validate or send a webhook developer-console test
+      operationId: testDeveloperWebhook
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '201': { description: Webhook test result }
+        '400': { $ref: '#/components/responses/BadRequest' }
 
   /api/task-projects:
     get:

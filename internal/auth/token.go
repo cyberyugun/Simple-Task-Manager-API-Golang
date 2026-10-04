@@ -59,6 +59,22 @@ func (m *TokenManager) GenerateUser(userID int64, email string, scopes []string,
 	return m.GenerateUserWithMFA(userID, email, scopes, workspaceID, false)
 }
 
+func (m *TokenManager) GenerateUserForClient(userID int64, email string, scopes []string, workspaceID int64, clientID string) (string, error) {
+	clientID = strings.TrimSpace(clientID)
+	if userID <= 0 || strings.TrimSpace(email) == "" || clientID == "" {
+		return "", ErrInvalidToken
+	}
+	return m.generate(Claims{
+		Subject:     strconv.FormatInt(userID, 10),
+		Email:       strings.TrimSpace(email),
+		Scopes:      append([]string(nil), scopes...),
+		TokenUse:    "user",
+		ClientID:    clientID,
+		WorkspaceID: workspaceID,
+		ActorUserID: userID,
+	})
+}
+
 func (m *TokenManager) GenerateUserWithMFA(userID int64, email string, scopes []string, workspaceID int64, mfa bool) (string, error) {
 	if userID <= 0 || strings.TrimSpace(email) == "" {
 		return "", ErrInvalidToken
