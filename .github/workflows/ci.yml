@@ -946,7 +946,8 @@ jobs:
           printf '%s' "$cert" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert len(d["sha256_fingerprint"])==64; assert d["workload_id"]>0'
 
           device_hash="$(printf 'ci-phase43-device' | sha256sum | awk '{print $1}')"
-          device="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/security/devices" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "{"device_hash":"$device_hash","label":"CI managed device","trust_level":"managed","expires_in_hours":24}")"
+          device_payload="$(python3 -c 'import json,sys; print(json.dumps({"device_hash":sys.argv[1],"label":"CI managed device","trust_level":"managed","expires_in_hours":24}))' "$device_hash")"
+          device="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/security/devices" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$device_payload")"
           printf '%s' "$device" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["trust_level"]=="managed"'
 
           sessions="$(curl --fail --silent http://localhost:8080/api/auth/sessions -H "Authorization: Bearer $token")"
