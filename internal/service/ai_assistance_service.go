@@ -499,7 +499,7 @@ func (s *AIAssistanceService) CreateEvaluationCase(actorUserID, organizationID i
 	now := time.Now().UTC()
 	item, err := s.repo.CreateEvaluationCase(model.AIEvaluationCase{
 		OrganizationID: organizationID, Name: name, Feature: feature, Input: input,
-		Classification: classification, ExpectedKeywords: keywords, Metadata: req.Metadata,
+		Classification: classification, ExpectedKeywords: keywords, Metadata: cloneServiceMap(req.Metadata),
 		CreatedByUserID: actorUserID, CreatedAt: now, UpdatedAt: now,
 	})
 	if err == nil {
