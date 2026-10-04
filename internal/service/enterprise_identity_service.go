@@ -100,6 +100,21 @@ func (s *EnterpriseIdentityService) CreateOAuthClient(actorUserID, workspaceID i
 	return model.OAuthClientSecretResult{Client: client, ClientSecret: secretRaw}, nil
 }
 
+func (s *EnterpriseIdentityService) RevokeOAuthClient(actorUserID, workspaceID int64, clientID string) error {
+	if err := s.requireAdmin(actorUserID, workspaceID); err != nil {
+		return err
+	}
+	client, err := s.repo.FindOAuthClient(strings.TrimSpace(clientID))
+	if err != nil || client.WorkspaceID != workspaceID {
+		return repository.ErrOAuthClientNotFound
+	}
+	if err := s.repo.RevokeOAuthClient(client.ClientID, time.Now()); err != nil {
+		return err
+	}
+	s.audit(workspaceID, actorUserID, "oauth.client.revoked", "oauth_client", client.ClientID, nil)
+	return nil
+}
+
 func (s *EnterpriseIdentityService) AuthorizeCode(userID, workspaceID int64, req model.OAuthAuthorizeRequest) (model.OAuthAuthorizeResult, error) {
 	if _, err := s.workspaces.ResolveAccess(userID, workspaceID, time.Now()); err != nil {
 		return model.OAuthAuthorizeResult{}, ErrEnterpriseAccessDenied
@@ -171,7 +186,7 @@ func (s *EnterpriseIdentityService) exchangeAuthorizationCode(req model.OAuthTok
 	if err != nil {
 		return model.OAuthTokenResult{}, err
 	}
-	token, err := s.tokens.GenerateUser(user.ID, user.Email, code.Scopes, code.WorkspaceID)
+	token, err := s.tokens.GenerateUserForClient(user.ID, user.Email, code.Scopes, code.WorkspaceID, client.ClientID)
 	if err != nil {
 		return model.OAuthTokenResult{}, err
 	}
