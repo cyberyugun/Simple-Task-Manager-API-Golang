@@ -28,6 +28,7 @@ tags:
   - name: Enterprise Automation
   - name: Enterprise Workflows
   - name: Enterprise Notifications
+  - name: Files & Attachments
   - name: Enterprise Integrations
 
 paths:
@@ -677,6 +678,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+
+
+  /api/attachments/uploads:
+    post:
+      tags: [Files & Attachments]
+      summary: Create a validated presigned attachment upload session
+      operationId: createAttachmentUpload
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Presigned upload session }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Workspace storage quota exceeded }
+  /api/attachments:
+    get:
+      tags: [Files & Attachments]
+      summary: List task or comment attachments in the current workspace
+      operationId: listAttachments
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Attachment metadata }
+  /api/attachments/usage:
+    get:
+      tags: [Files & Attachments]
+      summary: Get attachment storage usage and quota for the current workspace
+      operationId: getAttachmentUsage
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workspace attachment usage }
+  /api/attachments/{attachment_id}:
+    delete:
+      tags: [Files & Attachments]
+      summary: Delete attachment metadata and object when retention policy permits
+      operationId: deleteAttachment
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Attachment deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Attachment is protected by retention or legal hold }
+  /api/attachments/{attachment_id}/complete:
+    post:
+      tags: [Files & Attachments]
+      summary: Confirm direct upload integrity and enqueue malware scanning
+      operationId: completeAttachmentUpload
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Attachment marked uploaded }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/attachments/{attachment_id}/download:
+    post:
+      tags: [Files & Attachments]
+      summary: Create a short-lived download URL for a clean attachment
+      operationId: createAttachmentDownload
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Presigned download URL }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Attachment is not clean or is quarantined }
+  /api/attachments/{attachment_id}/governance:
+    patch:
+      tags: [Files & Attachments]
+      summary: Update legal-hold and retention metadata
+      operationId: updateAttachmentGovernance
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Attachment governance metadata updated }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Governance action is forbidden }
 
   /api/tasks:
     parameters:
