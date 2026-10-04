@@ -455,6 +455,162 @@ func (s *AzureKeyVaultSecretStore) decryptWithCMK(ctx context.Context, keyID, ci
 	return plaintext, nil
 }
 
+func (s *AzureKeyVaultSecretStore) call(ctx context.Context, method, endpoint string, body any, output any) error {
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
+	if err != nil {
+		return err
+	}
+	token, err := s.tokens.Token(ctx)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "simple-task-manager-azure-key-vault/1")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: Azure Key Vault request failed: %v", ErrConnectorSecretStore, err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		apiErr := &azureKeyVaultAPIError{Status: resp.StatusCode, Code: "Unknown"}
+		var decoded struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(raw, &decoded) == nil {
+			if strings.TrimSpace(decoded.Error.Code) != "" {
+				apiErr.Code = strings.TrimSpace(decoded.Error.Code)
+			}
+			apiErr.Message = strings.TrimSpace(decoded.Error.Message)
+		}
+		return apiErr
+	}
+	if output != nil && len(raw) > 0 {
+		if err := json.Unmarshal(raw, output); err != nil {
+			return fmt.Errorf("%w: invalid Azure Key Vault response", ErrConnectorSecretStore)
+		}
+	}
+	return nil
+}
+
+func parseAzureTokenResponse(raw []byte) (string, time.Time, error) {
+	var response map[string]any
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return "", time.Time{}, fmt.Errorf("%w: invalid Azure identity response", ErrConnectorSecretStore)
+	}
+	token := strings.TrimSpace(fmt.Sprint(response["access_token"]))
+	if token == "" || token == "<nil>" {
+		return "", time.Time{}, fmt.Errorf("%w: Azure identity response missing access token", ErrConnectorSecretStore)
+	}
+	now := time.Now().UTC()
+	expiry := now.Add(time.Hour)
+	if rawSeconds := strings.TrimSpace(fmt.Sprint(response["expires_in"])); rawSeconds != "" && rawSeconds != "<nil>" {
+		if seconds, err := strconv.ParseInt(strings.Split(rawSeconds, ".")[0], 10, 64); err == nil && seconds > 0 {
+			expiry = now.Add(time.Duration(seconds) * time.Second)
+		}
+	} else if rawExpiry := strings.TrimSpace(fmt.Sprint(response["expires_on"])); rawExpiry != "" && rawExpiry != "<nil>" {
+		if unix, err := strconv.ParseInt(rawExpiry, 10, 64); err == nil && unix > 0 {
+			expiry = time.Unix(unix, 0).UTC()
+		}
+	}
+	return token, expiry, nil
+}
+
+func parseAzureVaultURL(raw string, allowInsecure bool) (*url.URL, error) {
+	vaultURL, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || vaultURL.Host == "" || vaultURL.User != nil || vaultURL.Fragment != "" || vaultURL.RawQuery != "" {
+		return nil, fmt.Errorf("%w: invalid Azure Key Vault URL", ErrConnectorSecretStore)
+	}
+	if vaultURL.Scheme != "https" && !(allowInsecure && vaultURL.Scheme == "http") {
+		return nil, fmt.Errorf("%w: Azure Key Vault URL must use HTTPS", ErrConnectorSecretStore)
+	}
+	vaultURL.Path = ""
+	return vaultURL, nil
+}
+
+func parseAzureCMKKeyID(raw string, vaultURL *url.URL, allowInsecure bool) (*url.URL, error) {
+	keyURL, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || keyURL.Host == "" || keyURL.User != nil || keyURL.Fragment != "" || keyURL.RawQuery != "" {
+		return nil, fmt.Errorf("%w: invalid Azure CMK key id", ErrConnectorSecretStore)
+	}
+	if keyURL.Scheme != "https" && !(allowInsecure && keyURL.Scheme == "http") {
+		return nil, fmt.Errorf("%w: Azure CMK key id must use HTTPS", ErrConnectorSecretStore)
+	}
+	if !strings.EqualFold(keyURL.Host, vaultURL.Host) || !strings.HasPrefix(keyURL.Path, "/keys/") {
+		return nil, fmt.Errorf("%w: Azure CMK must belong to the configured vault", ErrConnectorSecretStore)
+	}
+	return keyURL, nil
+}
+
+func azureKeyOperationURL(keyID *url.URL, operation string) string {
+	u := *keyID
+	u.Path = strings.TrimRight(u.Path, "/") + "/" + operation
+	q := u.Query()
+	q.Set("api-version", azureKeyVaultAPIVersion)
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func parseAzureIdentityEndpoint(raw string, allowInsecure, allowIMDS bool) (*url.URL, error) {
+	endpoint, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || endpoint.Host == "" || endpoint.User != nil || endpoint.Fragment != "" {
+		return nil, fmt.Errorf("%w: invalid Azure identity endpoint", ErrConnectorSecretStore)
+	}
+	if endpoint.Scheme == "https" {
+		return endpoint, nil
+	}
+	if endpoint.Scheme != "http" {
+		return nil, fmt.Errorf("%w: Azure identity endpoint must use HTTP or HTTPS", ErrConnectorSecretStore)
+	}
+	host := strings.Split(endpoint.Host, ":")[0]
+	if allowIMDS && host == "169.254.169.254" {
+		return endpoint, nil
+	}
+	if allowInsecure {
+		return endpoint, nil
+	}
+	return nil, fmt.Errorf("%w: Azure identity endpoint must use HTTPS", ErrConnectorSecretStore)
+}
+
+func validAzureSecretName(value string) bool {
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') &&
+			!(r >= '0' && r <= '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func isAzureSecretNotFound(err error) bool {
+	var apiErr *azureKeyVaultAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.Status == http.StatusNotFound || strings.EqualFold(apiErr.Code, "SecretNotFound")
+}
+
 func (s *AzureKeyVaultSecretStore) Backend() string {
 	return model.ConnectorSecretBackendAzure
 }
