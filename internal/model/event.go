@@ -33,6 +33,8 @@ type DomainEvent struct {
 	AggregateType string          `json:"aggregate_type"`
 	AggregateID   string          `json:"aggregate_id"`
 	SchemaVersion int             `json:"schema_version"`
+	CorrelationID string          `json:"correlation_id,omitempty"`
+	CausationID   string          `json:"causation_id,omitempty"`
 	Data          json.RawMessage `json:"data"`
 	OccurredAt    time.Time       `json:"occurred_at"`
 	Attempts      int             `json:"-"`
