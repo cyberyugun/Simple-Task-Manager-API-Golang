@@ -188,6 +188,126 @@ type azureStoredConnectorSecret struct {
 	KeyID    string `json:"key_id,omitempty"`
 }
 
+func NewAzureKeyVaultSecretStore(cfg AzureKeyVaultConfig) (*AzureKeyVaultSecretStore, error) {
+	vaultURL, err := parseAzureVaultURL(cfg.VaultURL, cfg.AllowInsecure)
+	if err != nil {
+		return nil, err
+	}
+	prefix := strings.Trim(strings.TrimSpace(cfg.Prefix), "-")
+	if prefix == "" {
+		prefix = "stm-connectors"
+	}
+	if !validAzureSecretName(prefix) {
+		return nil, fmt.Errorf("%w: invalid Azure secret prefix", ErrConnectorSecretStore)
+	}
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	client := &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	tokenProvider, err := newAzureAccessTokenProvider(cfg, client)
+	if err != nil {
+		return nil, err
+	}
+	var cmkKeyID *url.URL
+	if strings.TrimSpace(cfg.CMKKeyID) != "" {
+		cmkKeyID, err = parseAzureCMKKeyID(cfg.CMKKeyID, vaultURL, cfg.AllowInsecure)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &AzureKeyVaultSecretStore{
+		vaultURL: vaultURL, prefix: prefix, cmkKeyID: cmkKeyID, client: client, tokens: tokenProvider,
+	}, nil
+}
+
+func NewAzureKeyVaultSecretStoreFromEnv(allowInsecure bool) (*AzureKeyVaultSecretStore, error) {
+	rawEnabled := strings.TrimSpace(os.Getenv("CONNECTOR_AZURE_KEY_VAULT_ENABLED"))
+	if rawEnabled == "" {
+		return nil, nil
+	}
+	enabled, err := strconv.ParseBool(rawEnabled)
+	if err != nil {
+		return nil, fmt.Errorf("%w: CONNECTOR_AZURE_KEY_VAULT_ENABLED must be true or false", ErrConnectorSecretStore)
+	}
+	if !enabled {
+		return nil, nil
+	}
+	timeout := 10 * time.Second
+	if raw := strings.TrimSpace(os.Getenv("CONNECTOR_AZURE_TIMEOUT")); raw != "" {
+		parsed, parseErr := time.ParseDuration(raw)
+		if parseErr != nil || parsed <= 0 {
+			return nil, fmt.Errorf("%w: CONNECTOR_AZURE_TIMEOUT must be a positive duration", ErrConnectorSecretStore)
+		}
+		timeout = parsed
+	}
+	useManagedIdentity := false
+	if raw := strings.TrimSpace(os.Getenv("CONNECTOR_AZURE_USE_MANAGED_IDENTITY")); raw != "" {
+		value, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			return nil, fmt.Errorf("%w: CONNECTOR_AZURE_USE_MANAGED_IDENTITY must be true or false", ErrConnectorSecretStore)
+		}
+		useManagedIdentity = value
+	}
+	return NewAzureKeyVaultSecretStore(AzureKeyVaultConfig{
+		VaultURL:                 os.Getenv("CONNECTOR_AZURE_KEY_VAULT_URL"),
+		Prefix:                   os.Getenv("CONNECTOR_AZURE_SECRET_PREFIX"),
+		AccessToken:              os.Getenv("CONNECTOR_AZURE_ACCESS_TOKEN"),
+		TenantID:                 os.Getenv("AZURE_TENANT_ID"),
+		ClientID:                 os.Getenv("AZURE_CLIENT_ID"),
+		FederatedTokenFile:       os.Getenv("AZURE_FEDERATED_TOKEN_FILE"),
+		AuthorityHost:            os.Getenv("AZURE_AUTHORITY_HOST"),
+		UseManagedIdentity:       useManagedIdentity,
+		ManagedIdentityEndpoint:  os.Getenv("CONNECTOR_AZURE_MANAGED_IDENTITY_ENDPOINT"),
+		CMKKeyID:                 os.Getenv("CONNECTOR_AZURE_CMK_KEY_ID"),
+		Timeout:                  timeout,
+		AllowInsecure:            allowInsecure,
+	})
+}
+
+func newAzureAccessTokenProvider(cfg AzureKeyVaultConfig, client *http.Client) (azureAccessTokenProvider, error) {
+	if token := strings.TrimSpace(cfg.AccessToken); token != "" {
+		return azureStaticTokenProvider{token: token}, nil
+	}
+	tenantID := strings.TrimSpace(cfg.TenantID)
+	clientID := strings.TrimSpace(cfg.ClientID)
+	tokenFile := strings.TrimSpace(cfg.FederatedTokenFile)
+	if tenantID != "" || tokenFile != "" {
+		if tenantID == "" || clientID == "" || tokenFile == "" {
+			return nil, fmt.Errorf("%w: Azure workload identity requires tenant id, client id and federated token file", ErrConnectorSecretStore)
+		}
+		authority := strings.TrimRight(strings.TrimSpace(cfg.AuthorityHost), "/")
+		if authority == "" {
+			authority = "https://login.microsoftonline.com"
+		}
+		endpoint, err := parseAzureIdentityEndpoint(authority+"/"+url.PathEscape(tenantID)+"/oauth2/v2.0/token", cfg.AllowInsecure, false)
+		if err != nil {
+			return nil, err
+		}
+		return &azureOAuthTokenProvider{
+			tenantID: tenantID, clientID: clientID, tokenFile: tokenFile,
+			tokenEndpoint: endpoint, client: client,
+		}, nil
+	}
+	if cfg.UseManagedIdentity {
+		rawEndpoint := strings.TrimSpace(cfg.ManagedIdentityEndpoint)
+		if rawEndpoint == "" {
+			rawEndpoint = "http://169.254.169.254/metadata/identity/oauth2/token"
+		}
+		endpoint, err := parseAzureIdentityEndpoint(rawEndpoint, cfg.AllowInsecure, true)
+		if err != nil {
+			return nil, err
+		}
+		return &azureManagedIdentityTokenProvider{clientID: clientID, endpoint: endpoint, client: client}, nil
+	}
+	return nil, fmt.Errorf("%w: Azure workload identity, managed identity or access token is required", ErrConnectorSecretStore)
+}
+
 func (s *AzureKeyVaultSecretStore) Backend() string {
 	return model.ConnectorSecretBackendAzure
 }
