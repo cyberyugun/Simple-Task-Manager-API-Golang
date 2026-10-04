@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.6.0
+  version: 1.7.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -35,6 +35,7 @@ tags:
   - name: Developer Platform
   - name: AI Assistance
   - name: Global Multi-Region
+  - name: Zero Trust Security
 
 paths:
   /health:
@@ -2217,6 +2218,209 @@ paths:
       responses:
         '200': { description: Region residency compliance report }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/security/workload/token:
+    post:
+      tags: [Zero Trust Security]
+      summary: Exchange a registered mTLS workload certificate for a certificate-bound service token
+      operationId: exchangeWorkloadMTLSToken
+      responses:
+        '200': { description: Certificate-bound workload access token }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/organizations/{id}/security/policy:
+    get:
+      tags: [Zero Trust Security]
+      summary: Get organization zero trust policy
+      operationId: getZeroTrustPolicy
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Zero trust policy }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Zero Trust Security]
+      summary: Update organization zero trust policy
+      operationId: updateZeroTrustPolicy
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Updated zero trust policy }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/security/workloads:
+    get:
+      tags: [Zero Trust Security]
+      summary: List service and workload identities
+      operationId: listWorkloadIdentities
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workload identities }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Zero Trust Security]
+      summary: Create a workspace-scoped workload identity
+      operationId: createWorkloadIdentity
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Workload identity created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/security/workloads/{workload_id}:
+    delete:
+      tags: [Zero Trust Security]
+      summary: Revoke a workload identity and its active certificates
+      operationId: revokeWorkloadIdentity
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workload identity revoked }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/organizations/{id}/security/workloads/{workload_id}/certificates:
+    get:
+      tags: [Zero Trust Security]
+      summary: List workload mTLS certificates
+      operationId: listWorkloadCertificates
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workload certificate history }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Zero Trust Security]
+      summary: Register or rotate a workload mTLS certificate
+      operationId: registerWorkloadCertificate
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Workload certificate registered }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/organizations/{id}/security/devices:
+    get:
+      tags: [Zero Trust Security]
+      summary: List active trusted devices for the organization
+      operationId: listZeroTrustDevices
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Trusted devices }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Zero Trust Security]
+      summary: Register the authenticated user's trusted device
+      operationId: trustZeroTrustDevice
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Device trust registered }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/security/devices/{device_id}:
+    delete:
+      tags: [Zero Trust Security]
+      summary: Revoke an organization device-trust record
+      operationId: revokeZeroTrustDevice
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Device trust revoked }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/organizations/{id}/security/risk/evaluate:
+    post:
+      tags: [Zero Trust Security]
+      summary: Evaluate identity device network and WAF signals for adaptive access
+      operationId: evaluateZeroTrustRisk
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Risk score and allow step-up or revoke decision }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/security/events:
+    get:
+      tags: [Zero Trust Security]
+      summary: List organization security events incrementally
+      operationId: listZeroTrustSecurityEvents
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Security event feed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/security/dashboard:
+    get:
+      tags: [Zero Trust Security]
+      summary: Get tenant zero trust security dashboard
+      operationId: getZeroTrustSecurityDashboard
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Security posture dashboard }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/security/checkpoints:
+    get:
+      tags: [Zero Trust Security]
+      summary: List signed tamper-evident security audit checkpoints
+      operationId: listZeroTrustAuditCheckpoints
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Audit checkpoints }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Zero Trust Security]
+      summary: Create a signed hash-chained security audit checkpoint
+      operationId: createZeroTrustAuditCheckpoint
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Signed audit checkpoint }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: No new security events are available }
+
+  /api/organizations/{id}/security/worm-exports:
+    post:
+      tags: [Zero Trust Security]
+      summary: Create an immutable WORM security audit export manifest
+      operationId: createZeroTrustWORMExport
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: WORM audit export manifest }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: A signed checkpoint is required }
+
+  /api/organizations/{id}/security/siem:
+    get:
+      tags: [Zero Trust Security]
+      summary: List SIEM federation destinations
+      operationId: listZeroTrustSIEMDestinations
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: SIEM destinations }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Zero Trust Security]
+      summary: Create a SIEM federation destination
+      operationId: createZeroTrustSIEMDestination
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: SIEM destination created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/security/siem/feed:
+    get:
+      tags: [Zero Trust Security]
+      summary: Read the incremental security-event federation feed
+      operationId: getZeroTrustSIEMFeed
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Incremental SIEM security-event feed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: SIEM federation is disabled }
 
   /api/organizations/{id}/ai/providers:
     get:

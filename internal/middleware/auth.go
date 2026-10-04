@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,6 +40,18 @@ func authenticate(tokenManager *auth.TokenManager, repo repository.EnterpriseIde
 			if err != nil {
 				response.JSON(w, http.StatusUnauthorized, response.Envelope{Success: false, Message: "invalid or expired access token"})
 				return
+			}
+			if claims.ConfirmationThumbprint != "" {
+				if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+					response.JSON(w, http.StatusUnauthorized, response.Envelope{Success: false, Message: "certificate-bound access token requires mTLS"})
+					return
+				}
+				sum := sha256.Sum256(r.TLS.PeerCertificates[0].Raw)
+				fingerprint := hex.EncodeToString(sum[:])
+				if !strings.EqualFold(fingerprint, claims.ConfirmationThumbprint) {
+					response.JSON(w, http.StatusUnauthorized, response.Envelope{Success: false, Message: "mTLS certificate does not match access token binding"})
+					return
+				}
 			}
 			if repo != nil {
 				revoked, err := repo.IsAccessTokenRevoked(claims.JTI, time.Now())

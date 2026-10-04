@@ -25,17 +25,18 @@ type TokenManager struct {
 }
 
 type Claims struct {
-	Subject     string   `json:"sub"`
-	Email       string   `json:"email,omitempty"`
-	JTI         string   `json:"jti"`
-	Scopes      []string `json:"scope,omitempty"`
-	TokenUse    string   `json:"token_use,omitempty"`
-	ClientID    string   `json:"client_id,omitempty"`
-	WorkspaceID int64    `json:"workspace_id,omitempty"`
-	ActorUserID int64    `json:"actor_user_id,omitempty"`
-	MFA         bool     `json:"mfa,omitempty"`
-	Issued      int64    `json:"iat"`
-	Expires     int64    `json:"exp"`
+	Subject                string   `json:"sub"`
+	Email                  string   `json:"email,omitempty"`
+	JTI                    string   `json:"jti"`
+	Scopes                 []string `json:"scope,omitempty"`
+	TokenUse               string   `json:"token_use,omitempty"`
+	ClientID               string   `json:"client_id,omitempty"`
+	WorkspaceID            int64    `json:"workspace_id,omitempty"`
+	ActorUserID            int64    `json:"actor_user_id,omitempty"`
+	MFA                    bool     `json:"mfa,omitempty"`
+	ConfirmationThumbprint string   `json:"cnf_thumbprint,omitempty"`
+	Issued                 int64    `json:"iat"`
+	Expires                int64    `json:"exp"`
 }
 
 type tokenHeader struct {
@@ -91,17 +92,23 @@ func (m *TokenManager) GenerateUserWithMFA(userID int64, email string, scopes []
 }
 
 func (m *TokenManager) GenerateService(clientID string, workspaceID int64, scopes []string, actorUserID int64) (string, error) {
+	return m.GenerateServiceBound(clientID, workspaceID, scopes, actorUserID, "")
+}
+
+func (m *TokenManager) GenerateServiceBound(clientID string, workspaceID int64, scopes []string, actorUserID int64, confirmationThumbprint string) (string, error) {
 	clientID = strings.TrimSpace(clientID)
+	confirmationThumbprint = strings.ToLower(strings.TrimSpace(confirmationThumbprint))
 	if clientID == "" || workspaceID <= 0 || actorUserID <= 0 {
 		return "", ErrInvalidToken
 	}
 	return m.generate(Claims{
-		Subject:     "client:" + clientID,
-		ClientID:    clientID,
-		Scopes:      append([]string(nil), scopes...),
-		TokenUse:    "service",
-		WorkspaceID: workspaceID,
-		ActorUserID: actorUserID,
+		Subject:                "client:" + clientID,
+		ClientID:               clientID,
+		Scopes:                 append([]string(nil), scopes...),
+		TokenUse:               "service",
+		WorkspaceID:            workspaceID,
+		ActorUserID:            actorUserID,
+		ConfirmationThumbprint: confirmationThumbprint,
 	})
 }
 

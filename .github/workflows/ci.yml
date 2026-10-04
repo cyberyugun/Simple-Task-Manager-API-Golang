@@ -920,6 +920,57 @@ jobs:
           report="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/regions/report" -H "Authorization: Bearer $token")"
           printf '%s' "$report" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["compliant"] is True; assert d["violations"]==[]'
 
+      - name: Smoke test zero trust and advanced security
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          workspace="$(curl --fail --silent -X POST http://localhost:8080/api/workspaces -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 43 Workspace"}')"
+          workspace_id="$(printf '%s' "$workspace" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          organization="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 43 Zero Trust","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          attach_payload="$(python3 -c 'import json,sys; print(json.dumps({"workspace_id":int(sys.argv[1])}))' "$workspace_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workspaces" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$attach_payload" >/dev/null
+
+          policy_payload='{"enabled":true,"require_workload_mtls":true,"require_bound_tokens":true,"step_up_risk_score":40,"revoke_risk_score":75,"impossible_travel_kph":900,"waf_block_score":80,"allowed_cidrs":["10.0.0.0/8"],"denied_cidrs":["203.0.113.0/24"],"auto_revoke_high_risk":true,"require_trusted_device":true,"siem_federation_enabled":true,"audit_checkpoint_interval":100}'
+          policy="$(curl --fail --silent -X PUT "http://localhost:8080/api/organizations/$organization_id/security/policy" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$policy_payload")"
+          printf '%s' "$policy" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["enabled"] is True; assert d["require_workload_mtls"] is True; assert d["step_up_risk_score"]==40; assert d["revoke_risk_score"]==75'
+
+          workload_payload="$(python3 -c 'import json,sys; print(json.dumps({"workspace_id":int(sys.argv[1]),"name":"CI workload","spiffe_id":"spiffe://simple-task-manager/workload/ci-phase43","allowed_scopes":["tasks:read"],"mtls_required":True}))' "$workspace_id")"
+          workload="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/security/workloads" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$workload_payload")"
+          workload_id="$(printf '%s' "$workload" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="active"; assert d["workspace_id"]>0; print(d["id"])')"
+
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1             -subj '/CN=ci-phase43-workload'             -addext 'subjectAltName=URI:spiffe://simple-task-manager/workload/ci-phase43'             -addext 'extendedKeyUsage=clientAuth'             -keyout /tmp/phase43-key.pem -out /tmp/phase43-cert.pem >/dev/null 2>&1
+          cert_payload="$(python3 -c 'import json; print(json.dumps({"certificate_pem":open("/tmp/phase43-cert.pem").read(),"replace_existing":True}))')"
+          cert="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/security/workloads/$workload_id/certificates" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$cert_payload")"
+          printf '%s' "$cert" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert len(d["sha256_fingerprint"])==64; assert d["workload_id"]>0'
+
+          device_hash="$(printf 'ci-phase43-device' | sha256sum | awk '{print $1}')"
+          device_payload="$(python3 -c 'import json,sys; print(json.dumps({"device_hash":sys.argv[1],"label":"CI managed device","trust_level":"managed","expires_in_hours":24}))' "$device_hash")"
+          device="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/security/devices" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$device_payload")"
+          printf '%s' "$device" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["trust_level"]=="managed"'
+
+          sessions="$(curl --fail --silent http://localhost:8080/api/auth/sessions -H "Authorization: Bearer $token")"
+          session_id="$(printf '%s' "$sessions" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["id"])')"
+          risk_payload="$(python3 -c 'import json,sys; print(json.dumps({"session_id":int(sys.argv[1]),"device_hash":sys.argv[2],"source_ip":"203.0.113.9","waf_score":95,"token_binding_valid":False}))' "$session_id" "$device_hash")"
+          risk="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/security/risk/evaluate" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$risk_payload")"
+          printf '%s' "$risk" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["risk_score"]==100; assert d["action"]=="revoke"; assert d["session_revoked"] is True'
+
+          checkpoint="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/security/checkpoints" -H "Authorization: Bearer $token")"
+          printf '%s' "$checkpoint" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["sequence"]==1; assert d["event_count"]>=3; assert len(d["checkpoint_hash"])==64; assert len(d["signature"])==64'
+
+          worm="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/security/worm-exports" -H "Authorization: Bearer $token")"
+          printf '%s' "$worm" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["object_uri"].startswith("worm://"); assert len(d["checkpoint_hash"])==64'
+
+          siem="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/security/siem" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI SIEM","provider":"generic","endpoint_url":"https://siem.example.invalid/events","event_types":["risk_assessment","impossible_travel"],"enabled":true,"secret_ref":"secret://ci/siem"}')"
+          printf '%s' "$siem" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["provider"]=="generic"; assert d["enabled"] is True'
+
+          feed="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/security/siem/feed?after_id=0" -H "Authorization: Bearer $token")"
+          printf '%s' "$feed" | python3 -c 'import json,sys; assert len(json.load(sys.stdin)["data"])>=3'
+
+          dashboard="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/security/dashboard" -H "Authorization: Bearer $token")"
+          printf '%s' "$dashboard" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["active_workloads"]==1; assert d["trusted_devices"]==1; assert d["high_risk_events"]>=1; assert d["revoked_sessions"]>=1; assert d["latest_checkpoint"]["sequence"]==1'
+
       - name: Smoke test advanced search reporting analytics
         run: |
           login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
@@ -1010,7 +1061,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "27"
+          test "$migration_count" = "28"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
