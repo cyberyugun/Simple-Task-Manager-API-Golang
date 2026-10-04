@@ -44,8 +44,9 @@ type AttachmentConfig struct {
 }
 
 type ObjectStore interface {
-	PresignUpload(objectKey, contentType string, sizeBytes int64, expiresAt time.Time) (string, map[string]string, error)
+	PresignUpload(objectKey, contentType, sha256 string, sizeBytes int64, expiresAt time.Time) (string, map[string]string, error)
 	PresignDownload(objectKey string, expiresAt time.Time) (string, error)
+	VerifyUpload(context.Context, string, int64, string) error
 	Delete(context.Context, string) error
 }
 
@@ -94,16 +95,19 @@ func (s *SignedObjectStore) signedURL(operation, objectKey string, expiresAt tim
 	return u.String()
 }
 
-func (s *SignedObjectStore) PresignUpload(objectKey, contentType string, sizeBytes int64, expiresAt time.Time) (string, map[string]string, error) {
+func (s *SignedObjectStore) PresignUpload(objectKey, contentType, sha256 string, sizeBytes int64, expiresAt time.Time) (string, map[string]string, error) {
 	return s.signedURL("upload", objectKey, expiresAt), map[string]string{
 		"Content-Type":     contentType,
 		"X-Content-Length": fmt.Sprint(sizeBytes),
+		"X-Content-SHA256": sha256,
 	}, nil
 }
 
 func (s *SignedObjectStore) PresignDownload(objectKey string, expiresAt time.Time) (string, error) {
 	return s.signedURL("download", objectKey, expiresAt), nil
 }
+
+func (s *SignedObjectStore) VerifyUpload(context.Context, string, int64, string) error { return nil }
 
 func (s *SignedObjectStore) Delete(context.Context, string) error { return nil }
 
@@ -221,7 +225,7 @@ func (s *AttachmentService) CreateUpload(actorUserID int64, access model.Workspa
 		return model.AttachmentUploadSession{}, err
 	}
 	expires := now.Add(s.cfg.PresignTTL)
-	uploadURL, headers, err := s.store.PresignUpload(objectKey, contentType, req.SizeBytes, expires)
+	uploadURL, headers, err := s.store.PresignUpload(objectKey, contentType, hash, req.SizeBytes, expires)
 	if err != nil {
 		return model.AttachmentUploadSession{}, err
 	}
@@ -239,6 +243,9 @@ func (s *AttachmentService) CompleteUpload(actorUserID int64, access model.Works
 	}
 	if item.Status != model.AttachmentStatusPending || req.SizeBytes != item.SizeBytes || strings.ToLower(strings.TrimSpace(req.SHA256)) != item.SHA256 {
 		return model.Attachment{}, ErrInvalidAttachment
+	}
+	if err := s.store.VerifyUpload(context.Background(), item.ObjectKey, item.SizeBytes, item.SHA256); err != nil {
+		return model.Attachment{}, err
 	}
 	now := time.Now().UTC()
 	item.Status = model.AttachmentStatusUploaded
