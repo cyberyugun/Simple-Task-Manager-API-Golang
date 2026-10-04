@@ -19,12 +19,12 @@ import (
 )
 
 type azureVaultTestState struct {
-	mu            sync.Mutex
-	token         string
-	secrets       map[string]string
-	deleted       map[string]bool
-	encryptCalls  int
-	decryptCalls  int
+	mu           sync.Mutex
+	token        string
+	secrets      map[string]string
+	deleted      map[string]bool
+	encryptCalls int
+	decryptCalls int
 }
 
 func newAzureVaultTestServer(t *testing.T, token string) (*httptest.Server, *azureVaultTestState) {
@@ -90,7 +90,7 @@ func newAzureVaultTestServer(t *testing.T, token string) (*httptest.Server, *azu
 			state.encryptCalls++
 			wrapped := append([]byte("wrapped:"), raw...)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"kid": server.URL + "/keys/cmk/v1",
+				"kid":   server.URL + "/keys/cmk/v1",
 				"value": base64.RawURLEncoding.EncodeToString(wrapped),
 			})
 		case strings.HasSuffix(r.URL.Path, "/unwrapkey"):
@@ -310,7 +310,7 @@ func TestConnectorAzureMigrationBecomesAuthoritativeForRuntimeDelivery(t *testin
 
 	connection, err = integrationSvc.UpdateConnection(7, org.ID, connection.ID, model.UpdateIntegrationConnectionRequest{
 		Name: connection.Name, Status: model.IntegrationConnectionActive,
-		Config: map[string]any{"target_url": target.URL},
+		Config:      map[string]any{"target_url": target.URL},
 		Credentials: map[string]any{"access_token": "token-after-azure"},
 	})
 	if err != nil {
