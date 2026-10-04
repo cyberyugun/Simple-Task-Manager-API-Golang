@@ -51,7 +51,6 @@ func TestAuthMiddlewareRejectsMissingToken(t *testing.T) {
 	}
 }
 
-
 func TestEnterpriseAuthEnforcesCertificateBoundServiceToken(t *testing.T) {
 	manager := auth.NewTokenManager("12345678901234567890123456789012", time.Hour)
 	rawCert := []byte("phase43-bound-client-certificate")
