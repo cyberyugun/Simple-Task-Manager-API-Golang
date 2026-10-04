@@ -71,17 +71,17 @@ func (s *DataPlatformService) BIContracts() []model.BIExportContract {
 		{
 			Key: model.BIContractPowerBI, DisplayName: "Microsoft Power BI", Dataset: "task_analytics", Version: 1,
 			Fields: cloneDataPlatformFields(fields),
-			Notes: []string{"Use organization_id and workspace_id as tenant keys.", "updated_at is the incremental refresh watermark."},
+			Notes:  []string{"Use organization_id and workspace_id as tenant keys.", "updated_at is the incremental refresh watermark."},
 		},
 		{
 			Key: model.BIContractTableau, DisplayName: "Tableau", Dataset: "task_analytics", Version: 1,
 			Fields: cloneDataPlatformFields(fields),
-			Notes: []string{"Use organization_id and workspace_id as row-level security dimensions.", "updated_at supports extract refresh filtering."},
+			Notes:  []string{"Use organization_id and workspace_id as row-level security dimensions.", "updated_at supports extract refresh filtering."},
 		},
 		{
 			Key: model.BIContractLooker, DisplayName: "Looker", Dataset: "task_analytics", Version: 1,
 			Fields: cloneDataPlatformFields(fields),
-			Notes: []string{"Model organization_id and workspace_id in access filters.", "task_id is unique only within a workspace."},
+			Notes:  []string{"Model organization_id and workspace_id in access filters.", "task_id is unique only within a workspace."},
 		},
 	}
 }
@@ -536,7 +536,7 @@ func newContractWarehouseAdapter(key, displayName, deliveryMode string) Warehous
 func (a contractWarehouseAdapter) Capability() model.WarehouseAdapterCapability {
 	return model.WarehouseAdapterCapability{
 		Key: a.key, DisplayName: a.displayName, DeliveryMode: a.deliveryMode,
-		BIContracts: []string{model.BIContractPowerBI, model.BIContractTableau, model.BIContractLooker},
+		BIContracts:      []string{model.BIContractPowerBI, model.BIContractTableau, model.BIContractLooker},
 		SupportsRecovery: true,
 	}
 }
@@ -558,7 +558,7 @@ func (a contractWarehouseAdapter) Deliver(connection model.DataPlatformConnectio
 	return model.WarehouseDeliveryReceipt{
 		Provider: a.key, Target: connection.Target,
 		DeliveryURI: fmt.Sprintf("warehouse://%s/%s/batches/%s", a.key, strings.Trim(strings.ReplaceAll(connection.Target, " ", "_"), "/"), batchID),
-		BatchID: batchID, RowCount: len(rows), Bytes: int64(len(payload)), PayloadHash: hash,
+		BatchID:     batchID, RowCount: len(rows), Bytes: int64(len(payload)), PayloadHash: hash,
 	}, nil
 }
 
@@ -733,9 +733,9 @@ func checkpointString(item model.DataExportCheckpoint) string {
 
 func estimateWarehouseCost(provider string, bytes int64) float64 {
 	perGB := map[string]float64{
-		model.DataWarehouseBigQuery: 0.005,
-		model.DataWarehouseSnowflake: 0.008,
-		model.DataWarehouseRedshift: 0.006,
+		model.DataWarehouseBigQuery:   0.005,
+		model.DataWarehouseSnowflake:  0.008,
+		model.DataWarehouseRedshift:   0.006,
 		model.DataWarehouseDatabricks: 0.007,
 	}[provider]
 	return float64(bytes) / (1024 * 1024 * 1024) * perGB
