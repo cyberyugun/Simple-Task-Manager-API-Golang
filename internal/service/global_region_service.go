@@ -166,7 +166,11 @@ func (s *GlobalRegionService) CompleteMigration(actorUserID,organizationID,migra
 	if req.Success&&item.Scope=="organization"{
 		policy,perr:=s.repo.GetPolicy(organizationID)
 		if perr!=nil{return model.RegionMigration{},perr}
-		policy.HomeRegion=item.TargetRegion;policy.UpdatedByUserID=actorUserID;policy.UpdatedAt=now
+		policy.HomeRegion=item.TargetRegion
+		failover:=make([]string,0,len(policy.FailoverRegions)+1)
+		for _,region:=range policy.FailoverRegions{if region!=item.TargetRegion{failover=append(failover,region)}}
+		if containsString(policy.AllowedRegions,item.SourceRegion)&&item.SourceRegion!=item.TargetRegion&&!containsString(failover,item.SourceRegion){failover=append(failover,item.SourceRegion)}
+		policy.FailoverRegions=normalizeRegions(failover);policy.UpdatedByUserID=actorUserID;policy.UpdatedAt=now
 		if _,perr=s.repo.UpsertPolicy(policy);perr!=nil{return model.RegionMigration{},perr}
 	}
 	s.audit(organizationID,actorUserID,"region.migration."+item.Status,"region_migration",fmt.Sprint(item.ID),map[string]any{"target_region":item.TargetRegion})
