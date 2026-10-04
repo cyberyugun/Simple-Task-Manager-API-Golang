@@ -301,7 +301,7 @@ func TestConnectorAWSMigrationBecomesAuthoritativeForRuntimeDelivery(t *testing.
 
 	connection, err = integrationSvc.UpdateConnection(7, org.ID, connection.ID, model.UpdateIntegrationConnectionRequest{
 		Name: connection.Name, Status: model.IntegrationConnectionActive,
-		Config: map[string]any{"target_url": target.URL},
+		Config:      map[string]any{"target_url": target.URL},
 		Credentials: map[string]any{"access_token": "token-after-aws"},
 	})
 	if err != nil {
