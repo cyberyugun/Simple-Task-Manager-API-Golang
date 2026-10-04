@@ -145,6 +145,15 @@ func (r *InMemoryAIAssistanceRepository) MonthlyUsage(organizationID int64, from
 		summary.InputUnits += item.InputUnits
 		summary.OutputUnits += item.OutputUnits
 	}
+	for _, item := range r.runs {
+		if item.OrganizationID != organizationID || item.CreatedAt.Before(from) || !item.CreatedAt.Before(to) {
+			continue
+		}
+		summary.RequestCount++
+		summary.SpentCents += item.ActualCostCents
+		summary.InputUnits += item.InputUnits
+		summary.OutputUnits += item.OutputUnits
+	}
 	return summary, nil
 }
 
