@@ -169,18 +169,18 @@ type azureUserDelegationKey struct {
 }
 
 type AzureBlobObjectStore struct {
-	accountName    string
-	container      string
-	endpoint       *url.URL
-	accountKey     []byte
-	tokens         azureStorageTokenProvider
-	client         *http.Client
-	encryption     string
-	encryptionKey  string
-	delegationMu   sync.Mutex
-	delegationKey  azureUserDelegationKey
-	delegationEnd  time.Time
-	allowInsecure  bool
+	accountName   string
+	container     string
+	endpoint      *url.URL
+	accountKey    []byte
+	tokens        azureStorageTokenProvider
+	client        *http.Client
+	encryption    string
+	encryptionKey string
+	delegationMu  sync.Mutex
+	delegationKey azureUserDelegationKey
+	delegationEnd time.Time
+	allowInsecure bool
 }
 
 func NewAzureBlobObjectStore(cfg AzureBlobObjectStoreConfig) (*AzureBlobObjectStore, error) {
@@ -313,10 +313,10 @@ func (s *AzureBlobObjectStore) PresignUpload(objectKey, contentType, sha256 stri
 		return "", nil, err
 	}
 	headers := map[string]string{
-		"Content-Type":       contentType,
-		"x-ms-blob-type":     "BlockBlob",
-		"x-ms-meta-sha256":   strings.ToLower(strings.TrimSpace(sha256)),
-		"x-ms-version":       azureBlobAPIVersion,
+		"Content-Type":     contentType,
+		"x-ms-blob-type":   "BlockBlob",
+		"x-ms-meta-sha256": strings.ToLower(strings.TrimSpace(sha256)),
+		"x-ms-version":     azureBlobAPIVersion,
 	}
 	switch strings.ToLower(strings.TrimSpace(s.encryption)) {
 	case "", "none", "microsoft-managed":
