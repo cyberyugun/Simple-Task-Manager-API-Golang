@@ -70,6 +70,7 @@ func main() {
 	var enterpriseRepo repository.EnterpriseIdentityRepository
 	var developerPlatformRepo repository.DeveloperPlatformRepository
 	var aiAssistanceRepo repository.AIAssistanceRepository
+	var globalRegionRepo repository.GlobalRegionRepository
 	var governanceRepo repository.GovernanceRepository
 	var lifecycleRepo repository.LifecycleRepository
 	var organizationRepo repository.OrganizationRepository
@@ -109,6 +110,7 @@ func main() {
 		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
 		developerPlatformRepo = repository.NewPostgresDeveloperPlatformRepository(db)
 		aiAssistanceRepo = repository.NewPostgresAIAssistanceRepository(db)
+		globalRegionRepo = repository.NewPostgresGlobalRegionRepository(db)
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
 		organizationRepo = repository.NewPostgresOrganizationRepository(db)
@@ -141,6 +143,7 @@ func main() {
 		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
 		developerPlatformRepo = repository.NewInMemoryDeveloperPlatformRepository()
 		aiAssistanceRepo = repository.NewInMemoryAIAssistanceRepository()
+		globalRegionRepo = repository.NewInMemoryGlobalRegionRepository()
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
 		organizationRepo = repository.NewInMemoryOrganizationRepository()
@@ -222,6 +225,7 @@ func main() {
 	aiAssistanceService := service.NewAIAssistanceService(
 		aiAssistanceRepo, organizationRepo, operationsRepo, taskRepo, taskService, service.NewAIProviderRegistry(),
 	)
+	globalRegionService := service.NewGlobalRegionService(globalRegionRepo, organizationRepo, governanceRepo)
 	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
 	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)
 	organizationService := service.NewOrganizationService(organizationRepo, userRepo, workspaceRepo)
@@ -268,6 +272,7 @@ func main() {
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
 	developerPlatformHandler := handler.NewDeveloperPlatformHandler(developerPlatformService)
 	aiAssistanceHandler := handler.NewAIAssistanceHandler(aiAssistanceService)
+	globalRegionHandler := handler.NewGlobalRegionHandler(globalRegionService)
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
 	organizationHandler := handler.NewOrganizationHandler(organizationService)
@@ -389,6 +394,7 @@ func main() {
 	mux.Handle("/api/billing/plans", protectedFirstParty(billingHandler.Plans))
 	mux.Handle("/api/billing/webhooks/{provider}", http.HandlerFunc(billingHandler.Webhook))
 	mux.Handle("/api/integrations/connectors", protectedFirstParty(integrationHandler.Connectors))
+	mux.Handle("/api/regions", protectedFirstParty(globalRegionHandler.Regions))
 	mux.Handle("/api/integrations/secret-backends", protectedFirstParty(connectorSecurityHandler.Backends))
 	mux.Handle("/api/integrations/inbound/{connection_id}", http.HandlerFunc(integrationHandler.Inbound))
 
@@ -421,6 +427,18 @@ func main() {
 	mux.Handle("/api/organizations/{id}/ai/evaluation-cases", protectedFirstParty(aiAssistanceHandler.EvaluationCases))
 	mux.Handle("/api/organizations/{id}/ai/evaluation-cases/{case_id}/run", protectedFirstParty(aiAssistanceHandler.RunEvaluation))
 	mux.Handle("/api/organizations/{id}/ai/quality", protectedFirstParty(aiAssistanceHandler.Quality))
+	mux.Handle("/api/organizations/{id}/regions/policy", protectedFirstParty(globalRegionHandler.Policy))
+	mux.Handle("/api/organizations/{id}/regions/placements", protectedFirstParty(globalRegionHandler.Placements))
+	mux.Handle("/api/organizations/{id}/regions/migrations", protectedFirstParty(globalRegionHandler.Migrations))
+	mux.Handle("/api/organizations/{id}/regions/migrations/{migration_id}/decision", protectedFirstParty(globalRegionHandler.MigrationDecision))
+	mux.Handle("/api/organizations/{id}/regions/migrations/{migration_id}/complete", protectedFirstParty(globalRegionHandler.MigrationComplete))
+	mux.Handle("/api/organizations/{id}/regions/transfers", protectedFirstParty(globalRegionHandler.Transfers))
+	mux.Handle("/api/organizations/{id}/regions/transfers/{transfer_id}/decision", protectedFirstParty(globalRegionHandler.TransferDecision))
+	mux.Handle("/api/organizations/{id}/regions/transfers/{transfer_id}/complete", protectedFirstParty(globalRegionHandler.TransferComplete))
+	mux.Handle("/api/organizations/{id}/regions/failover-exercises", protectedFirstParty(globalRegionHandler.FailoverExercises))
+	mux.Handle("/api/organizations/{id}/regions/failover-exercises/{exercise_id}/complete", protectedFirstParty(globalRegionHandler.FailoverComplete))
+	mux.Handle("/api/organizations/{id}/regions/route", protectedFirstParty(globalRegionHandler.Route))
+	mux.Handle("/api/organizations/{id}/regions/report", protectedFirstParty(globalRegionHandler.Report))
 	mux.Handle("/api/organizations/{id}/billing/subscription", protectedFirstParty(billingHandler.Subscription))
 	mux.Handle("/api/organizations/{id}/billing/subscription/cancel", protectedFirstParty(billingHandler.CancelSubscription))
 	mux.Handle("/api/organizations/{id}/billing/entitlements", protectedFirstParty(billingHandler.Entitlements))
