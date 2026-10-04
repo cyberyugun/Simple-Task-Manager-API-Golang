@@ -744,7 +744,7 @@ func extensionNormalizeEventTypes(values []string) ([]string, error) {
 		if item == "*" {
 			continue
 		}
-		if len(item) > 160 || !strings.Contains(item, ".") || strings.ContainsAny(item, " \\t\\r\\n") {
+		if len(item) > 160 || !strings.Contains(item, ".") || strings.ContainsAny(item, " \t\r\n") {
 			return nil, ErrInvalidMarketplaceApplication
 		}
 	}
@@ -859,7 +859,7 @@ func extensionNormalizeStringMap(input map[string]string) map[string]string {
 
 func extensionValidSecretRef(value string) bool {
 	value = strings.TrimSpace(value)
-	return len(value) >= 5 && len(value) <= 1000 && !strings.ContainsAny(value, "\\r\\n")
+	return len(value) >= 5 && len(value) <= 1000 && !strings.ContainsAny(value, "\r\n")
 }
 
 func extensionGenerateSecret() (string, string, string, error) {
