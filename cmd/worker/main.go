@@ -315,6 +315,14 @@ func main() {
 	if azureSecretStore != nil {
 		connectorSecurityService.RegisterSecretStore(azureSecretStore)
 	}
+	gcpSecretStore, err := service.NewGCPSecretManagerSecretStoreFromEnv(allowInsecure)
+	if err != nil {
+		logger.Error("connector_gcp_secret_manager_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if gcpSecretStore != nil {
+		connectorSecurityService.RegisterSecretStore(gcpSecretStore)
+	}
 	integrationService.SetCredentialProvider(connectorSecurityService)
 	go runIntegrationDeliveries(ctx, integrationService, workerID+"-integration", integrationPoll, integrationBatch, logger)
 	go runConnectorCredentialRefresh(ctx, connectorSecurityService, connectorOAuthPoll, connectorOAuthBatch, logger)
