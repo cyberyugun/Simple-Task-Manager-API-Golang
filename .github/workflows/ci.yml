@@ -820,6 +820,61 @@ jobs:
           sdks="$(curl --fail --silent http://localhost:8080/api/developer/sdks -H "Authorization: Bearer $token")"
           printf '%s' "$sdks" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert {x["slug"] for x in d}=={"typescript","go","python","java","csharp"}'
 
+      - name: Smoke test AI-assisted task and workflow intelligence
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          workspace="$(curl --fail --silent -X POST http://localhost:8080/api/workspaces -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 41 Workspace"}')"
+          workspace_id="$(printf '%s' "$workspace" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          organization="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 41 AI","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          attach_payload="$(python3 -c 'import json,sys; print(json.dumps({"workspace_id":int(sys.argv[1])}))' "$workspace_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workspaces" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$attach_payload" >/dev/null
+
+          providers="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/ai/providers" -H "Authorization: Bearer $token")"
+          printf '%s' "$providers" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; p=next(x for x in d if x["key"]=="local_rules"); assert p["configured"] is True; assert p["structured_output"] is True; assert p["external"] is False'
+
+          policy_payload='{"enabled":true,"provider":"local_rules","monthly_budget_cents":100,"redaction_enabled":true,"max_input_chars":12000,"allowed_classifications":["public","internal","confidential"],"external_max_classification":"internal","require_human_approval_for_actions":true}'
+          policy="$(curl --fail --silent -X PUT "http://localhost:8080/api/organizations/$organization_id/ai/policy" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$policy_payload")"
+          printf '%s' "$policy" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["enabled"] is True; assert d["provider"]=="local_rules"; assert d["monthly_budget_cents"]==100; assert d["redaction_enabled"] is True'
+
+          task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H "X-Workspace-ID: $workspace_id" -H 'Content-Type: application/json' -d '{"title":"Improve customer authentication issue","description":"Contact ai-ci@example.com password=samplepass before release","status":"TODO","priority":"MEDIUM"}')"
+          task_id="$(printf '%s' "$task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          assist_payload="$(python3 -c 'import json,sys; print(json.dumps({"feature":"description_improvement","workspace_id":int(sys.argv[1]),"task_id":int(sys.argv[2]),"classification":"confidential"}))' "$workspace_id" "$task_id")"
+          assist="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/ai/assist" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$assist_payload")"
+          request_id="$(printf '%s' "$assist" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="pending_approval"; assert d["requires_approval"] is True; assert d["redaction_count"] >= 2; text=d["structured_result"]["description"].lower(); assert "ai-ci@example.com" not in text; assert "samplepass" not in text; assert len(d["input_hash"])==64; print(d["id"])')"
+
+          before="$(curl --fail --silent "http://localhost:8080/api/tasks/$task_id" -H "Authorization: Bearer $token" -H "X-Workspace-ID: $workspace_id")"
+          printf '%s' "$before" | python3 -c 'import json,sys; assert "ai-ci@example.com" in json.load(sys.stdin)["data"]["description"]'
+
+          approved="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/ai/requests/$request_id/decision" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"decision":"approve","comment":"CI human approval"}')"
+          printf '%s' "$approved" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="approved"; assert d["decided_by_user_id"] is not None'
+
+          after="$(curl --fail --silent "http://localhost:8080/api/tasks/$task_id" -H "Authorization: Bearer $token" -H "X-Workspace-ID: $workspace_id")"
+          printf '%s' "$after" | python3 -c 'import json,sys; text=json.load(sys.stdin)["data"]["description"].lower(); assert "ai-ci@example.com" not in text; assert "samplepass" not in text'
+
+          search_task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H "X-Workspace-ID: $workspace_id" -H 'Content-Type: application/json' -d '{"title":"Customer authentication failure","description":"Investigate login defect affecting client access","status":"TODO","priority":"HIGH"}')"
+          search_task_id="$(printf '%s' "$search_task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          search_payload="$(python3 -c 'import json,sys; print(json.dumps({"workspace_id":int(sys.argv[1]),"query":"client login bug","classification":"internal","limit":10}))' "$workspace_id")"
+          semantic="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/ai/semantic-search" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$search_payload")"
+          printf '%s' "$semantic" | SEARCH_ID="$search_task_id" python3 -c 'import json,os,sys; sid=int(os.environ["SEARCH_ID"]); d=json.load(sys.stdin)["data"]; assert any(x["task"]["id"]==sid and x["score"]>0 for x in d)'
+
+          eval_case="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/ai/evaluation-cases" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI summary quality","feature":"task_summary","input":"Governed AI summary quality check","classification":"internal","expected_keywords":["governed","summary"]}')"
+          case_id="$(printf '%s' "$eval_case" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          evaluation="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/ai/evaluation-cases/$case_id/run" -H "Authorization: Bearer $token")"
+          printf '%s' "$evaluation" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["passed"] is True; assert d["score_basis_points"]==10000; assert d["actual_cost_cents"] >= 1'
+
+          quality="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/ai/quality" -H "Authorization: Bearer $token")"
+          printf '%s' "$quality" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["total_runs"]==1; assert d["passed_runs"]==1; assert d["pass_rate"]==1'
+
+          usage="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/ai/usage" -H "Authorization: Bearer $token")"
+          printf '%s' "$usage" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["request_count"] >= 2; assert d["spent_cents"] >= 2; assert d["budget_cents"]==100; assert d["remaining_cents"] < 100'
+
+          requests="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/ai/requests" -H "Authorization: Bearer $token")"
+          printf '%s' "$requests" | REQUEST_ID="$request_id" python3 -c 'import json,os,sys; rid=int(os.environ["REQUEST_ID"]); items=json.load(sys.stdin)["data"]; item=next(x for x in items if x["id"]==rid); assert item["status"]=="approved"; assert item["prompt_metadata"]["provider_external"] is False'
+
       - name: Smoke test advanced search reporting analytics
         run: |
           login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
@@ -910,7 +965,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "25"
+          test "$migration_count" = "26"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"

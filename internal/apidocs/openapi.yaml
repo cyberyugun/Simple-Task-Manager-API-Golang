@@ -33,6 +33,7 @@ tags:
   - name: Enterprise Integrations
   - name: Enterprise Event Fabric
   - name: Developer Platform
+  - name: AI Assistance
 
 paths:
   /health:
@@ -2023,6 +2024,116 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '503':
           description: Billing webhook secret is not configured
+  /api/organizations/{id}/ai/providers:
+    get:
+      tags: [AI Assistance]
+      summary: List configured structured AI providers
+      operationId: listAIProviders
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI provider capabilities }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/organizations/{id}/ai/policy:
+    get:
+      tags: [AI Assistance]
+      summary: Read organization AI governance policy
+      operationId: getAIPolicy
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI governance policy }
+    put:
+      tags: [AI Assistance]
+      summary: Update organization AI governance, privacy, routing and budget policy
+      operationId: updateAIPolicy
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI governance policy updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/organizations/{id}/ai/assist:
+    post:
+      tags: [AI Assistance]
+      summary: Run governed structured AI assistance
+      operationId: createAIAssistance
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI assistance completed without an action }
+        '202': { description: AI assistance completed and action is pending human approval }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '402': { description: Organization AI budget would be exceeded }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/organizations/{id}/ai/requests:
+    get:
+      tags: [AI Assistance]
+      summary: List AI request and approval audit records
+      operationId: listAIRequests
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI request audit records }
+  /api/organizations/{id}/ai/requests/{request_id}/decision:
+    post:
+      tags: [AI Assistance]
+      summary: Approve or reject a human-gated AI action
+      operationId: decideAIRequest
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI action decision persisted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Request is not pending approval }
+  /api/organizations/{id}/ai/usage:
+    get:
+      tags: [AI Assistance]
+      summary: Read monthly AI cost and usage telemetry
+      operationId: getAIUsage
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI monthly usage and budget }
+  /api/organizations/{id}/ai/semantic-search:
+    post:
+      tags: [AI Assistance]
+      summary: Search tasks using local normalized semantic relevance
+      operationId: semanticAISearch
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Ranked task matches }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/organizations/{id}/ai/evaluation-cases:
+    get:
+      tags: [AI Assistance]
+      summary: List AI evaluation dataset cases
+      operationId: listAIEvaluationCases
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI evaluation dataset }
+    post:
+      tags: [AI Assistance]
+      summary: Add an AI quality evaluation case
+      operationId: createAIEvaluationCase
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Evaluation case created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/organizations/{id}/ai/evaluation-cases/{case_id}/run:
+    post:
+      tags: [AI Assistance]
+      summary: Run one AI evaluation case through policy, redaction and provider controls
+      operationId: runAIEvaluation
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI evaluation result }
+        '402': { description: Organization AI budget would be exceeded }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/organizations/{id}/ai/quality:
+    get:
+      tags: [AI Assistance]
+      summary: Read AI evaluation pass rate and quality score history
+      operationId: getAIQuality
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: AI quality monitoring summary }
+
   /api/organizations/{id}/billing/subscription:
     get:
       tags: [Enterprise Billing]
