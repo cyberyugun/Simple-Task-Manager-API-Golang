@@ -1,5 +1,24 @@
 # API Changelog
 
+## 1.8.0 — Phase 44
+
+Compatibility line: **v1**.
+
+Additive enterprise data platform and BI federation release:
+
+- adds governed BigQuery, Snowflake, Redshift and Databricks warehouse connection metadata
+- adds Power BI, Tableau and Looker-oriented analytical contracts
+- adds full and incremental organization exports with deterministic checkpoints
+- adds tenant-key isolation and configurable field masking before warehouse delivery
+- adds backward-compatible analytical schema evolution
+- adds export jobs, failure state and checkpoint-safe recovery
+- adds data lineage records and governance tags
+- adds reverse-ETL hook metadata
+- adds per-connection freshness SLO and monthly estimated export-cost budget controls
+- adds an operational data-platform dashboard
+- preserves all existing v1 paths, operation IDs, request requirements and response fields
+
+
 ## 1.7.0 — Phase 43
 
 Compatibility line: **v1**.
