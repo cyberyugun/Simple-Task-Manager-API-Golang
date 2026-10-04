@@ -11,12 +11,12 @@ import (
 )
 
 var (
-	ErrZeroTrustPolicyNotFound      = errors.New("zero trust policy not found")
-	ErrWorkloadIdentityNotFound     = errors.New("workload identity not found")
-	ErrWorkloadCertificateNotFound  = errors.New("workload certificate not found")
-	ErrDeviceTrustNotFound          = errors.New("device trust record not found")
-	ErrAuditCheckpointNotFound      = errors.New("audit checkpoint not found")
-	ErrSIEMDestinationNotFound      = errors.New("siem destination not found")
+	ErrZeroTrustPolicyNotFound     = errors.New("zero trust policy not found")
+	ErrWorkloadIdentityNotFound    = errors.New("workload identity not found")
+	ErrWorkloadCertificateNotFound = errors.New("workload certificate not found")
+	ErrDeviceTrustNotFound         = errors.New("device trust record not found")
+	ErrAuditCheckpointNotFound     = errors.New("audit checkpoint not found")
+	ErrSIEMDestinationNotFound     = errors.New("siem destination not found")
 )
 
 type ZeroTrustRepository interface {
