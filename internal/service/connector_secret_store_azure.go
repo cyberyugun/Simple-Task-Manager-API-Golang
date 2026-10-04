@@ -557,8 +557,10 @@ func (s *AzureKeyVaultSecretStore) call(ctx context.Context, method, endpoint st
 }
 
 func parseAzureTokenResponse(raw []byte) (string, time.Time, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
 	var response map[string]any
-	if err := json.Unmarshal(raw, &response); err != nil {
+	if err := decoder.Decode(&response); err != nil {
 		return "", time.Time{}, fmt.Errorf("%w: invalid Azure identity response", ErrConnectorSecretStore)
 	}
 	token := strings.TrimSpace(fmt.Sprint(response["access_token"]))
@@ -567,16 +569,31 @@ func parseAzureTokenResponse(raw []byte) (string, time.Time, error) {
 	}
 	now := time.Now().UTC()
 	expiry := now.Add(time.Hour)
-	if rawSeconds := strings.TrimSpace(fmt.Sprint(response["expires_in"])); rawSeconds != "" && rawSeconds != "<nil>" {
-		if seconds, err := strconv.ParseInt(strings.Split(rawSeconds, ".")[0], 10, 64); err == nil && seconds > 0 {
-			expiry = now.Add(time.Duration(seconds) * time.Second)
-		}
-	} else if rawExpiry := strings.TrimSpace(fmt.Sprint(response["expires_on"])); rawExpiry != "" && rawExpiry != "<nil>" {
-		if unix, err := strconv.ParseInt(rawExpiry, 10, 64); err == nil && unix > 0 {
-			expiry = time.Unix(unix, 0).UTC()
-		}
+	if seconds, ok := azureInt64(response["expires_in"]); ok && seconds > 0 {
+		expiry = now.Add(time.Duration(seconds) * time.Second)
+	} else if unix, ok := azureInt64(response["expires_on"]); ok && unix > 0 {
+		expiry = time.Unix(unix, 0).UTC()
 	}
 	return token, expiry, nil
+}
+
+func azureInt64(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case json.Number:
+		number, err := typed.Int64()
+		return number, err == nil
+	case float64:
+		return int64(typed), typed > 0
+	case string:
+		number, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		return number, err == nil
+	case int:
+		return int64(typed), true
+	case int64:
+		return typed, true
+	default:
+		return 0, false
+	}
 }
 
 func parseAzureVaultURL(raw string, allowInsecure bool) (*url.URL, error) {
