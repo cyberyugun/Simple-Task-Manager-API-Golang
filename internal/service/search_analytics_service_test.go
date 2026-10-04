@@ -59,7 +59,7 @@ func TestSearchAnalyticsSavedViewsDashboardExportAndSchedule(t *testing.T) {
 		t.Fatalf("views=%+v err=%v", views, err)
 	}
 
-	dashboard, err := svc.Dashboard(access.ID, 30)
+	dashboard, err := svc.Dashboard(access.ID, nil, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestSearchAnalyticsValidation(t *testing.T) {
 	if _, err := svc.Search(access.ID, model.SearchQuery{Status: "NOT_A_STATUS", Page: 1, Limit: 20}); err != ErrInvalidSearchQuery {
 		t.Fatalf("invalid search error=%v", err)
 	}
-	if _, err := svc.Dashboard(access.ID, 2); err != ErrInvalidAnalyticsRequest {
+	if _, err := svc.Dashboard(access.ID, nil, 2); err != ErrInvalidAnalyticsRequest {
 		t.Fatalf("invalid dashboard error=%v", err)
 	}
 	if _, err := svc.Export(access.ID, "xml", nil); err != ErrInvalidReportRequest {
