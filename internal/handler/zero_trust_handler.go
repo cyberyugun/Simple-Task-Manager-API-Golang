@@ -225,9 +225,7 @@ func (h *ZeroTrustHandler) EvaluateRisk(w http.ResponseWriter, r *http.Request) 
 		badJSON(w)
 		return
 	}
-	if strings.TrimSpace(req.SourceIP) == "" {
-		req.SourceIP = requestIP(r)
-	}
+	req.SourceIP = requestIP(r)
 	claims, _ := middleware.AuthClaimsFromContext(r.Context())
 	item, err := h.service.EvaluateRisk(userID, organizationID, claims.MFA, req)
 	if err != nil {
