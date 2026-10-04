@@ -51,7 +51,19 @@ Each attachment stores SHA-256 and size metadata. Optional workspace-local dedup
 
 ## Malware scanning
 
-\`AttachmentScanner\` is a pluggable scanning hook. The initial default implementation is \`NoopAttachmentScanner\`, which is intended for development/test environments. Production deployments should replace it with an antivirus/malware scanner adapter such as a ClamAV service or security scanning gateway.
+\`AttachmentScanner\` is a pluggable scanning hook. Development/test environments may use \`NoopAttachmentScanner\`. When \`ATTACHMENT_SCANNER_URL\` is configured, the API and worker use \`HTTPAttachmentScanner\`, an authenticated remote scanning-gateway adapter.
+
+The remote scanner receives attachment/object metadata rather than raw file bytes. It can use its own storage identity to fetch the object from S3, Azure Blob, GCS, MinIO/R2 or another configured backend and invoke ClamAV or another security engine.
+
+Security controls on the scanner client:
+
+- HTTPS is required unless the existing insecure-development flag is explicitly enabled;
+- redirects are not followed;
+- response bodies are bounded;
+- optional bearer authentication is supported;
+- optional HMAC-SHA256 request signing covers the Unix timestamp plus exact JSON request body;
+- scanner transport/protocol failures remain fail-closed and are quarantined by the existing scan state machine;
+- \`ATTACHMENT_SCANNER_REQUIRED=true\` makes startup fail if no scanner endpoint is configured.
 
 The worker transitions objects:
 
@@ -104,12 +116,24 @@ ATTACHMENT_STORAGE_BASE_URL=https://storage.example.com
 ATTACHMENT_ENCRYPTION=AES256
 ATTACHMENT_ENCRYPTION_KEY_ID=<optional-key-id>
 ATTACHMENT_DEDUPLICATE=true
+ATTACHMENT_SCANNER_URL=https://scanner.internal.example/v1/scan
+ATTACHMENT_SCANNER_REQUIRED=true
+ATTACHMENT_SCANNER_BEARER_TOKEN=<optional>
+ATTACHMENT_SCANNER_SIGNING_SECRET=<recommended>
 ATTACHMENT_SCAN_POLL_INTERVAL=5s
 ATTACHMENT_RETENTION_POLL_INTERVAL=1h
 ATTACHMENT_BATCH_SIZE=50
 \`\`\`
 
 If \`ATTACHMENT_SIGNING_SECRET\` is omitted, the API/worker uses \`JWT_SECRET\` as the signing fallback. Production should inject a separate signing value at deployment time from the platform secret manager; do not commit it to source control.
+
+For production content security, set \`ATTACHMENT_SCANNER_REQUIRED=true\`. Store scanner bearer/signing credentials in the deployment secret manager. The scanner response contract is:
+
+\`\`\`json
+{"clean": true, "engine": "clamav-gateway", "message": "OK"}
+\`\`\`
+
+A response with \`clean:false\` marks the attachment infected. HTTP errors, timeouts, malformed JSON, or a missing engine identifier quarantine the attachment rather than making it downloadable.
 
 ## Persistence
 
