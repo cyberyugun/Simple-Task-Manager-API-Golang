@@ -88,6 +88,7 @@ type EventFabricDelivery struct {
 	Payload         map[string]any `json:"payload"`
 	CorrelationID   string         `json:"correlation_id"`
 	CausationID     string         `json:"causation_id,omitempty"`
+	OccurredAt      time.Time      `json:"occurred_at"`
 	Status          string         `json:"status"`
 	Attempts        int            `json:"attempts"`
 	MaxAttempts     int            `json:"max_attempts"`
