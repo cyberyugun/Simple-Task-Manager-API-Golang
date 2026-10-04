@@ -61,12 +61,12 @@ type InMemoryDataPlatformRepository struct {
 
 func NewInMemoryDataPlatformRepository() *InMemoryDataPlatformRepository {
 	return &InMemoryDataPlatformRepository{
-		connections:  map[int64]model.DataPlatformConnection{},
-		schemas:      map[int64]model.DatasetSchemaVersion{},
-		jobs:         map[int64]model.DataExportJob{},
-		checkpoints:  map[int64]model.DataExportCheckpoint{},
-		lineage:      map[int64]model.DataLineageRecord{},
-		hooks:        map[int64]model.ReverseETLHook{},
+		connections:    map[int64]model.DataPlatformConnection{},
+		schemas:        map[int64]model.DatasetSchemaVersion{},
+		jobs:           map[int64]model.DataExportJob{},
+		checkpoints:    map[int64]model.DataExportCheckpoint{},
+		lineage:        map[int64]model.DataLineageRecord{},
+		hooks:          map[int64]model.ReverseETLHook{},
 		nextConnection: 1,
 		nextSchema:     1,
 		nextJob:        1,
