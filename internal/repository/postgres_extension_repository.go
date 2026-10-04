@@ -326,6 +326,19 @@ func (r *PostgresExtensionRepository) GetInstallation(organizationID, installati
 	return item, err
 }
 
+func (r *PostgresExtensionRepository) GetRuntimeInstallation(installationID, workspaceID int64) (model.ExtensionInstallation, error) {
+	item, err := scanExtensionInstallation(r.db.QueryRow(`
+		SELECT id,organization_id,application_id,workspace_id,status,granted_scopes,config,secret_refs,
+		       install_secret_prefix,daily_request_limit,monthly_request_limit,installed_by_user_id,installed_at,
+		       updated_at,uninstalled_by_user_id,uninstalled_at
+		FROM extension_installations WHERE id=$1 AND workspace_id=$2 AND status='active'
+	`, installationID, workspaceID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.ExtensionInstallation{}, ErrExtensionInstallationNotFound
+	}
+	return item, err
+}
+
 func (r *PostgresExtensionRepository) FindInstallationBySecretHash(secretHash string, now time.Time) (model.ExtensionInstallation, error) {
 	item, err := scanExtensionInstallation(r.db.QueryRow(`
 		SELECT id,organization_id,application_id,workspace_id,status,granted_scopes,config,secret_refs,
