@@ -475,7 +475,6 @@ func runAttachmentPlatform(ctx context.Context, attachments *service.AttachmentS
 	}
 }
 
-
 func runScheduledReports(ctx context.Context, reports *service.SearchAnalyticsService, poll time.Duration, batch int, logger *slog.Logger) {
 	run := func() {
 		items, err := reports.ProcessScheduledReports(batch)
