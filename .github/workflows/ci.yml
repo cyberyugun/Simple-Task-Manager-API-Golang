@@ -692,7 +692,10 @@ jobs:
           login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
           token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
 
-          analytics_task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"title":"Phase 37 analytics search target","description":"search reporting dashboard metrics","status":"IN_PROGRESS","priority":"HIGH"}')"
+          analytics_project="$(curl --fail --silent -X POST http://localhost:8080/api/task-projects -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"Phase 37 Analytics Project","description":"project dashboard smoke"}')"
+          analytics_project_id="$(printf '%s' "$analytics_project" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          analytics_task_payload="$(ANALYTICS_PROJECT_ID="$analytics_project_id" python3 -c 'import json,os; print(json.dumps({"title":"Phase 37 analytics search target","description":"search reporting dashboard metrics","status":"IN_PROGRESS","priority":"HIGH","project_id":int(os.environ["ANALYTICS_PROJECT_ID"])}))')"
+          analytics_task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$analytics_task_payload")"
           analytics_task_id="$(printf '%s' "$analytics_task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
 
           search="$(curl --fail --silent 'http://localhost:8080/api/search/tasks?q=analytics&limit=20' -H "Authorization: Bearer $token")"
@@ -705,6 +708,8 @@ jobs:
 
           dashboard="$(curl --fail --silent 'http://localhost:8080/api/analytics/dashboard?days=30' -H "Authorization: Bearer $token")"
           printf '%s' "$dashboard" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["summary"]["total_tasks"] >= 1; assert "IN_PROGRESS" in d["by_status"]; assert len(d["trend"])==30'
+          project_dashboard="$(curl --fail --silent "http://localhost:8080/api/analytics/dashboard?days=30&project_id=$analytics_project_id" -H "Authorization: Bearer $token")"
+          printf '%s' "$project_dashboard" | TASK_ID="$analytics_task_id" python3 -c 'import json,os,sys; d=json.load(sys.stdin)["data"]; assert d["summary"]["total_tasks"]==1; assert d["by_status"]["IN_PROGRESS"]==1'
 
           workload="$(curl --fail --silent http://localhost:8080/api/analytics/workload -H "Authorization: Bearer $token")"
           printf '%s' "$workload" | python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin)["data"], list)'
