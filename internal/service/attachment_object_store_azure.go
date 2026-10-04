@@ -439,8 +439,9 @@ func (s *AzureBlobObjectStore) serviceSAS(u *url.URL, objectKey, permission stri
 		spr = "http,https"
 	}
 	canonicalResource := "/blob/" + s.accountName + "/" + s.container + "/" + objectKey
+	encryptionScope := s.signedEncryptionScope(permission)
 	stringToSign := strings.Join([]string{
-		permission, st, se, canonicalResource, "", "", spr, azureBlobAPIVersion, "b", "", "", "", "", "", "", "",
+		permission, st, se, canonicalResource, "", "", spr, azureBlobAPIVersion, "b", "", encryptionScope, "", "", "", "", "",
 	}, "\n")
 	signature := base64.StdEncoding.EncodeToString(hmacSHA256(s.accountKey, stringToSign))
 	q := u.Query()
@@ -450,6 +451,9 @@ func (s *AzureBlobObjectStore) serviceSAS(u *url.URL, objectKey, permission stri
 	q.Set("se", se)
 	q.Set("sr", "b")
 	q.Set("sp", permission)
+	if encryptionScope != "" {
+		q.Set("ses", encryptionScope)
+	}
 	q.Set("sig", signature)
 	u.RawQuery = q.Encode()
 	return u.String()
@@ -467,10 +471,11 @@ func (s *AzureBlobObjectStore) userDelegationSAS(u *url.URL, objectKey, permissi
 		spr = "http,https"
 	}
 	canonicalResource := "/blob/" + s.accountName + "/" + s.container + "/" + objectKey
+	encryptionScope := s.signedEncryptionScope(permission)
 	stringToSign := strings.Join([]string{
 		permission, st, se, canonicalResource,
 		key.SignedOID, key.SignedTID, key.SignedStart, key.SignedExpiry, key.SignedService, key.SignedVersion,
-		"", "", "", "", spr, azureBlobAPIVersion, "b", "", "", "", "", "", "", "",
+		"", "", "", "", spr, azureBlobAPIVersion, "b", "", encryptionScope, "", "", "", "", "",
 	}, "\n")
 	signature := base64.StdEncoding.EncodeToString(hmacSHA256(rawKey, stringToSign))
 	q := u.Query()
@@ -486,9 +491,22 @@ func (s *AzureBlobObjectStore) userDelegationSAS(u *url.URL, objectKey, permissi
 	q.Set("ske", key.SignedExpiry)
 	q.Set("sks", key.SignedService)
 	q.Set("skv", key.SignedVersion)
+	if encryptionScope != "" {
+		q.Set("ses", encryptionScope)
+	}
 	q.Set("sig", signature)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+func (s *AzureBlobObjectStore) signedEncryptionScope(permission string) string {
+	switch strings.ToLower(strings.TrimSpace(s.encryption)) {
+	case "cmk", "encryption_scope", "azure_cmk":
+		if strings.Contains(permission, "w") || strings.Contains(permission, "c") {
+			return s.encryptionKey
+		}
+	}
+	return ""
 }
 
 func (s *AzureBlobObjectStore) userDelegationKey(ctx context.Context, neededExpiry time.Time) (azureUserDelegationKey, error) {
