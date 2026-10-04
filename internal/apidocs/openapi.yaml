@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.7.0
+  version: 1.8.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -36,6 +36,7 @@ tags:
   - name: AI Assistance
   - name: Global Multi-Region
   - name: Zero Trust Security
+  - name: Enterprise Data Platform
 
 paths:
   /health:
@@ -2421,6 +2422,137 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { description: SIEM federation is disabled }
+
+  /api/data-platform/adapters:
+    get:
+      tags: [Enterprise Data Platform]
+      summary: List supported enterprise warehouse adapters
+      operationId: listDataPlatformWarehouseAdapters
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Warehouse adapter capabilities }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/data-platform/bi-contracts:
+    get:
+      tags: [Enterprise Data Platform]
+      summary: List Power BI Tableau and Looker export contracts
+      operationId: listDataPlatformBIContracts
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: BI export contracts }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/organizations/{id}/data-platform/connections:
+    get:
+      tags: [Enterprise Data Platform]
+      summary: List organization warehouse connections
+      operationId: listDataPlatformConnections
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Warehouse connections }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Enterprise Data Platform]
+      summary: Create a governed warehouse connection
+      operationId: createDataPlatformConnection
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Warehouse connection created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/data-platform/connections/{connection_id}/schemas:
+    get:
+      tags: [Enterprise Data Platform]
+      summary: List analytical dataset schema versions
+      operationId: listDataPlatformSchemas
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Dataset schema versions }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Enterprise Data Platform]
+      summary: Publish a backward-compatible analytical schema version
+      operationId: createDataPlatformSchema
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Dataset schema version created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Schema is not backward compatible }
+
+  /api/organizations/{id}/data-platform/connections/{connection_id}/exports:
+    get:
+      tags: [Enterprise Data Platform]
+      summary: List warehouse export jobs for a connection
+      operationId: listDataPlatformExportJobs
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Export jobs }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Enterprise Data Platform]
+      summary: Run a full or incremental governed warehouse export
+      operationId: runDataPlatformExport
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Export completed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Export blocked by an operational or cost policy }
+
+  /api/organizations/{id}/data-platform/connections/{connection_id}/checkpoint:
+    get:
+      tags: [Enterprise Data Platform]
+      summary: Get the incremental export checkpoint
+      operationId: getDataPlatformCheckpoint
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Incremental checkpoint }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/organizations/{id}/data-platform/lineage:
+    get:
+      tags: [Enterprise Data Platform]
+      summary: List data lineage and governance metadata
+      operationId: listDataPlatformLineage
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Data lineage records }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/data-platform/reverse-etl-hooks:
+    get:
+      tags: [Enterprise Data Platform]
+      summary: List reverse ETL hook metadata
+      operationId: listReverseETLHooks
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Reverse ETL hooks }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Enterprise Data Platform]
+      summary: Create a governed reverse ETL hook definition
+      operationId: createReverseETLHook
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Reverse ETL hook created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/organizations/{id}/data-platform/dashboard:
+    get:
+      tags: [Enterprise Data Platform]
+      summary: Get warehouse export freshness cost and reliability dashboard
+      operationId: getDataPlatformDashboard
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Data platform operational dashboard }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/organizations/{id}/ai/providers:
     get:

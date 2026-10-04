@@ -3,8 +3,8 @@ namespace GeneratedSdk;
 
 public sealed class Client
 {
-    public const string OpenApiVersion = "1.7.0";
-    public const int OpenApiPathCount = 236;
+    public const string OpenApiVersion = "1.8.0";
+    public const int OpenApiPathCount = 245;
 
     public string BaseUrl { get; }
     public string AccessToken { get; }
