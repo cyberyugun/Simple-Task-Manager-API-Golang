@@ -59,6 +59,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Platform extensibility and application marketplace with remote-only app manifests, publisher verification/review, organization install/uninstall, scoped extension tokens, governed webhooks, configuration/secret references, quotas, usage analytics, categories, and declarative workflow/compliance/reporting packs
 - Fail-closed remote attachment malware-scanner gateway with HTTPS enforcement, optional bearer/HMAC authentication, quarantine-on-error semantics, and required-scanner startup mode
 - Native S3/S3-compatible attachment storage with SigV4 presigned upload/download, IRSA/web-identity support, upload metadata verification, SSE-S3/SSE-KMS headers, and verified deletion
+- Native Azure Blob attachment storage with service/user-delegation SAS, AKS workload identity or managed identity, upload metadata verification, optional encryption-scope binding, and verified deletion
 - Native connector secret backends for HashiCorp Vault KV v2, AWS Secrets Manager, Azure Key Vault, and GCP Secret Manager, including workload/managed identity, runtime credential resolution, versioning, cutover scrubbing, backend readiness reporting, AWS/Azure/GCP customer-managed-key support, and provider-specific security controls
 
 ## Environment
