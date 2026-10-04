@@ -72,7 +72,7 @@ func newAzureVaultTestServer(t *testing.T, token string) (*httptest.Server, *azu
 			default:
 				http.Error(w, "unsupported", http.StatusMethodNotAllowed)
 			}
-		case strings.HasSuffix(r.URL.Path, "/encrypt"):
+		case strings.HasSuffix(r.URL.Path, "/wrapkey"):
 			var body struct {
 				Alg   string `json:"alg"`
 				Value string `json:"value"`
@@ -93,7 +93,7 @@ func newAzureVaultTestServer(t *testing.T, token string) (*httptest.Server, *azu
 				"kid": server.URL + "/keys/cmk/v1",
 				"value": base64.RawURLEncoding.EncodeToString(wrapped),
 			})
-		case strings.HasSuffix(r.URL.Path, "/decrypt"):
+		case strings.HasSuffix(r.URL.Path, "/unwrapkey"):
 			var body struct {
 				Alg   string `json:"alg"`
 				Value string `json:"value"`
@@ -106,7 +106,7 @@ func newAzureVaultTestServer(t *testing.T, token string) (*httptest.Server, *azu
 				t.Fatal(err)
 			}
 			if !strings.HasPrefix(string(raw), "wrapped:") {
-				t.Fatalf("unexpected ciphertext %q", raw)
+				t.Fatalf("unexpected wrapped key %q", raw)
 			}
 			state.decryptCalls++
 			plain := strings.TrimPrefix(string(raw), "wrapped:")
