@@ -58,6 +58,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Enterprise data platform and BI federation with governed BigQuery/Snowflake/Redshift/Databricks adapters, Power BI/Tableau/Looker contracts, incremental checkpoints, masking, schema evolution, lineage, reverse-ETL metadata, export cost controls, and freshness SLOs
 - Platform extensibility and application marketplace with remote-only app manifests, publisher verification/review, organization install/uninstall, scoped extension tokens, governed webhooks, configuration/secret references, quotas, usage analytics, categories, and declarative workflow/compliance/reporting packs
 - Fail-closed remote attachment malware-scanner gateway with HTTPS enforcement, optional bearer/HMAC authentication, quarantine-on-error semantics, and required-scanner startup mode
+- Native connector secret backends for HashiCorp Vault KV v2 and AWS Secrets Manager, including workload-identity support, runtime credential resolution, versioning, cutover scrubbing, and backend readiness reporting
 
 ## Environment
 
