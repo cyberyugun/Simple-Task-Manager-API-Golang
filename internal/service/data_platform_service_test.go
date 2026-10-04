@@ -104,8 +104,8 @@ func TestDataPlatformIncrementalExportCheckpointAndLineage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lineage) != 3 || !containsString(lineage[0].GovernanceTags, "classification:confidential") ||
-		!containsString(lineage[0].GovernanceTags, "governance:cross_region_restricted") {
+	if len(lineage) != 3 || !containsPhase44String(lineage[0].GovernanceTags, "classification:confidential") ||
+		!containsPhase44String(lineage[0].GovernanceTags, "governance:cross_region_restricted") {
 		t.Fatalf("unexpected lineage: %+v", lineage)
 	}
 	dashboard, err := svc.Dashboard(1, orgID)
@@ -188,7 +188,7 @@ func TestWarehouseAdapterRecoveryDoesNotAdvanceCheckpoint(t *testing.T) {
 	}
 }
 
-func containsString(values []string, target string) bool {
+func containsPhase44String(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
 			return true
