@@ -475,7 +475,13 @@ func (r *PostgresEventFabricRepository) ReplayRange(workspaceID, subscriptionID,
 		WHERE e.workspace_id=$1
 		  AND ($3=0 OR e.id >= $3)
 		  AND ($4=0 OR e.id <= $4)
-		  AND (s.event_types ? e.event_type OR s.event_types ? '*')
+		  AND EXISTS (
+			SELECT 1
+			FROM jsonb_array_elements_text(s.event_types) AS pattern(value)
+			WHERE pattern.value='*'
+			   OR pattern.value=e.event_type
+			   OR (right(pattern.value,2)='.*' AND e.event_type LIKE left(pattern.value,length(pattern.value)-1) || '%')
+		  )
 		ON CONFLICT (subscription_id,outbox_event_id)
 		DO UPDATE SET status='pending',attempts=0,available_at=EXCLUDED.available_at,locked_at=NULL,locked_by='',
 			last_error='',delivered_at=NULL,dead_lettered_at=NULL,updated_at=EXCLUDED.updated_at
