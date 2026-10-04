@@ -14,14 +14,14 @@ import (
 )
 
 var (
-	ErrEventFabricForbidden              = errors.New("event fabric action is forbidden")
-	ErrInvalidEventSchema                = errors.New("invalid event schema")
-	ErrEventSchemaIncompatible           = errors.New("event schema is incompatible with the previous version")
-	ErrEventSchemaUnknownVersion         = errors.New("event schema version is not registered")
-	ErrInvalidEventFabricSubscription    = errors.New("invalid event fabric subscription")
-	ErrInvalidEventRoute                 = errors.New("invalid event route")
-	ErrEventFabricAdapterNotConfigured   = errors.New("event fabric adapter is not configured")
-	ErrInvalidEventReplay                = errors.New("invalid event replay range")
+	ErrEventFabricForbidden            = errors.New("event fabric action is forbidden")
+	ErrInvalidEventSchema              = errors.New("invalid event schema")
+	ErrEventSchemaIncompatible         = errors.New("event schema is incompatible with the previous version")
+	ErrEventSchemaUnknownVersion       = errors.New("event schema version is not registered")
+	ErrInvalidEventFabricSubscription  = errors.New("invalid event fabric subscription")
+	ErrInvalidEventRoute               = errors.New("invalid event route")
+	ErrEventFabricAdapterNotConfigured = errors.New("event fabric adapter is not configured")
+	ErrInvalidEventReplay              = errors.New("invalid event replay range")
 )
 
 type EventFabricAdapter interface {

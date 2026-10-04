@@ -11,10 +11,10 @@ import (
 )
 
 var (
-	ErrEventSchemaNotFound              = errors.New("event schema not found")
-	ErrEventFabricSubscriptionNotFound  = errors.New("event fabric subscription not found")
-	ErrEventRouteNotFound               = errors.New("event route not found")
-	ErrEventFabricDeliveryNotFound      = errors.New("event fabric delivery not found")
+	ErrEventSchemaNotFound             = errors.New("event schema not found")
+	ErrEventFabricSubscriptionNotFound = errors.New("event fabric subscription not found")
+	ErrEventRouteNotFound              = errors.New("event route not found")
+	ErrEventFabricDeliveryNotFound     = errors.New("event fabric delivery not found")
 )
 
 type EventFabricRepository interface {
@@ -63,13 +63,13 @@ type InMemoryEventFabricRepository struct {
 
 func NewInMemoryEventFabricRepository() *InMemoryEventFabricRepository {
 	return &InMemoryEventFabricRepository{
-		schemas: make(map[int64]model.EventSchemaVersion),
+		schemas:       make(map[int64]model.EventSchemaVersion),
 		subscriptions: make(map[int64]model.EventFabricSubscription),
-		routes: make(map[int64]model.EventRoute),
-		deliveries: make(map[int64]model.EventFabricDelivery),
-		deliveryKeys: make(map[string]int64),
-		offsets: make(map[int64]model.EventConsumerOffset),
-		nextSchema: 1, nextSub: 1, nextRoute: 1, nextDelivery: 1,
+		routes:        make(map[int64]model.EventRoute),
+		deliveries:    make(map[int64]model.EventFabricDelivery),
+		deliveryKeys:  make(map[string]int64),
+		offsets:       make(map[int64]model.EventConsumerOffset),
+		nextSchema:    1, nextSub: 1, nextRoute: 1, nextDelivery: 1,
 	}
 }
 

@@ -622,7 +622,6 @@ func runConnectorCredentialRefresh(ctx context.Context, connectors *service.Conn
 	}
 }
 
-
 func runEventFabricPlatform(
 	ctx context.Context,
 	fabric *service.EventFabricService,

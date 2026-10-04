@@ -25,7 +25,7 @@ func TestEventFabricSchemaRoutingOffsetReplayAndDLQ(t *testing.T) {
 		Schema: map[string]any{
 			"required": []any{"id", "title"},
 			"properties": map[string]any{
-				"id": map[string]any{"type": "integer"},
+				"id":    map[string]any{"type": "integer"},
 				"title": map[string]any{"type": "string"},
 			},
 		},
@@ -39,8 +39,8 @@ func TestEventFabricSchemaRoutingOffsetReplayAndDLQ(t *testing.T) {
 		Schema: map[string]any{
 			"required": []any{"id", "title", "region"},
 			"properties": map[string]any{
-				"id": map[string]any{"type": "integer"},
-				"title": map[string]any{"type": "string"},
+				"id":     map[string]any{"type": "integer"},
+				"title":  map[string]any{"type": "string"},
 				"region": map[string]any{"type": "string"},
 			},
 		},
@@ -54,8 +54,8 @@ func TestEventFabricSchemaRoutingOffsetReplayAndDLQ(t *testing.T) {
 		Schema: map[string]any{
 			"required": []any{"id", "title"},
 			"properties": map[string]any{
-				"id": map[string]any{"type": "integer"},
-				"title": map[string]any{"type": "string"},
+				"id":          map[string]any{"type": "integer"},
+				"title":       map[string]any{"type": "string"},
 				"description": map[string]any{"type": "string"},
 			},
 		},

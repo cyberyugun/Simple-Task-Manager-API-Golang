@@ -78,28 +78,28 @@ type EventConsumerOffset struct {
 }
 
 type EventFabricDelivery struct {
-	ID              int64          `json:"id"`
-	WorkspaceID     int64          `json:"workspace_id"`
-	SubscriptionID  int64          `json:"subscription_id"`
-	OutboxEventID   int64          `json:"outbox_event_id"`
-	EventKey        string         `json:"event_key"`
-	EventType       string         `json:"event_type"`
-	SchemaVersion   int            `json:"schema_version"`
-	Payload         map[string]any `json:"payload"`
-	CorrelationID   string         `json:"correlation_id"`
-	CausationID     string         `json:"causation_id,omitempty"`
-	OccurredAt      time.Time      `json:"occurred_at"`
-	Status          string         `json:"status"`
-	Attempts        int            `json:"attempts"`
-	MaxAttempts     int            `json:"max_attempts"`
-	AvailableAt     time.Time      `json:"available_at"`
-	LockedAt        *time.Time     `json:"-"`
-	LockedBy        string         `json:"-"`
-	LastError       string         `json:"last_error,omitempty"`
-	DeliveredAt     *time.Time     `json:"delivered_at,omitempty"`
-	DeadLetteredAt  *time.Time     `json:"dead_lettered_at,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID             int64          `json:"id"`
+	WorkspaceID    int64          `json:"workspace_id"`
+	SubscriptionID int64          `json:"subscription_id"`
+	OutboxEventID  int64          `json:"outbox_event_id"`
+	EventKey       string         `json:"event_key"`
+	EventType      string         `json:"event_type"`
+	SchemaVersion  int            `json:"schema_version"`
+	Payload        map[string]any `json:"payload"`
+	CorrelationID  string         `json:"correlation_id"`
+	CausationID    string         `json:"causation_id,omitempty"`
+	OccurredAt     time.Time      `json:"occurred_at"`
+	Status         string         `json:"status"`
+	Attempts       int            `json:"attempts"`
+	MaxAttempts    int            `json:"max_attempts"`
+	AvailableAt    time.Time      `json:"available_at"`
+	LockedAt       *time.Time     `json:"-"`
+	LockedBy       string         `json:"-"`
+	LastError      string         `json:"last_error,omitempty"`
+	DeliveredAt    *time.Time     `json:"delivered_at,omitempty"`
+	DeadLetteredAt *time.Time     `json:"dead_lettered_at,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
 type EventFabricAdapterCapability struct {

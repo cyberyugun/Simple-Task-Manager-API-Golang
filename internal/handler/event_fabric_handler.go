@@ -63,7 +63,7 @@ func (h *EventFabricHandler) Schemas(w http.ResponseWriter, r *http.Request) {
 		}
 		response.JSON(w, http.StatusCreated, response.Envelope{
 			Success: true,
-			Data: map[string]any{"schema": item, "compatibility": compatibility},
+			Data:    map[string]any{"schema": item, "compatibility": compatibility},
 		})
 	default:
 		methodNotAllowed(w)

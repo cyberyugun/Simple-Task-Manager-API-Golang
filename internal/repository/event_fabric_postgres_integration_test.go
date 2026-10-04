@@ -58,7 +58,7 @@ func TestIntegrationPostgresEventFabricSchemaRegistry(t *testing.T) {
 		Schema: map[string]any{
 			"required": []any{"id", "title"},
 			"properties": map[string]any{
-				"id": map[string]any{"type": "integer"},
+				"id":    map[string]any{"type": "integer"},
 				"title": map[string]any{"type": "string"},
 			},
 		},
