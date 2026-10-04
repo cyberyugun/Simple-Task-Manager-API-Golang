@@ -126,6 +126,8 @@ func NewAttachmentObjectStore(cfg AttachmentConfig) (ObjectStore, error) {
 		switch strings.TrimSpace(cfg.Provider) {
 		case model.AttachmentProviderS3, model.AttachmentProviderS3Compatible:
 			return NewS3ObjectStoreFromEnv(cfg)
+		case model.AttachmentProviderAzureBlob:
+			return NewAzureBlobObjectStoreFromEnv(cfg)
 		case "":
 			return nil, fmt.Errorf("%w: native attachment storage provider is required", ErrInvalidAttachment)
 		default:
