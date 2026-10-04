@@ -63,7 +63,7 @@ func newVaultTestServer(t *testing.T) (*httptest.Server, *vaultTestState) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
-					"data": map[string]any{"payload": state.payload},
+					"data":     map[string]any{"payload": state.payload},
 					"metadata": map[string]any{"version": state.version},
 				},
 			})
@@ -149,10 +149,10 @@ func TestConnectorVaultMigrationBecomesAuthoritativeForRuntimeDelivery(t *testin
 	}
 	integrationSvc := NewIntegrationService(integrations, orgs, cipher, true)
 	connection, err := integrationSvc.CreateConnection(7, org.ID, model.CreateIntegrationConnectionRequest{
-		Provider: model.IntegrationProviderGitHub,
-		Name: "Vault-backed GitHub",
-		AuthType: model.IntegrationAuthBearerToken,
-		Config: map[string]any{"target_url": target.URL},
+		Provider:    model.IntegrationProviderGitHub,
+		Name:        "Vault-backed GitHub",
+		AuthType:    model.IntegrationAuthBearerToken,
+		Config:      map[string]any{"target_url": target.URL},
 		Credentials: map[string]any{"access_token": "token-before-vault"},
 	})
 	if err != nil {
@@ -270,7 +270,7 @@ func TestConnectorRejectsUnconfiguredExternalBackendRotation(t *testing.T) {
 	integrationSvc := NewIntegrationService(integrations, orgs, cipher, true)
 	connection, err := integrationSvc.CreateConnection(5, org.ID, model.CreateIntegrationConnectionRequest{
 		Provider: model.IntegrationProviderGitHub, Name: "GitHub", AuthType: model.IntegrationAuthBearerToken,
-		Config: map[string]any{"target_url": "http://localhost:9999"},
+		Config:      map[string]any{"target_url": "http://localhost:9999"},
 		Credentials: map[string]any{"access_token": "secret"},
 	})
 	if err != nil {
