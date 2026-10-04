@@ -3,7 +3,6 @@ package service
 import (
 	"encoding/base64"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -317,4 +316,3 @@ func TestGCSObjectStoreSignBlobPayloadIsBase64(t *testing.T) {
 	}
 }
 
-var _ io.Reader
