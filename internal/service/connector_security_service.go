@@ -78,7 +78,7 @@ func (s *ConnectorSecurityService) backendConfigured(backend string) bool {
 func (s *ConnectorSecurityService) SecretBackends() []model.ConnectorSecretBackend {
 	return []model.ConnectorSecretBackend{
 		{Key: model.ConnectorSecretBackendDatabase, DisplayName: "Database Envelope Encryption", EnvelopeEncryption: true, CustomerManagedKey: true, Configured: true, NativeAdapter: true},
-		{Key: model.ConnectorSecretBackendAWS, DisplayName: "AWS Secrets Manager", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true, Configured: s.backendConfigured(model.ConnectorSecretBackendAWS), NativeAdapter: false},
+		{Key: model.ConnectorSecretBackendAWS, DisplayName: "AWS Secrets Manager", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true, Configured: s.backendConfigured(model.ConnectorSecretBackendAWS), NativeAdapter: true},
 		{Key: model.ConnectorSecretBackendAzure, DisplayName: "Azure Key Vault", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true, Configured: s.backendConfigured(model.ConnectorSecretBackendAzure), NativeAdapter: false},
 		{Key: model.ConnectorSecretBackendGCP, DisplayName: "GCP Secret Manager", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true, Configured: s.backendConfigured(model.ConnectorSecretBackendGCP), NativeAdapter: false},
 		{Key: model.ConnectorSecretBackendVault, DisplayName: "HashiCorp Vault", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true, Configured: s.backendConfigured(model.ConnectorSecretBackendVault), NativeAdapter: true},
