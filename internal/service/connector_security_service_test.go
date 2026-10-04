@@ -111,13 +111,13 @@ func TestConnectorOAuthPKCERefreshRotationAndHealth(t *testing.T) {
 	}
 
 	rotated, err := svc.Rotate(7, org.ID, connection.ID, model.RotateConnectorCredentialRequest{
-		SecretBackend: model.ConnectorSecretBackendAWS,
+		SecretBackend: model.ConnectorSecretBackendDatabase,
 		KeyVersion:    2,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rotated.SecretBackend != model.ConnectorSecretBackendAWS || rotated.KeyVersion != 2 || rotated.CredentialVersion != 2 {
+	if rotated.SecretBackend != model.ConnectorSecretBackendDatabase || rotated.KeyVersion != 2 || rotated.CredentialVersion != 2 {
 		t.Fatalf("unexpected rotation: %+v", rotated)
 	}
 

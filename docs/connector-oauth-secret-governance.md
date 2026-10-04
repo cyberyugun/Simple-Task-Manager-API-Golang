@@ -44,17 +44,30 @@ Raw access tokens, refresh tokens and client secrets are never returned by these
 
 ## Secret-store abstraction
 
-The API exposes backend capabilities for:
+The database envelope backend remains the default. The backend catalog also lists AWS Secrets Manager, Azure Key Vault, GCP Secret Manager and HashiCorp Vault.
 
-- database envelope encryption;
-- AWS Secrets Manager;
-- Azure Key Vault;
-- GCP Secret Manager;
-- HashiCorp Vault.
+This hardening release adds a native HashiCorp Vault KV v2 adapter. Connector credential reads used by OAuth refresh, provider health checks, inbound webhook verification and outbound integration delivery are routed through the active credential backend instead of assuming the database envelope.
 
-The current runtime persists the encrypted credential envelope through the integration repository while recording the selected backend reference and key version. This is the provider-neutral governance boundary for plugging in native cloud-vault clients without changing connector business logic. Deployments that require native cloud persistence should bind the backend adapter to their cloud identity/KMS implementation rather than putting vault credentials in connector configuration.
+When a credential is rotated from the database backend to HashiCorp Vault, the service writes the credential payload to the configured KV v2 path, persists only backend/reference/version metadata, and removes the database credential copy after cutover. Subsequent connector updates and refresh-token writes continue to the Vault backend. Rotation back to the database envelope remains supported.
 
-This phase therefore establishes the pluggable vault contract, envelope/key-version metadata and BYOK foundation; it does not embed cloud-provider long-lived credentials in source code.
+The backend catalog reports `configured` and `native_adapter`. AWS, Azure and GCP remain declared roadmap capabilities but cannot be selected for new rotations until an implementation is registered.
+
+### HashiCorp Vault configuration
+
+```text
+CONNECTOR_VAULT_ADDR=https://vault.example.internal
+CONNECTOR_VAULT_KV_MOUNT=secret
+CONNECTOR_VAULT_PREFIX=simple-task-manager/connectors
+CONNECTOR_VAULT_NAMESPACE=<optional>
+CONNECTOR_VAULT_TOKEN_FILE=/var/run/secrets/vault/token
+CONNECTOR_VAULT_TIMEOUT=10s
+```
+
+A direct token environment variable is also supported for deployments that do not use an injected token file. The token-file mode is preferred for Vault Agent or Kubernetes-auth workflows because the application rereads the file for each Vault request.
+
+Vault transport is HTTPS-only unless the explicit development-only insecure HTTP flag is enabled. Redirects are rejected, response bodies are bounded, logical paths are validated, and normal connector APIs never return stored credential material.
+
+AWS/Azure/GCP native secret/KMS adapters remain post-roadmap hardening work and should implement the same store contract with workload identity rather than provider credentials embedded in connector configuration.
 
 ## Worker
 

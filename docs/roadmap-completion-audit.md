@@ -59,17 +59,16 @@ Deletion should also be verified against the selected gateway/provider in live-p
 
 ### P1 — Phase 38 native external secret backends
 
-The connector security service exposes AWS Secrets Manager, Azure Key Vault, GCP Secret Manager and HashiCorp Vault capabilities, but the repository documentation explicitly states that encrypted credential envelopes still persist through the integration repository while the selected backend is recorded as logical metadata/reference.
+The database envelope backend remains implemented and valid. Post-roadmap hardening now adds a native HashiCorp Vault KV v2 adapter with authoritative read/write routing, version reconciliation, database-copy scrubbing on migration, token-file support for Vault Agent/Kubernetes-auth deployments, and runtime integration with OAuth refresh plus inbound/outbound connector traffic.
 
-Therefore the following remain production adapter work:
+The remaining provider work is narrower:
 
-- native secret create/read/update/delete;
-- cloud workload identity authentication;
-- native KMS/CMK wrapping;
-- secret-version reconciliation;
-- provider-specific rotation and outage tests.
+- AWS Secrets Manager native store plus workload identity/KMS integration;
+- Azure Key Vault native store plus managed identity/CMK integration;
+- GCP Secret Manager native store plus workload identity/CMEK integration;
+- provider-specific outage, rotation and live-cloud contract tests.
 
-The database envelope backend is implemented and remains a valid default.
+Unconfigured external backends are reported as unavailable and new metadata-only rotations to them are rejected.
 
 ### P1 — Phase 44 live warehouse writes
 
@@ -99,7 +98,7 @@ Production readiness therefore still requires real cloud-region game days and me
 ## Recommended post-Phase-45 execution order
 
 1. **Production Storage & Content Security Hardening** — finish scanner gateway rollout, live object-store adapter/gateway contract tests and deletion verification.
-2. **Native Secret Vault & KMS Adapters** — implement at least one cloud secret backend end-to-end, then add other providers behind the same interface.
+2. **Native Secret Vault & KMS Adapters** — HashiCorp Vault is now implemented end-to-end; continue with AWS Secrets Manager, Azure Key Vault and GCP Secret Manager behind the same interface.
 3. **Live Warehouse Delivery** — implement at least one real warehouse write adapter before broadening to all four providers.
 4. **External AI Provider Pack** — add one structured-output provider with classification and cost regression tests.
 5. **Multi-Region Automation Integration** — connect approved control-plane actions to cloud deployment automation and record real failover evidence.
