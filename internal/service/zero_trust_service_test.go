@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
