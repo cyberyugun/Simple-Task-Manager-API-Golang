@@ -138,8 +138,8 @@ func TestHTTPAttachmentScannerDoesNotFollowRedirects(t *testing.T) {
 	}))
 	defer target.Close()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Redirect(w, &http.Request{}, target.URL, http.StatusTemporaryRedirect)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
 	}))
 	defer server.Close()
 
