@@ -25,18 +25,18 @@ type TokenManager struct {
 }
 
 type Claims struct {
-	Subject     string   `json:"sub"`
-	Email       string   `json:"email,omitempty"`
-	JTI         string   `json:"jti"`
-	Scopes      []string `json:"scope,omitempty"`
-	TokenUse    string   `json:"token_use,omitempty"`
-	ClientID    string   `json:"client_id,omitempty"`
-	WorkspaceID int64    `json:"workspace_id,omitempty"`
-	ActorUserID int64    `json:"actor_user_id,omitempty"`
-	MFA         bool     `json:"mfa,omitempty"`
-	ConfirmationThumbprint string `json:"cnf_thumbprint,omitempty"`
-	Issued      int64    `json:"iat"`
-	Expires     int64    `json:"exp"`
+	Subject                string   `json:"sub"`
+	Email                  string   `json:"email,omitempty"`
+	JTI                    string   `json:"jti"`
+	Scopes                 []string `json:"scope,omitempty"`
+	TokenUse               string   `json:"token_use,omitempty"`
+	ClientID               string   `json:"client_id,omitempty"`
+	WorkspaceID            int64    `json:"workspace_id,omitempty"`
+	ActorUserID            int64    `json:"actor_user_id,omitempty"`
+	MFA                    bool     `json:"mfa,omitempty"`
+	ConfirmationThumbprint string   `json:"cnf_thumbprint,omitempty"`
+	Issued                 int64    `json:"iat"`
+	Expires                int64    `json:"exp"`
 }
 
 type tokenHeader struct {
