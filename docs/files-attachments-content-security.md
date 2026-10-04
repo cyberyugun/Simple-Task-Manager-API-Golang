@@ -18,15 +18,18 @@ REQUEST UPLOAD
 
 ## Storage abstraction
 
-The application uses the \`ObjectStore\` interface. The current signed URL adapter is provider-neutral and records one of:
+The application uses the `ObjectStore` interface and keeps raw file bytes out of the API process.
 
-- \`s3\`
-- \`s3_compatible\`
-- \`azure_blob\`
-- \`gcs\`
-- \`development\`
+Two storage modes are available:
 
-It generates short-lived HMAC-signed upload/download URLs against a configured storage gateway/base URL. This keeps cloud SDKs out of the core domain and allows a production adapter or gateway to translate the contract to AWS S3, Azure Blob, GCS, MinIO, Cloudflare R2, or another S3-compatible backend.
+- provider-neutral signed gateway mode, which keeps the original HMAC-signed upload/download URL contract for `s3`, `s3_compatible`, `azure_blob`, `gcs`, and `development`;
+- native object-store mode, enabled with `ATTACHMENT_STORAGE_NATIVE=true`.
+
+Native mode currently implements AWS S3 and S3-compatible providers. It generates AWS SigV4 presigned PUT/GET URLs, supports static credentials for local/S3-compatible environments and AWS web-identity credentials for EKS/IRSA deployments, verifies object size plus server-side SHA-256 metadata with a signed HEAD request before marking an upload complete, and verifies deletion with a post-delete HEAD request.
+
+Native upload presigning includes `x-amz-meta-sha256`. Clients must send every returned header exactly as provided. Optional server-side encryption supports `AES256` and `aws:kms`; when KMS is selected, `ATTACHMENT_ENCRYPTION_KEY_ID` is included in the signed request.
+
+Azure Blob and GCS remain on the signed-gateway contract until their native adapters are added. Setting native mode for an unimplemented provider fails startup rather than silently falling back.
 
 The core API never accepts raw file bytes.
 
@@ -126,6 +129,8 @@ ATTACHMENT_BATCH_SIZE=50
 \`\`\`
 
 If \`ATTACHMENT_SIGNING_SECRET\` is omitted, the API/worker uses \`JWT_SECRET\` as the signing fallback. Production should inject a separate signing value at deployment time from the platform secret manager; do not commit it to source control.
+
+\`ATTACHMENT_SIGNING_SECRET\` and \`ATTACHMENT_STORAGE_BASE_URL\` apply to signed-gateway mode. Native S3 mode instead signs provider URLs and verification/deletion requests with AWS SigV4 credentials obtained from workload identity or explicit local/test credentials.
 
 For production content security, set \`ATTACHMENT_SCANNER_REQUIRED=true\`. Store scanner bearer/signing credentials in the deployment secret manager. The scanner response contract is:
 
