@@ -75,12 +75,8 @@ func NewS3ObjectStore(cfg S3ObjectStoreConfig) (*S3ObjectStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	forcePathStyle := cfg.ForcePathStyle
-	if strings.TrimSpace(cfg.Endpoint) != "" && os.Getenv("ATTACHMENT_S3_FORCE_PATH_STYLE") == "" {
-		forcePathStyle = true
-	}
 	return &S3ObjectStore{
-		region: region, bucket: bucket, endpoint: endpoint, forcePathStyle: forcePathStyle,
+		region: region, bucket: bucket, endpoint: endpoint, forcePathStyle: cfg.ForcePathStyle,
 		client: &http.Client{
 			Timeout: timeout,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -101,17 +97,23 @@ func NewS3ObjectStoreFromEnv(cfg AttachmentConfig) (*S3ObjectStore, error) {
 		}
 		timeout = parsed
 	}
-	forcePathStyle := strings.EqualFold(strings.TrimSpace(os.Getenv("ATTACHMENT_S3_FORCE_PATH_STYLE")), "true")
+	endpoint := strings.TrimSpace(os.Getenv("ATTACHMENT_S3_ENDPOINT"))
+	forcePathRaw := strings.TrimSpace(os.Getenv("ATTACHMENT_S3_FORCE_PATH_STYLE"))
+	forcePathStyle := strings.EqualFold(forcePathRaw, "true")
+	if forcePathRaw == "" && endpoint != "" {
+		forcePathStyle = true
+	}
 	region := firstNonEmpty(
 		os.Getenv("ATTACHMENT_S3_REGION"),
 		os.Getenv("AWS_REGION"),
 		os.Getenv("AWS_DEFAULT_REGION"),
 	)
 	return NewS3ObjectStore(S3ObjectStoreConfig{
-		Region: region, Bucket: cfg.Bucket, Endpoint: os.Getenv("ATTACHMENT_S3_ENDPOINT"),
+		Region: region, Bucket: cfg.Bucket, Endpoint: endpoint,
 		AccessKeyID: os.Getenv("AWS_ACCESS_KEY_ID"), SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		SessionToken: os.Getenv("AWS_SESSION_TOKEN"), RoleARN: os.Getenv("AWS_ROLE_ARN"),
-		WebIdentityTokenFile: os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE"), RoleSessionName: os.Getenv("AWS_ROLE_SESSION_NAME"),
+		SessionToken: os.Getenv("AWS_SESSION_TOKEN"), RoleARN: firstNonEmpty(os.Getenv("ATTACHMENT_S3_ROLE_ARN"), os.Getenv("AWS_ROLE_ARN")),
+		WebIdentityTokenFile: firstNonEmpty(os.Getenv("ATTACHMENT_S3_WEB_IDENTITY_TOKEN_FILE"), os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE")),
+		RoleSessionName: firstNonEmpty(os.Getenv("ATTACHMENT_S3_ROLE_SESSION_NAME"), os.Getenv("AWS_ROLE_SESSION_NAME")),
 		STSEndpoint: os.Getenv("ATTACHMENT_S3_STS_ENDPOINT"), ForcePathStyle: forcePathStyle,
 		Timeout: timeout, AllowInsecure: cfg.AllowInsecure,
 		Encryption: cfg.Encryption, EncryptionKeyID: cfg.EncryptionKeyID,
