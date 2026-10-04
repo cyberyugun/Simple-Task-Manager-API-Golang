@@ -25,13 +25,15 @@ Two storage modes are available:
 - provider-neutral signed gateway mode, which keeps the original HMAC-signed upload/download URL contract for `s3`, `s3_compatible`, `azure_blob`, `gcs`, and `development`;
 - native object-store mode, enabled with `ATTACHMENT_STORAGE_NATIVE=true`.
 
-Native mode implements AWS S3/S3-compatible and Azure Blob Storage providers.
+Native mode implements AWS S3/S3-compatible, Azure Blob Storage, and Google Cloud Storage providers.
 
 S3 generates AWS SigV4 presigned PUT/GET URLs, supports static credentials for local/S3-compatible environments and AWS web-identity credentials for EKS/IRSA deployments, verifies object size plus server-side SHA-256 metadata with a signed HEAD request before marking an upload complete, and verifies deletion with a post-delete HEAD request. Upload presigning includes `x-amz-meta-sha256`; optional server-side encryption supports `AES256` and `aws:kms`.
 
 Azure Blob generates service SAS URLs when an account key is explicitly configured, or user-delegation SAS URLs when AKS workload identity / Azure Managed Identity is used. Workload-identity token exchange requests the `https://storage.azure.com/.default` scope and user-delegation keys are cached within their provider expiry. Uploads require `BlockBlob`, persist `x-ms-meta-sha256`, and can bind a signed encryption scope via `ATTACHMENT_ENCRYPTION_KEY_ID`. Upload completion and deletion are verified through authenticated HEAD/DELETE calls.
 
-GCS remains on the signed-gateway contract until its native adapter is added. Setting native mode for an unimplemented provider fails startup rather than silently falling back.
+GCS generates V4 XML-API signed PUT/GET URLs using `GOOG4-RSA-SHA256`. The application obtains short-lived Google access tokens from the metadata server and delegates RSA signing to the IAM Service Account Credentials `signBlob` API, avoiding local service-account private keys. Uploads persist `x-goog-meta-sha256`; optional CMEK is signed through `x-goog-encryption-kms-key-name`. Completion and deletion use authenticated HEAD/DELETE calls with post-delete verification.
+
+Native mode now covers every production provider value exposed by Phase 36. The explicit development provider remains gateway-only and native mode fails startup for unknown providers.
 
 The core API never accepts raw file bytes.
 
@@ -133,6 +135,10 @@ ATTACHMENT_BATCH_SIZE=50
 If \`ATTACHMENT_SIGNING_SECRET\` is omitted, the API/worker uses \`JWT_SECRET\` as the signing fallback. Production should inject a separate signing value at deployment time from the platform secret manager; do not commit it to source control.
 
 \`ATTACHMENT_SIGNING_SECRET\` and \`ATTACHMENT_STORAGE_BASE_URL\` apply to signed-gateway mode. Native S3 mode instead signs provider URLs and verification/deletion requests with AWS SigV4 credentials obtained from workload identity or explicit local/test credentials.
+
+For native Azure Blob Storage use `ATTACHMENT_STORAGE_PROVIDER=azure_blob`, `ATTACHMENT_STORAGE_NATIVE=true`, `ATTACHMENT_AZURE_STORAGE_ACCOUNT=<account>`, and the existing bucket field as the container name. Prefer AKS workload identity via `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and `AZURE_FEDERATED_TOKEN_FILE`; Azure Managed Identity is available with `ATTACHMENT_AZURE_USE_MANAGED_IDENTITY=true`. `ATTACHMENT_AZURE_STORAGE_ACCOUNT_KEY` is supported for controlled legacy/local deployments. Optional encryption-scope binding uses `ATTACHMENT_ENCRYPTION=azure_cmk` and `ATTACHMENT_ENCRYPTION_KEY_ID=<encryption-scope>`.
+
+For native GCS use `ATTACHMENT_STORAGE_PROVIDER=gcs`, `ATTACHMENT_STORAGE_NATIVE=true`, `ATTACHMENT_GCS_SERVICE_ACCOUNT_EMAIL=<service-account>`, and the existing bucket field as the GCS bucket. GKE/Compute workload identity uses the Google metadata token endpoint by default; `ATTACHMENT_GCS_ACCESS_TOKEN` is only for controlled local/test environments. V4 signed URLs are created through the IAM Service Account Credentials `signBlob` API. The runtime identity therefore needs object-storage permissions and permission to sign as the configured service account. Optional CMEK uses `ATTACHMENT_ENCRYPTION=gcp_cmek` and `ATTACHMENT_ENCRYPTION_KEY_ID=projects/.../locations/.../keyRings/.../cryptoKeys/...`.
 
 For production content security, set \`ATTACHMENT_SCANNER_REQUIRED=true\`. Store scanner bearer/signing credentials in the deployment secret manager. The scanner response contract is:
 

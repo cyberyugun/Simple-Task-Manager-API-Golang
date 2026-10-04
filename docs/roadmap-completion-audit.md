@@ -57,9 +57,11 @@ The provider-neutral `SignedObjectStore` remains available for the original stor
 - signed delete plus post-delete HEAD verification;
 - fail-closed startup when native mode selects an unimplemented provider.
 
-Native Azure Blob Storage is now also implemented with account-key service SAS or Microsoft Entra user-delegation SAS, AKS workload identity / managed identity, SHA-256 metadata verification, optional signed encryption scope, and verified deletion.
+Native Azure Blob Storage is implemented with account-key service SAS or Microsoft Entra user-delegation SAS, AKS workload identity / managed identity, SHA-256 metadata verification, optional signed encryption scope, and verified deletion.
 
-The remaining native provider work is GCS. Live-provider IAM, outage, deletion-consistency, storage-policy and delegated-SAS contract tests remain environment-level validation.
+Native GCS is now also implemented with V4 signed URLs, metadata/workload-identity access tokens, IAM Credentials `signBlob` delegation, SHA-256 object metadata verification, optional CMEK request binding, and verified deletion.
+
+All Phase 36 production storage providers now have native repository adapters. Live-provider IAM, outage, deletion-consistency, storage-policy, delegated-SAS and IAM-signing contract tests remain environment-level validation.
 
 ### P1 — Phase 38 native external secret backends
 
@@ -101,7 +103,7 @@ Production readiness therefore still requires real cloud-region game days and me
 
 ## Recommended post-Phase-45 execution order
 
-1. **Production Storage & Content Security Hardening** — scanner gateway plus native S3/S3-compatible and Azure Blob storage are implemented; continue with native GCS plus live-provider contract validation.
+1. **Production Storage & Content Security Hardening** — scanner gateway plus native S3/S3-compatible, Azure Blob, and GCS storage are implemented; remaining work is live-provider contract validation and deployment-specific IAM/policy testing.
 2. **Native Secret Vault & KMS Adapters** — complete at repository level: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager now share the same authoritative runtime credential contract.
 3. **Live Warehouse Delivery** — implement at least one real warehouse write adapter before broadening to all four providers.
 4. **External AI Provider Pack** — add one structured-output provider with classification and cost regression tests.
