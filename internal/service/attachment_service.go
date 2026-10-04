@@ -91,7 +91,7 @@ func (s *SignedObjectStore) signedURL(operation, objectKey string, expiresAt tim
 
 func (s *SignedObjectStore) PresignUpload(objectKey, contentType string, sizeBytes int64, expiresAt time.Time) (string, map[string]string, error) {
 	return s.signedURL("upload", objectKey, expiresAt), map[string]string{
-		"Content-Type": contentType,
+		"Content-Type":     contentType,
 		"X-Content-Length": fmt.Sprint(sizeBytes),
 	}, nil
 }

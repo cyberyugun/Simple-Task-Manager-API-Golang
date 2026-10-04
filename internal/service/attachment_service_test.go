@@ -27,15 +27,15 @@ func TestAttachmentUploadScanDownloadAndGovernance(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := AttachmentConfig{
-		Provider: model.AttachmentProviderS3Compatible,
-		Bucket: "test-bucket",
-		BaseURL: "https://storage.example.test",
-		SigningSecret: "0123456789abcdef0123456789abcdef",
-		MaxFileBytes: 1024,
+		Provider:            model.AttachmentProviderS3Compatible,
+		Bucket:              "test-bucket",
+		BaseURL:             "https://storage.example.test",
+		SigningSecret:       "0123456789abcdef0123456789abcdef",
+		MaxFileBytes:        1024,
 		WorkspaceQuotaBytes: 4096,
-		PresignTTL: time.Minute,
-		Encryption: "AES256",
-		Deduplicate: true,
+		PresignTTL:          time.Minute,
+		Encryption:          "AES256",
+		Deduplicate:         true,
 	}
 	store, err := NewSignedObjectStore(cfg)
 	if err != nil {

@@ -180,14 +180,14 @@ func main() {
 	)
 
 	attachmentConfig := service.AttachmentConfig{
-		Provider: strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_PROVIDER")),
-		Bucket: strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BUCKET")),
-		BaseURL: strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BASE_URL")),
-		SigningSecret: strings.TrimSpace(os.Getenv("ATTACHMENT_SIGNING_SECRET")),
-		Encryption: strings.TrimSpace(os.Getenv("ATTACHMENT_ENCRYPTION")),
+		Provider:        strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_PROVIDER")),
+		Bucket:          strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BUCKET")),
+		BaseURL:         strings.TrimSpace(os.Getenv("ATTACHMENT_STORAGE_BASE_URL")),
+		SigningSecret:   strings.TrimSpace(os.Getenv("ATTACHMENT_SIGNING_SECRET")),
+		Encryption:      strings.TrimSpace(os.Getenv("ATTACHMENT_ENCRYPTION")),
 		EncryptionKeyID: strings.TrimSpace(os.Getenv("ATTACHMENT_ENCRYPTION_KEY_ID")),
-		Deduplicate: strings.EqualFold(strings.TrimSpace(os.Getenv("ATTACHMENT_DEDUPLICATE")), "true"),
-		AllowInsecure: allowInsecure,
+		Deduplicate:     strings.EqualFold(strings.TrimSpace(os.Getenv("ATTACHMENT_DEDUPLICATE")), "true"),
+		AllowInsecure:   allowInsecure,
 	}
 	if attachmentConfig.SigningSecret == "" {
 		attachmentConfig.SigningSecret = strings.TrimSpace(os.Getenv("JWT_SECRET"))
@@ -416,7 +416,6 @@ func runNotificationPlatform(
 		}
 	}
 }
-
 
 func runAttachmentPlatform(ctx context.Context, attachments *service.AttachmentService, scanPoll, retentionPoll time.Duration, batch int, logger *slog.Logger) {
 	logger.Info("attachment_worker_started", "scan_poll_interval", scanPoll, "retention_poll_interval", retentionPoll, "batch_size", batch)
