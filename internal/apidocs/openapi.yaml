@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.8.0
+  version: 1.9.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -37,6 +37,7 @@ tags:
   - name: Global Multi-Region
   - name: Zero Trust Security
   - name: Enterprise Data Platform
+  - name: Application Marketplace
 
 paths:
   /health:
@@ -2553,6 +2554,208 @@ paths:
       responses:
         '200': { description: Data platform operational dashboard }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/extensions/token:
+    post:
+      tags: [Application Marketplace]
+      summary: Exchange an active extension installation secret for a scoped service token
+      operationId: exchangeExtensionInstallationToken
+      responses:
+        '200': { description: Short-lived scoped extension service token }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/marketplace/apps:
+    get:
+      tags: [Application Marketplace]
+      summary: List approved marketplace applications from verified publishers
+      operationId: listMarketplaceApplications
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Marketplace application listings }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/marketplace/apps/{app_id}:
+    get:
+      tags: [Application Marketplace]
+      summary: Get an approved marketplace application listing
+      operationId: getMarketplaceApplication
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Marketplace application listing }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/workspaces/{id}/marketplace/publishers:
+    get:
+      tags: [Application Marketplace]
+      summary: List marketplace publishers owned by a workspace
+      operationId: listMarketplacePublishers
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workspace marketplace publishers }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Application Marketplace]
+      summary: Create a marketplace publisher profile
+      operationId: createMarketplacePublisher
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Marketplace publisher created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/workspaces/{id}/marketplace/publishers/{publisher_id}/submit:
+    post:
+      tags: [Application Marketplace]
+      summary: Submit a marketplace publisher for verification
+      operationId: submitMarketplacePublisher
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Marketplace publisher submitted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Invalid publisher lifecycle transition }
+
+  /api/workspaces/{id}/marketplace/publishers/{publisher_id}/review:
+    post:
+      tags: [Application Marketplace]
+      summary: Verify or reject a submitted marketplace publisher
+      operationId: reviewMarketplacePublisher
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Marketplace publisher review result }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Invalid publisher lifecycle transition }
+
+  /api/workspaces/{id}/marketplace/apps:
+    get:
+      tags: [Application Marketplace]
+      summary: List marketplace application manifests owned by a workspace
+      operationId: listWorkspaceMarketplaceApplications
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Workspace application manifests }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Application Marketplace]
+      summary: Create a remote-only marketplace application manifest
+      operationId: createMarketplaceApplicationManifest
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Marketplace application manifest created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/workspaces/{id}/marketplace/apps/{app_id}/submit:
+    post:
+      tags: [Application Marketplace]
+      summary: Submit a marketplace application manifest for review
+      operationId: submitMarketplaceApplication
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Marketplace application submitted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Publisher or application lifecycle does not allow submission }
+
+  /api/workspaces/{id}/marketplace/apps/{app_id}/review:
+    post:
+      tags: [Application Marketplace]
+      summary: Approve reject or suspend a marketplace application
+      operationId: reviewMarketplaceApplication
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Marketplace application review result }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Invalid marketplace application lifecycle transition }
+
+  /api/organizations/{id}/extensions/installations:
+    get:
+      tags: [Application Marketplace]
+      summary: List organization extension installations
+      operationId: listExtensionInstallations
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Organization extension installations }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Application Marketplace]
+      summary: Approve and install a marketplace application into an organization workspace
+      operationId: installMarketplaceApplication
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Extension installed with one-time installation secret }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Application is already installed in the workspace }
+
+  /api/organizations/{id}/extensions/installations/{installation_id}:
+    delete:
+      tags: [Application Marketplace]
+      summary: Uninstall an extension and revoke its runtime identity and webhooks
+      operationId: uninstallMarketplaceApplication
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Extension uninstalled }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/organizations/{id}/extensions/installations/{installation_id}/secret/rotate:
+    post:
+      tags: [Application Marketplace]
+      summary: Rotate an extension installation secret
+      operationId: rotateExtensionInstallationSecret
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: New one-time extension installation secret }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/organizations/{id}/extensions/installations/{installation_id}/usage:
+    get:
+      tags: [Application Marketplace]
+      summary: Get extension API quota usage and latency analytics
+      operationId: getExtensionInstallationUsage
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Extension installation usage summary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/organizations/{id}/extensions/installations/{installation_id}/subscriptions:
+    get:
+      tags: [Application Marketplace]
+      summary: List extension webhook event subscriptions
+      operationId: listExtensionEventSubscriptions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Extension webhook subscriptions }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Application Marketplace]
+      summary: Create a manifest-constrained extension webhook subscription
+      operationId: createExtensionEventSubscription
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Extension webhook subscription and one-time signing secret }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/organizations/{id}/extensions/installations/{installation_id}/subscriptions/{subscription_id}:
+    delete:
+      tags: [Application Marketplace]
+      summary: Delete an extension webhook event subscription
+      operationId: deleteExtensionEventSubscription
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Extension webhook subscription deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/organizations/{id}/ai/providers:
     get:
