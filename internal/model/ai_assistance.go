@@ -111,6 +111,9 @@ type AIEvaluationRun struct {
 	Provider       string         `json:"provider"`
 	Model          string         `json:"model"`
 	ScoreBasisPoints int          `json:"score_basis_points"`
+	InputUnits       int64          `json:"input_units"`
+	OutputUnits      int64          `json:"output_units"`
+	ActualCostCents  int64          `json:"actual_cost_cents"`
 	Passed         bool           `json:"passed"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
