@@ -170,7 +170,7 @@ func TestS3ObjectStoreRejectsUnsafeConfigAndKeys(t *testing.T) {
 func TestAttachmentObjectStoreFactoryRequiresImplementedNativeProvider(t *testing.T) {
 	t.Setenv("ATTACHMENT_STORAGE_NATIVE", "true")
 	_, err := NewAttachmentObjectStore(AttachmentConfig{
-		Provider: "gcs", Bucket: "files",
+		Provider: "development", Bucket: "files",
 	})
 	if err == nil {
 		t.Fatal("expected unsupported native provider to fail closed")
