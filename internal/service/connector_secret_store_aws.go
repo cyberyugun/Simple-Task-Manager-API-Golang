@@ -64,13 +64,13 @@ func (p awsStaticCredentialProvider) Retrieve(context.Context) (awsCredentials, 
 }
 
 type awsWebIdentityCredentialProvider struct {
-	roleARN      string
-	tokenFile    string
-	sessionName  string
-	stsEndpoint  *url.URL
-	client       *http.Client
-	mu           sync.Mutex
-	cached       awsCredentials
+	roleARN     string
+	tokenFile   string
+	sessionName string
+	stsEndpoint *url.URL
+	client      *http.Client
+	mu          sync.Mutex
+	cached      awsCredentials
 }
 
 func (p *awsWebIdentityCredentialProvider) Retrieve(ctx context.Context) (awsCredentials, error) {
@@ -130,10 +130,10 @@ func (p *awsWebIdentityCredentialProvider) Retrieve(ctx context.Context) (awsCre
 		return awsCredentials{}, fmt.Errorf("%w: invalid AWS STS credential expiration", ErrConnectorSecretStore)
 	}
 	credentials := awsCredentials{
-		AccessKeyID: strings.TrimSpace(decoded.Result.Credentials.AccessKeyID),
+		AccessKeyID:     strings.TrimSpace(decoded.Result.Credentials.AccessKeyID),
 		SecretAccessKey: strings.TrimSpace(decoded.Result.Credentials.SecretAccessKey),
-		SessionToken: strings.TrimSpace(decoded.Result.Credentials.SessionToken),
-		Expiration: expiration,
+		SessionToken:    strings.TrimSpace(decoded.Result.Credentials.SessionToken),
+		Expiration:      expiration,
 	}
 	if credentials.AccessKeyID == "" || credentials.SecretAccessKey == "" || credentials.SessionToken == "" {
 		return awsCredentials{}, fmt.Errorf("%w: incomplete AWS STS credentials", ErrConnectorSecretStore)
