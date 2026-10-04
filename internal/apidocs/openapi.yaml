@@ -3116,7 +3116,7 @@ paths:
   /api/analytics/dashboard:
     get:
       tags: [Advanced Search & Analytics]
-      summary: Get workspace task analytics dashboard
+      summary: Get workspace or project task analytics dashboard
       operationId: getTaskAnalyticsDashboard
       security: [{ bearerAuth: [] }]
       responses:
@@ -3125,7 +3125,7 @@ paths:
   /api/analytics/workload:
     get:
       tags: [Advanced Search & Analytics]
-      summary: Get assignment workload analytics
+      summary: Get workspace or project assignment workload analytics
       operationId: getTaskWorkloadAnalytics
       security: [{ bearerAuth: [] }]
       responses:
@@ -3133,7 +3133,7 @@ paths:
   /api/analytics/trends:
     get:
       tags: [Advanced Search & Analytics]
-      summary: Get created completed and overdue task trends
+      summary: Get workspace or project created completed and overdue task trends
       operationId: getTaskTrendAnalytics
       security: [{ bearerAuth: [] }]
       responses:
