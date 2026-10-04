@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS zero_trust_policies (
 CREATE TABLE IF NOT EXISTS workload_identities (
     id BIGSERIAL PRIMARY KEY,
     organization_id BIGINT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    workspace_id BIGINT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     spiffe_id TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
