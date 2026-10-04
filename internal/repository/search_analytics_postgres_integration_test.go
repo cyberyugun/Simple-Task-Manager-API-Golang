@@ -61,14 +61,6 @@ func TestIntegrationPostgresSearchReportingAnalytics(t *testing.T) {
 	}
 
 	project, err := collab.CreateProject(model.TaskProject{
-		WorkspaceID: access.ID, Name: "Analytics Project", Description: "Project dashboard scope",
-		CreatedByUserID: owner.ID, CreatedAt: now, UpdatedAt: now,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	project, err := collab.CreateProject(model.TaskProject{
 		WorkspaceID: access.ID, Name: "Analytics Project", Description: "Project metrics",
 		CreatedByUserID: owner.ID, CreatedAt: now, UpdatedAt: now,
 	})
@@ -116,10 +108,6 @@ func TestIntegrationPostgresSearchReportingAnalytics(t *testing.T) {
 	}
 	if len(dashboard.Workload) != 2 || len(dashboard.Trend) != 30 {
 		t.Fatalf("workload=%+v trend=%d", dashboard.Workload, len(dashboard.Trend))
-	}
-	projectDashboard, err := analytics.Analytics(access.ID, &project.ID, 30, now)
-	if err != nil || projectDashboard.Summary.TotalTasks != 1 || projectDashboard.ByStatus[model.TaskStatusInProgress] != 1 {
-		t.Fatalf("project dashboard=%+v err=%v", projectDashboard, err)
 	}
 	projectDashboard, err := analytics.Analytics(access.ID, &project.ID, 30, now)
 	if err != nil || projectDashboard.Summary.TotalTasks != 1 || projectDashboard.ByStatus[model.TaskStatusInProgress] != 1 {
