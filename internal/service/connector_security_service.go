@@ -245,6 +245,8 @@ func (s *ConnectorSecurityService) Rotate(actorUserID, organizationID, connectio
 	} else if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
+	previousBackend := meta.SecretBackend
+	previousRef := meta.SecretRef
 	backend := strings.TrimSpace(req.SecretBackend)
 	if backend == "" {
 		backend = meta.SecretBackend
@@ -252,22 +254,29 @@ func (s *ConnectorSecurityService) Rotate(actorUserID, organizationID, connectio
 	if !validSecretBackend(backend) {
 		return model.ConnectorCredentialMetadata{}, ErrConnectorCredentialRotation
 	}
-	keyVersion := req.KeyVersion
-	if keyVersion <= 0 {
-		keyVersion = meta.KeyVersion + 1
+	if !s.backendConfigured(backend) {
+		return model.ConnectorCredentialMetadata{}, ErrConnectorSecretBackendUnavailable
 	}
-	raw, _ := json.Marshal(credentials)
-	encrypted, err := s.cipher.Encrypt(raw)
+	raw, err := json.Marshal(credentials)
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	connection.UpdatedByUserID = actorUserID
-	connection.UpdatedAt = time.Now().UTC()
-	if _, err := s.integrations.UpdateIntegrationConnection(connection, &encrypted); err != nil {
+	ref := strings.TrimSpace(meta.SecretRef)
+	if ref == "" {
+		ref = connectorSecretRef(organizationID, connectionID)
+	}
+	keyVersion, err := s.writeCredentialPayload(context.Background(), connection, backend, ref, raw)
+	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
+	}
+	if req.KeyVersion > 0 {
+		keyVersion = req.KeyVersion
+	} else if keyVersion <= 0 {
+		keyVersion = meta.KeyVersion + 1
 	}
 	now := time.Now().UTC()
 	meta.SecretBackend = backend
+	meta.SecretRef = ref
 	meta.KeyVersion = keyVersion
 	meta.CredentialVersion++
 	meta.RotatedAt = &now
@@ -276,11 +285,27 @@ func (s *ConnectorSecurityService) Rotate(actorUserID, organizationID, connectio
 		meta.Status = model.ConnectorCredentialActive
 	}
 	meta, err = s.repo.UpsertCredentialMetadata(meta)
-	if err == nil {
-		s.recordAccess(meta, &actorUserID, "rotate")
-		s.audit(organizationID, actorUserID, "integration.credential.rotated", "integration_connection", fmt.Sprint(connectionID), map[string]any{"backend": backend, "key_version": keyVersion})
+	if err != nil {
+		return model.ConnectorCredentialMetadata{}, err
 	}
-	return meta, err
+	if backend != model.ConnectorSecretBackendDatabase {
+		connection.UpdatedByUserID = actorUserID
+		connection.UpdatedAt = now
+		empty := ""
+		if _, err := s.integrations.UpdateIntegrationConnection(connection, &empty); err != nil {
+			return model.ConnectorCredentialMetadata{}, err
+		}
+	}
+	if previousBackend != "" && previousBackend != backend && previousBackend != model.ConnectorSecretBackendDatabase {
+		if store, ok := s.secretStores[previousBackend]; ok && previousRef != "" {
+			_ = store.Delete(context.Background(), previousRef)
+		}
+	}
+	s.recordAccess(meta, &actorUserID, "rotate")
+	s.audit(organizationID, actorUserID, "integration.credential.rotated", "integration_connection", fmt.Sprint(connectionID), map[string]any{
+		"backend": backend, "previous_backend": previousBackend, "key_version": keyVersion,
+	})
+	return meta, nil
 }
 
 func (s *ConnectorSecurityService) Revoke(actorUserID, organizationID, connectionID int64) (model.ConnectorCredentialMetadata, error) {
