@@ -106,7 +106,26 @@ For VM/VMSS/App Service style managed identity deployments, set `CONNECTOR_AZURE
 
 The adapter uses soft-delete semantics supplied by Key Vault, deterministic server-side secret names derived from the logical connector reference, bounded responses, redirect refusal, and same-vault validation for CMK identifiers. Database credential copies are scrubbed after successful external cutover.
 
-GCP Secret Manager remains the last native cloud secret backend in this hardening sequence and should use workload identity/CMEK behind the same store contract.
+GCP Secret Manager is now implemented as a native adapter. On GKE with Workload Identity Federation, the adapter obtains short-lived Google access tokens from the metadata server using the required `Metadata-Flavor: Google` header; the same metadata flow also works on Compute Engine and other supported Google Cloud runtimes. A static access token remains available only for local/test environments.
+
+Optional CMEK protection is configured when the Secret Manager secret is created through `replication.automatic.customerManagedEncryption.kmsKeyName`. Secret Manager then applies that Cloud KMS key to each new secret version. The connector service itself never receives the KMS key material.
+
+### GCP Secret Manager configuration
+
+```text
+CONNECTOR_GCP_SECRET_MANAGER_ENABLED=true
+CONNECTOR_GCP_PROJECT_ID=<project-id>
+CONNECTOR_GCP_SECRET_PREFIX=stm-connectors
+CONNECTOR_GCP_CMEK_KEY_NAME=projects/<kms-project>/locations/global/keyRings/<ring>/cryptoKeys/<key>
+CONNECTOR_GCP_USE_METADATA=true
+CONNECTOR_GCP_TIMEOUT=10s
+```
+
+For GKE Workload Identity Federation, leave the metadata endpoint at its default. The GKE metadata server intercepts the standard Google metadata token request and returns a short-lived identity token for the configured workload. `CONNECTOR_GCP_METADATA_ENDPOINT` exists for controlled testing or nonstandard environments; arbitrary HTTP endpoints are rejected outside the explicit insecure-development mode.
+
+The adapter creates deterministic Secret Manager IDs from the logical connector reference, adds immutable secret versions for updates, resolves the latest version at runtime, tracks the provider version in credential metadata, refuses redirects, bounds response bodies, validates project/secret/KMS resource names, and scrubs the database credential copy after external cutover.
+
+With this implementation, the native Phase 38 secret backends are complete: database envelope encryption, HashiCorp Vault KV v2, AWS Secrets Manager, Azure Key Vault, and GCP Secret Manager.
 
 ## Worker
 
