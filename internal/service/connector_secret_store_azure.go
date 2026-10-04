@@ -308,6 +308,153 @@ func newAzureAccessTokenProvider(cfg AzureKeyVaultConfig, client *http.Client) (
 	return nil, fmt.Errorf("%w: Azure workload identity, managed identity or access token is required", ErrConnectorSecretStore)
 }
 
+func (s *AzureKeyVaultSecretStore) Put(ctx context.Context, ref string, plaintext []byte) (int, error) {
+	name, err := s.secretName(ref)
+	if err != nil {
+		return 0, err
+	}
+	version := 1
+	_, currentVersion, getErr := s.Get(ctx, ref)
+	switch {
+	case getErr == nil:
+		version = currentVersion + 1
+	case isAzureSecretNotFound(getErr):
+	default:
+		return 0, getErr
+	}
+	stored := azureStoredConnectorSecret{Version: version, Encoding: "base64"}
+	if s.cmkKeyID != nil {
+		ciphertext, keyID, err := s.encryptWithCMK(ctx, plaintext)
+		if err != nil {
+			return 0, err
+		}
+		stored.Payload = ciphertext
+		stored.Encoding = "azure-kv-cmk-rsa-oaep-256"
+		stored.KeyID = keyID
+	} else {
+		stored.Payload = base64.RawStdEncoding.EncodeToString(plaintext)
+	}
+	rawStored, err := json.Marshal(stored)
+	if err != nil {
+		return 0, err
+	}
+	body := map[string]any{
+		"value":       string(rawStored),
+		"contentType": "application/vnd.simple-task-manager.connector-secret+json",
+	}
+	if err := s.call(ctx, http.MethodPut, s.secretURL(name), body, nil); err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+func (s *AzureKeyVaultSecretStore) Get(ctx context.Context, ref string) ([]byte, int, error) {
+	name, err := s.secretName(ref)
+	if err != nil {
+		return nil, 0, err
+	}
+	var response struct {
+		Value string `json:"value"`
+	}
+	if err := s.call(ctx, http.MethodGet, s.secretURL(name), nil, &response); err != nil {
+		return nil, 0, err
+	}
+	var stored azureStoredConnectorSecret
+	if err := json.Unmarshal([]byte(response.Value), &stored); err != nil || stored.Payload == "" || stored.Version <= 0 {
+		return nil, 0, fmt.Errorf("%w: invalid Azure Key Vault connector secret payload", ErrConnectorSecretStore)
+	}
+	switch stored.Encoding {
+	case "base64":
+		plaintext, err := base64.RawStdEncoding.DecodeString(stored.Payload)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%w: invalid Azure secret encoding", ErrConnectorSecretStore)
+		}
+		return plaintext, stored.Version, nil
+	case "azure-kv-cmk-rsa-oaep-256":
+		if strings.TrimSpace(stored.KeyID) == "" {
+			return nil, 0, fmt.Errorf("%w: missing Azure CMK key id", ErrConnectorSecretStore)
+		}
+		plaintext, err := s.decryptWithCMK(ctx, stored.KeyID, stored.Payload)
+		if err != nil {
+			return nil, 0, err
+		}
+		return plaintext, stored.Version, nil
+	default:
+		return nil, 0, fmt.Errorf("%w: unsupported Azure secret encoding", ErrConnectorSecretStore)
+	}
+}
+
+func (s *AzureKeyVaultSecretStore) Delete(ctx context.Context, ref string) error {
+	name, err := s.secretName(ref)
+	if err != nil {
+		return err
+	}
+	return s.call(ctx, http.MethodDelete, s.secretURL(name), nil, nil)
+}
+
+func (s *AzureKeyVaultSecretStore) secretName(ref string) (string, error) {
+	ref = strings.Trim(strings.TrimSpace(ref), "/")
+	if !validVaultLogicalPath(ref) {
+		return "", fmt.Errorf("%w: invalid Azure secret reference", ErrConnectorSecretStore)
+	}
+	digest := sha256Hex([]byte(s.prefix + "/" + ref))
+	return s.prefix + "-" + digest[:48], nil
+}
+
+func (s *AzureKeyVaultSecretStore) secretURL(name string) string {
+	u := *s.vaultURL
+	u.Path = "/secrets/" + url.PathEscape(name)
+	q := u.Query()
+	q.Set("api-version", azureKeyVaultAPIVersion)
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func (s *AzureKeyVaultSecretStore) encryptWithCMK(ctx context.Context, plaintext []byte) (string, string, error) {
+	endpoint := azureKeyOperationURL(s.cmkKeyID, "encrypt")
+	var response struct {
+		KID   string `json:"kid"`
+		Value string `json:"value"`
+	}
+	err := s.call(ctx, http.MethodPost, endpoint, map[string]any{
+		"alg":   "RSA-OAEP-256",
+		"value": base64.RawURLEncoding.EncodeToString(plaintext),
+	}, &response)
+	if err != nil {
+		return "", "", err
+	}
+	if strings.TrimSpace(response.Value) == "" {
+		return "", "", fmt.Errorf("%w: Azure CMK encrypt returned empty ciphertext", ErrConnectorSecretStore)
+	}
+	keyID := strings.TrimSpace(response.KID)
+	if keyID == "" {
+		keyID = s.cmkKeyID.String()
+	}
+	return response.Value, keyID, nil
+}
+
+func (s *AzureKeyVaultSecretStore) decryptWithCMK(ctx context.Context, keyID, ciphertext string) ([]byte, error) {
+	parsedKey, err := parseAzureCMKKeyID(keyID, s.vaultURL, s.vaultURL.Scheme == "http")
+	if err != nil {
+		return nil, err
+	}
+	endpoint := azureKeyOperationURL(parsedKey, "decrypt")
+	var response struct {
+		Value string `json:"value"`
+	}
+	if err := s.call(ctx, http.MethodPost, endpoint, map[string]any{
+		"alg":   "RSA-OAEP-256",
+		"value": ciphertext,
+	}, &response); err != nil {
+		return nil, err
+	}
+	plaintext, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(response.Value))
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid Azure CMK decrypt response", ErrConnectorSecretStore)
+	}
+	return plaintext, nil
+}
+
 func (s *AzureKeyVaultSecretStore) Backend() string {
 	return model.ConnectorSecretBackendAzure
 }
