@@ -48,6 +48,7 @@ type ZeroTrustPolicy struct {
 type WorkloadIdentity struct {
 	ID               int64      `json:"id"`
 	OrganizationID   int64      `json:"organization_id"`
+	WorkspaceID      int64      `json:"workspace_id"`
 	Name             string     `json:"name"`
 	SPIFFEID          string     `json:"spiffe_id"`
 	Status            string     `json:"status"`
@@ -188,6 +189,7 @@ type SecurityDashboard struct {
 }
 
 type CreateWorkloadIdentityRequest struct {
+	WorkspaceID  int64    `json:"workspace_id"`
 	Name         string   `json:"name"`
 	SPIFFEID     string   `json:"spiffe_id"`
 	AllowedScopes []string `json:"allowed_scopes"`
