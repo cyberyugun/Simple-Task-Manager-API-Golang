@@ -683,3 +683,10 @@ Phase 35 adds durable in-app notifications plus provider-neutral email, push, an
 ## Files, attachments & content security
 
 Phase 36 adds workspace-scoped task/comment attachments with direct presigned uploads, provider-neutral S3/Azure Blob/GCS/S3-compatible storage metadata, MIME/size/SHA-256 validation, workspace quota accounting, optional clean-object deduplication, malware-scanning hooks, clean-only downloads, encryption metadata, legal hold, retention deletion, and attachment audit events. The worker processes scan and retention queues using `ATTACHMENT_SCAN_POLL_INTERVAL` and `ATTACHMENT_RETENTION_POLL_INTERVAL`. See [docs/files-attachments-content-security.md](docs/files-attachments-content-security.md).
+
+
+## Phase 37 — Advanced Search, Reporting & Analytics
+
+Phase 37 adds PostgreSQL weighted full-text task search, pluggable search repository boundaries, saved private/shared views, workspace dashboards, workload and trend analytics, cycle/lead-time metrics, JSON/CSV BI-friendly exports, timezone-aware scheduled reports, report-run history, and a worker for due report execution.
+
+See [`docs/advanced-search-reporting-analytics.md`](docs/advanced-search-reporting-analytics.md) for architecture, APIs, limits, worker behavior, performance indexing, and load-test guidance.
