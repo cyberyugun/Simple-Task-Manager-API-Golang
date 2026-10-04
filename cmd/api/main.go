@@ -78,6 +78,7 @@ func main() {
 	var attachmentRepo repository.AttachmentRepository
 	var searchAnalyticsRepo repository.SearchAnalyticsRepository
 	var integrationRepo repository.IntegrationRepository
+	var connectorSecurityRepo repository.ConnectorSecurityRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
 
@@ -113,6 +114,7 @@ func main() {
 		attachmentRepo = repository.NewPostgresAttachmentRepository(db)
 		searchAnalyticsRepo = repository.NewPostgresSearchAnalyticsRepository(db)
 		integrationRepo = repository.NewPostgresIntegrationRepository(db)
+		connectorSecurityRepo = repository.NewPostgresConnectorSecurityRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
 		logger.Info(
@@ -141,6 +143,7 @@ func main() {
 		attachmentRepo = repository.NewInMemoryAttachmentRepository()
 		searchAnalyticsRepo = repository.NewInMemorySearchAnalyticsRepository(taskRepo)
 		integrationRepo = repository.NewInMemoryIntegrationRepository()
+		connectorSecurityRepo = repository.NewInMemoryConnectorSecurityRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
 		logger.Warn("storage_configured", "backend", "in-memory")
@@ -237,6 +240,7 @@ func main() {
 		os.Exit(1)
 	}
 	integrationService := service.NewIntegrationService(integrationRepo, organizationRepo, integrationCipher, cfg.WebhookAllowInsecure)
+	connectorSecurityService := service.NewConnectorSecurityService(connectorSecurityRepo, integrationRepo, organizationRepo, integrationCipher, cfg.WebhookAllowInsecure)
 	organizationService.SetEntitlementProvider(billingService)
 	workspaceService.SetDeletionGuard(governanceService)
 	authHandler := handler.NewAuthHandler(authService, cfg.ExposeAuthTokens)
@@ -256,6 +260,7 @@ func main() {
 	attachmentHandler := handler.NewAttachmentHandler(attachmentService)
 	searchAnalyticsHandler := handler.NewSearchAnalyticsHandler(searchAnalyticsService)
 	integrationHandler := handler.NewIntegrationHandler(integrationService)
+	connectorSecurityHandler := handler.NewConnectorSecurityHandler(connectorSecurityService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
 	authMiddleware := middleware.AuthWithRevocation(tokenManager, enterpriseRepo)
@@ -357,6 +362,7 @@ func main() {
 	mux.Handle("/api/billing/plans", protectedFirstParty(billingHandler.Plans))
 	mux.Handle("/api/billing/webhooks/{provider}", http.HandlerFunc(billingHandler.Webhook))
 	mux.Handle("/api/integrations/connectors", protectedFirstParty(integrationHandler.Connectors))
+	mux.Handle("/api/integrations/secret-backends", protectedFirstParty(connectorSecurityHandler.Backends))
 	mux.Handle("/api/integrations/inbound/{connection_id}", http.HandlerFunc(integrationHandler.Inbound))
 
 	mux.Handle("/api/organizations", protectedFirstParty(organizationHandler.Organizations))
@@ -417,6 +423,13 @@ func main() {
 	mux.Handle("/api/organizations/{id}/notification-templates/{template_id}/publish", protectedFirstParty(notificationHandler.PublishTemplate))
 	mux.Handle("/api/organizations/{id}/integrations/connections", protectedFirstParty(integrationHandler.Connections))
 	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}", protectedFirstParty(integrationHandler.ConnectionByID))
+	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}/oauth/start", protectedFirstParty(connectorSecurityHandler.BeginOAuth))
+	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}/oauth/callback", protectedFirstParty(connectorSecurityHandler.CompleteOAuth))
+	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}/credential", protectedFirstParty(connectorSecurityHandler.Credential))
+	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}/credential/rotate", protectedFirstParty(connectorSecurityHandler.Rotate))
+	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}/credential/revoke", protectedFirstParty(connectorSecurityHandler.Revoke))
+	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}/test", protectedFirstParty(connectorSecurityHandler.Test))
+	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}/credential-audit", protectedFirstParty(connectorSecurityHandler.Audit))
 	mux.Handle("/api/organizations/{id}/integrations/deliveries", protectedFirstParty(integrationHandler.Deliveries))
 	mux.Handle("/api/organizations/{id}/integrations/deliveries/{delivery_id}/replay", protectedFirstParty(integrationHandler.ReplayDelivery))
 	mux.Handle("/api/organizations/{id}/integrations/inbound-events", protectedFirstParty(integrationHandler.InboundEvents))

@@ -690,3 +690,8 @@ Phase 36 adds workspace-scoped task/comment attachments with direct presigned up
 Phase 37 adds PostgreSQL weighted full-text task search, pluggable search repository boundaries, saved private/shared views, workspace dashboards, workload and trend analytics, cycle/lead-time metrics, JSON/CSV BI-friendly exports, timezone-aware scheduled reports, report-run history, and a worker for due report execution.
 
 See [`docs/advanced-search-reporting-analytics.md`](docs/advanced-search-reporting-analytics.md) for architecture, APIs, limits, worker behavior, performance indexing, and load-test guidance.
+
+
+## Phase 38 — Connector OAuth Lifecycle & Enterprise Secret Governance
+
+Phase 38 adds OAuth authorization-code with PKCE, automatic credential renewal, permission checks, reconnect and health-test APIs, credential access audit, envelope rotation metadata, and a provider-neutral secret-backend boundary. See [docs/connector-oauth-secret-governance.md](docs/connector-oauth-secret-governance.md).
