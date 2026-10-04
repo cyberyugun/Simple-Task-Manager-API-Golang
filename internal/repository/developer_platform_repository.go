@@ -98,7 +98,11 @@ func (r *InMemoryDeveloperPlatformRepository) UpdateApplicationLifecycle(workspa
 		return model.DeveloperApplication{}, ErrDeveloperAppNotFound
 	}
 	item.Status = status
-	item.ReviewerNote(reviewerID, note, submittedAt, reviewedAt, now)
+	item.ReviewedByUserID = reviewerID
+	item.ReviewNote = note
+	item.SubmittedAt = submittedAt
+	item.ReviewedAt = reviewedAt
+	item.UpdatedAt = now
 	r.apps[appID] = item
 	return cloneDeveloperApp(item), nil
 }
