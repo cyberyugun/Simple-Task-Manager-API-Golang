@@ -235,6 +235,119 @@ func newGCPAccessTokenProvider(cfg GCPSecretManagerConfig, timeout time.Duration
 	}, nil
 }
 
+func (s *GCPSecretManagerSecretStore) Put(ctx context.Context, ref string, plaintext []byte) (int, error) {
+	secretID, err := s.secretID(ref)
+	if err != nil {
+		return 0, err
+	}
+	exists, err := s.secretExists(ctx, secretID)
+	if err != nil {
+		return 0, err
+	}
+	if !exists {
+		automatic := map[string]any{}
+		if s.cmekKey != "" {
+			automatic["customerManagedEncryption"] = map[string]any{"kmsKeyName": s.cmekKey}
+		}
+		createEndpoint := s.projectURL("/secrets")
+		u, err := url.Parse(createEndpoint)
+		if err != nil {
+			return 0, err
+		}
+		q := u.Query()
+		q.Set("secretId", secretID)
+		u.RawQuery = q.Encode()
+		if err := s.call(ctx, http.MethodPost, u.String(), map[string]any{
+			"replication": map[string]any{"automatic": automatic},
+		}, nil); err != nil && !isGCPSecretAlreadyExists(err) {
+			return 0, err
+		}
+	}
+	var response struct {
+		Name string `json:"name"`
+	}
+	if err := s.call(ctx, http.MethodPost, s.secretResourceURL(secretID)+":addVersion", map[string]any{
+		"payload": map[string]string{"data": base64.StdEncoding.EncodeToString(plaintext)},
+	}, &response); err != nil {
+		return 0, err
+	}
+	version, err := gcpSecretVersionFromName(response.Name)
+	if err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+func (s *GCPSecretManagerSecretStore) Get(ctx context.Context, ref string) ([]byte, int, error) {
+	secretID, err := s.secretID(ref)
+	if err != nil {
+		return nil, 0, err
+	}
+	var response struct {
+		Name    string `json:"name"`
+		Payload struct {
+			Data string `json:"data"`
+		} `json:"payload"`
+	}
+	endpoint := s.secretResourceURL(secretID) + "/versions/latest:access"
+	if err := s.call(ctx, http.MethodGet, endpoint, nil, &response); err != nil {
+		return nil, 0, err
+	}
+	version, err := gcpSecretVersionFromName(response.Name)
+	if err != nil {
+		return nil, 0, err
+	}
+	plaintext, err := base64.StdEncoding.DecodeString(strings.TrimSpace(response.Payload.Data))
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: invalid GCP secret payload", ErrConnectorSecretStore)
+	}
+	return plaintext, version, nil
+}
+
+func (s *GCPSecretManagerSecretStore) Delete(ctx context.Context, ref string) error {
+	secretID, err := s.secretID(ref)
+	if err != nil {
+		return err
+	}
+	return s.call(ctx, http.MethodDelete, s.secretResourceURL(secretID), nil, nil)
+}
+
+func (s *GCPSecretManagerSecretStore) secretExists(ctx context.Context, secretID string) (bool, error) {
+	err := s.call(ctx, http.MethodGet, s.secretResourceURL(secretID), nil, nil)
+	if err == nil {
+		return true, nil
+	}
+	if isGCPSecretNotFound(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (s *GCPSecretManagerSecretStore) secretID(ref string) (string, error) {
+	ref = strings.Trim(strings.TrimSpace(ref), "/")
+	if !validVaultLogicalPath(ref) {
+		return "", fmt.Errorf("%w: invalid GCP secret reference", ErrConnectorSecretStore)
+	}
+	digest := sha256Hex([]byte(s.prefix + "/" + ref))
+	secretID := s.prefix + "-" + digest[:48]
+	if !validGCPSecretID(secretID) {
+		return "", fmt.Errorf("%w: invalid derived GCP secret id", ErrConnectorSecretStore)
+	}
+	return secretID, nil
+}
+
+func (s *GCPSecretManagerSecretStore) projectURL(suffix string) string {
+	u := *s.endpoint
+	u.Path = strings.TrimRight(u.Path, "/") + "/v1/projects/" + url.PathEscape(s.projectID) + suffix
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+func (s *GCPSecretManagerSecretStore) secretResourceURL(secretID string) string {
+	return s.projectURL("/secrets/" + url.PathEscape(secretID))
+}
+
 func (s *GCPSecretManagerSecretStore) Backend() string {
 	return model.ConnectorSecretBackendGCP
 }
