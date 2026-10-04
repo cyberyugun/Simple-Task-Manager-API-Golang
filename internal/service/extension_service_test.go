@@ -58,17 +58,17 @@ func publishExtensionTestApp(t *testing.T, svc *ExtensionService, workspaceID in
 	}
 
 	app, err := svc.CreateApplication(1, workspaceID, model.CreateMarketplaceApplicationRequest{
-		PublisherID: publisher.ID,
-		Slug: "task-insights",
-		Name: "Task Insights",
-		Summary: "Remote analytics extension",
-		Description: "Reads tasks and receives task events without executing code in the core process.",
-		Version: "1.0.0",
-		HomepageURL: "https://example.com/task-insights",
-		PrivacyURL: "https://example.com/privacy",
-		Categories: []string{"analytics", "productivity"},
+		PublisherID:     publisher.ID,
+		Slug:            "task-insights",
+		Name:            "Task Insights",
+		Summary:         "Remote analytics extension",
+		Description:     "Reads tasks and receives task events without executing code in the core process.",
+		Version:         "1.0.0",
+		HomepageURL:     "https://example.com/task-insights",
+		PrivacyURL:      "https://example.com/privacy",
+		Categories:      []string{"analytics", "productivity"},
 		RequestedScopes: []string{model.ScopeTasksRead, model.ScopeWorkspaceRead},
-		EventTypes: []string{model.EventTaskCreated, model.EventTaskUpdated},
+		EventTypes:      []string{model.EventTaskCreated, model.EventTaskUpdated},
 		ConfigSchema: []model.ExtensionConfigField{
 			{Key: "region", Label: "Region", Required: true},
 			{Key: "api-secret", Label: "API Secret", Required: true, Secret: true},
@@ -76,7 +76,7 @@ func publishExtensionTestApp(t *testing.T, svc *ExtensionService, workspaceID in
 		Packs: []model.ExtensionPack{
 			{Type: model.ExtensionPackReporting, Name: "Task Insights Dashboard", Version: "1.0.0", Definition: map[string]any{"dataset": "tasks"}},
 		},
-		DailyRequestLimit: daily,
+		DailyRequestLimit:   daily,
 		MonthlyRequestLimit: daily * 30,
 	})
 	if err != nil {
@@ -104,10 +104,10 @@ func TestExtensionMarketplaceInstallTokenQuotaAndUninstall(t *testing.T) {
 
 	installed, err := svc.Install(1, orgID, model.InstallExtensionRequest{
 		ApplicationID: app.ID,
-		WorkspaceID: workspaceID,
+		WorkspaceID:   workspaceID,
 		GrantedScopes: []string{model.ScopeTasksRead},
-		Config: map[string]string{"region": "ap-southeast"},
-		SecretRefs: map[string]string{"api-secret": "secret://vault/task-insights"},
+		Config:        map[string]string{"region": "ap-southeast"},
+		SecretRefs:    map[string]string{"api-secret": "secret://vault/task-insights"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -164,16 +164,16 @@ func TestExtensionWebhookSubscriptionAndSecretRotation(t *testing.T) {
 	app := publishExtensionTestApp(t, svc, workspaceID, 100)
 	installed, err := svc.Install(1, orgID, model.InstallExtensionRequest{
 		ApplicationID: app.ID,
-		WorkspaceID: workspaceID,
-		Config: map[string]string{"region": "global"},
-		SecretRefs: map[string]string{"api-secret": "secret://vault/acme"},
+		WorkspaceID:   workspaceID,
+		Config:        map[string]string{"region": "global"},
+		SecretRefs:    map[string]string{"api-secret": "secret://vault/acme"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	subscription, err := svc.CreateSubscription(1, orgID, installed.Installation.ID, model.CreateExtensionEventSubscriptionRequest{
-		URL: "https://example.com/hooks/tasks",
+		URL:        "https://example.com/hooks/tasks",
 		EventTypes: []string{model.EventTaskCreated},
 	})
 	if err != nil {
@@ -183,7 +183,7 @@ func TestExtensionWebhookSubscriptionAndSecretRotation(t *testing.T) {
 		t.Fatalf("subscription=%+v", subscription)
 	}
 	if _, err := svc.CreateSubscription(1, orgID, installed.Installation.ID, model.CreateExtensionEventSubscriptionRequest{
-		URL: "https://example.com/hooks/comments",
+		URL:        "https://example.com/hooks/comments",
 		EventTypes: []string{model.EventTaskCommentCreated},
 	}); !errors.Is(err, ErrInvalidExtensionSubscription) {
 		t.Fatalf("unexpected undeclared-event error: %v", err)
@@ -218,10 +218,10 @@ func TestExtensionInstallationRejectsPlaintextSecretConfigAndExcessScope(t *test
 
 	_, err := svc.Install(1, orgID, model.InstallExtensionRequest{
 		ApplicationID: app.ID,
-		WorkspaceID: workspaceID,
+		WorkspaceID:   workspaceID,
 		GrantedScopes: []string{model.ScopeTasksWrite},
-		Config: map[string]string{"region": "global"},
-		SecretRefs: map[string]string{"api-secret": "secret://vault/acme"},
+		Config:        map[string]string{"region": "global"},
+		SecretRefs:    map[string]string{"api-secret": "secret://vault/acme"},
 	})
 	if !errors.Is(err, ErrInvalidExtensionInstallation) {
 		t.Fatalf("excess scope error=%v", err)
@@ -229,8 +229,8 @@ func TestExtensionInstallationRejectsPlaintextSecretConfigAndExcessScope(t *test
 
 	_, err = svc.Install(1, orgID, model.InstallExtensionRequest{
 		ApplicationID: app.ID,
-		WorkspaceID: workspaceID,
-		Config: map[string]string{"region": "global", "api-secret": "plaintext-secret"},
+		WorkspaceID:   workspaceID,
+		Config:        map[string]string{"region": "global", "api-secret": "plaintext-secret"},
 	})
 	if !errors.Is(err, ErrInvalidExtensionConfiguration) {
 		t.Fatalf("plaintext secret error=%v", err)
