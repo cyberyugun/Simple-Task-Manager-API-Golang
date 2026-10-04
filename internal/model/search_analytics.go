@@ -82,8 +82,8 @@ type TrendMetric struct {
 
 type AnalyticsDashboard struct {
 	Summary    AnalyticsSummary `json:"summary"`
-	ByStatus   map[string]int64  `json:"by_status"`
-	ByPriority map[string]int64  `json:"by_priority"`
+	ByStatus   map[string]int64 `json:"by_status"`
+	ByPriority map[string]int64 `json:"by_priority"`
 	Workload   []WorkloadMetric `json:"workload"`
 	Trend      []TrendMetric    `json:"trend"`
 	Days       int              `json:"days"`
