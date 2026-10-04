@@ -33,16 +33,16 @@ type HTTPAttachmentScanner struct {
 }
 
 type attachmentScanRequest struct {
-	AttachmentID   int64  `json:"attachment_id"`
-	WorkspaceID    int64  `json:"workspace_id"`
-	Provider       string `json:"provider"`
-	Bucket         string `json:"bucket"`
-	ObjectKey      string `json:"object_key"`
-	FileName       string `json:"file_name"`
-	ContentType    string `json:"content_type"`
-	SizeBytes      int64  `json:"size_bytes"`
-	SHA256         string `json:"sha256"`
-	Encryption     string `json:"encryption,omitempty"`
+	AttachmentID    int64  `json:"attachment_id"`
+	WorkspaceID     int64  `json:"workspace_id"`
+	Provider        string `json:"provider"`
+	Bucket          string `json:"bucket"`
+	ObjectKey       string `json:"object_key"`
+	FileName        string `json:"file_name"`
+	ContentType     string `json:"content_type"`
+	SizeBytes       int64  `json:"size_bytes"`
+	SHA256          string `json:"sha256"`
+	Encryption      string `json:"encryption,omitempty"`
 	EncryptionKeyID string `json:"encryption_key_id,omitempty"`
 }
 
@@ -119,7 +119,7 @@ func (s *HTTPAttachmentScanner) Scan(ctx context.Context, attachment model.Attac
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return model.AttachmentScanResult{
-			Engine: "remote_gateway",
+			Engine:  "remote_gateway",
 			Message: fmt.Sprintf("scanner returned HTTP %d", resp.StatusCode),
 		}, fmt.Errorf("%w: HTTP %d", ErrAttachmentScannerUnavailable, resp.StatusCode)
 	}
