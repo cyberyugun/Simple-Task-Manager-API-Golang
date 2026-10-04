@@ -36,6 +36,7 @@ type ExtensionRepository interface {
 	CreateInstallation(item model.ExtensionInstallation, secretHash string) (model.ExtensionInstallation, error)
 	ListInstallations(organizationID int64) ([]model.ExtensionInstallation, error)
 	GetInstallation(organizationID, installationID int64) (model.ExtensionInstallation, error)
+	GetRuntimeInstallation(installationID, workspaceID int64) (model.ExtensionInstallation, error)
 	FindInstallationBySecretHash(secretHash string, now time.Time) (model.ExtensionInstallation, error)
 	RotateInstallationSecret(organizationID, installationID int64, prefix, secretHash string, now time.Time) (model.ExtensionInstallation, error)
 	Uninstall(organizationID, installationID, actorUserID int64, now time.Time) (model.ExtensionInstallation, error)
@@ -270,6 +271,16 @@ func (r *InMemoryExtensionRepository) GetInstallation(organizationID, installati
 	defer r.mu.Unlock()
 	item, ok := r.installations[installationID]
 	if !ok || item.OrganizationID != organizationID {
+		return model.ExtensionInstallation{}, ErrExtensionInstallationNotFound
+	}
+	return cloneExtensionInstallation(item), nil
+}
+
+func (r *InMemoryExtensionRepository) GetRuntimeInstallation(installationID, workspaceID int64) (model.ExtensionInstallation, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item, ok := r.installations[installationID]
+	if !ok || item.WorkspaceID != workspaceID || item.Status != model.ExtensionInstallationActive {
 		return model.ExtensionInstallation{}, ErrExtensionInstallationNotFound
 	}
 	return cloneExtensionInstallation(item), nil
