@@ -73,6 +73,7 @@ func main() {
 	var globalRegionRepo repository.GlobalRegionRepository
 	var zeroTrustRepo repository.ZeroTrustRepository
 	var dataPlatformRepo repository.DataPlatformRepository
+	var extensionRepo repository.ExtensionRepository
 	var governanceRepo repository.GovernanceRepository
 	var lifecycleRepo repository.LifecycleRepository
 	var organizationRepo repository.OrganizationRepository
@@ -115,6 +116,7 @@ func main() {
 		globalRegionRepo = repository.NewPostgresGlobalRegionRepository(db)
 		zeroTrustRepo = repository.NewPostgresZeroTrustRepository(db)
 		dataPlatformRepo = repository.NewPostgresDataPlatformRepository(db)
+		extensionRepo = repository.NewPostgresExtensionRepository(db)
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
 		organizationRepo = repository.NewPostgresOrganizationRepository(db)
@@ -150,6 +152,7 @@ func main() {
 		globalRegionRepo = repository.NewInMemoryGlobalRegionRepository()
 		zeroTrustRepo = repository.NewInMemoryZeroTrustRepository()
 		dataPlatformRepo = repository.NewInMemoryDataPlatformRepository()
+		extensionRepo = repository.NewInMemoryExtensionRepository()
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
 		organizationRepo = repository.NewInMemoryOrganizationRepository()
@@ -262,6 +265,7 @@ func main() {
 	attachmentService := service.NewAttachmentService(attachmentRepo, taskRepo, taskCollaborationRepo, workspaceRepo, attachmentStore, service.NoopAttachmentScanner{}, attachmentConfig)
 	searchAnalyticsService := service.NewSearchAnalyticsService(searchAnalyticsRepo, workspaceRepo)
 	dataPlatformService := service.NewDataPlatformService(dataPlatformRepo, organizationRepo, searchAnalyticsRepo, governanceRepo)
+	extensionService := service.NewExtensionService(extensionRepo, workspaceRepo, organizationRepo, eventRepo, tokenManager, cfg.WebhookAllowInsecure)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {
 		logger.Error("integration_cipher_configuration_failed", "error", err)
@@ -283,6 +287,7 @@ func main() {
 	globalRegionHandler := handler.NewGlobalRegionHandler(globalRegionService)
 	zeroTrustHandler := handler.NewZeroTrustHandler(zeroTrustService)
 	dataPlatformHandler := handler.NewDataPlatformHandler(dataPlatformService)
+	extensionHandler := handler.NewExtensionHandler(extensionService)
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
 	organizationHandler := handler.NewOrganizationHandler(organizationService)
@@ -303,6 +308,7 @@ func main() {
 	enterprisePolicyMiddleware := middleware.EnterpriseWorkspacePolicy(enterpriseRepo)
 	idempotencyMiddleware := middleware.Idempotency(eventRepo, cfg.IdempotencyTTL)
 	developerUsageMiddleware := middleware.DeveloperPlatformUsage(developerPlatformService)
+	extensionUsageMiddleware := middleware.ExtensionUsage(extensionService)
 
 	var authRateLimiter middleware.AuthRateLimiter
 	if redisClient != nil {
@@ -340,10 +346,10 @@ func main() {
 		return authMiddleware(middleware.RequireFirstPartyUser(authRateLimiter.Handler(http.HandlerFunc(h))))
 	}
 	protectedWorkspace := func(h http.HandlerFunc) http.Handler {
-		return serviceAuthMiddleware(developerUsageMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(http.HandlerFunc(h)))))
+		return serviceAuthMiddleware(developerUsageMiddleware(extensionUsageMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(http.HandlerFunc(h))))))
 	}
 	protectedWorkspaceIdempotent := func(h http.HandlerFunc) http.Handler {
-		return serviceAuthMiddleware(developerUsageMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(idempotencyMiddleware(http.HandlerFunc(h))))))
+		return serviceAuthMiddleware(developerUsageMiddleware(extensionUsageMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(idempotencyMiddleware(http.HandlerFunc(h)))))))
 	}
 	protectedDeveloperSandbox := func(h http.HandlerFunc) http.Handler {
 		return serviceAuthMiddleware(developerUsageMiddleware(http.HandlerFunc(h)))
@@ -380,8 +386,11 @@ func main() {
 	mux.Handle("/api/oauth/token", rateLimited(enterpriseHandler.OAuthToken))
 	mux.Handle("/api/oauth/api-key", rateLimited(enterpriseHandler.APIKeyExchange))
 	mux.Handle("/api/security/workload/token", rateLimited(zeroTrustHandler.WorkloadToken))
+	mux.Handle("/api/extensions/token", rateLimited(extensionHandler.Token))
 	mux.Handle("/api/data-platform/adapters", protectedFirstParty(dataPlatformHandler.Adapters))
 	mux.Handle("/api/data-platform/bi-contracts", protectedFirstParty(dataPlatformHandler.BIContracts))
+	mux.Handle("/api/marketplace/apps", protectedFirstParty(extensionHandler.MarketplaceApps))
+	mux.Handle("/api/marketplace/apps/{app_id}", protectedFirstParty(extensionHandler.MarketplaceApp))
 	mux.Handle("/api/auth/mfa/webauthn/login/begin", rateLimited(webAuthnHandler.LoginBegin))
 	mux.Handle("/api/auth/mfa/webauthn/login/finish", rateLimited(webAuthnHandler.LoginFinish))
 	mux.Handle("/api/developer/docs/search", protectedFirstParty(developerPlatformHandler.DocsSearch))
@@ -472,6 +481,12 @@ func main() {
 	mux.Handle("/api/organizations/{id}/data-platform/lineage", protectedFirstParty(dataPlatformHandler.Lineage))
 	mux.Handle("/api/organizations/{id}/data-platform/reverse-etl-hooks", protectedFirstParty(dataPlatformHandler.ReverseETLHooks))
 	mux.Handle("/api/organizations/{id}/data-platform/dashboard", protectedFirstParty(dataPlatformHandler.Dashboard))
+	mux.Handle("/api/organizations/{id}/extensions/installations", protectedFirstParty(extensionHandler.Installations))
+	mux.Handle("/api/organizations/{id}/extensions/installations/{installation_id}", protectedFirstParty(extensionHandler.InstallationByID))
+	mux.Handle("/api/organizations/{id}/extensions/installations/{installation_id}/secret/rotate", protectedFirstParty(extensionHandler.RotateSecret))
+	mux.Handle("/api/organizations/{id}/extensions/installations/{installation_id}/usage", protectedFirstParty(extensionHandler.Usage))
+	mux.Handle("/api/organizations/{id}/extensions/installations/{installation_id}/subscriptions", protectedFirstParty(extensionHandler.Subscriptions))
+	mux.Handle("/api/organizations/{id}/extensions/installations/{installation_id}/subscriptions/{subscription_id}", protectedFirstParty(extensionHandler.SubscriptionByID))
 	mux.Handle("/api/organizations/{id}/billing/subscription", protectedFirstParty(billingHandler.Subscription))
 	mux.Handle("/api/organizations/{id}/billing/subscription/cancel", protectedFirstParty(billingHandler.CancelSubscription))
 	mux.Handle("/api/organizations/{id}/billing/entitlements", protectedFirstParty(billingHandler.Entitlements))
@@ -560,6 +575,12 @@ func main() {
 	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/credentials/{credential_id}/rotate", protectedFirstParty(developerPlatformHandler.RotateCredential))
 	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/analytics", protectedFirstParty(developerPlatformHandler.Analytics))
 	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/webhook-tests", protectedFirstParty(developerPlatformHandler.WebhookTests))
+	mux.Handle("/api/workspaces/{id}/marketplace/publishers", protectedFirstParty(extensionHandler.Publishers))
+	mux.Handle("/api/workspaces/{id}/marketplace/publishers/{publisher_id}/submit", protectedFirstParty(extensionHandler.SubmitPublisher))
+	mux.Handle("/api/workspaces/{id}/marketplace/publishers/{publisher_id}/review", protectedFirstParty(extensionHandler.ReviewPublisher))
+	mux.Handle("/api/workspaces/{id}/marketplace/apps", protectedFirstParty(extensionHandler.WorkspaceApps))
+	mux.Handle("/api/workspaces/{id}/marketplace/apps/{app_id}/submit", protectedFirstParty(extensionHandler.SubmitApplication))
+	mux.Handle("/api/workspaces/{id}/marketplace/apps/{app_id}/review", protectedFirstParty(extensionHandler.ReviewApplication))
 	mux.Handle("/api/workspaces/{id}/governance/policy", protectedFirstParty(governanceHandler.Policy))
 	mux.Handle("/api/workspaces/{id}/governance/data-inventory", protectedFirstParty(governanceHandler.DataInventory))
 	mux.Handle("/api/workspaces/{id}/governance/legal-holds", protectedFirstParty(governanceHandler.LegalHolds))
