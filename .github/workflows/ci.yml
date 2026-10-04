@@ -1025,6 +1025,66 @@ jobs:
           dashboard="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/data-platform/dashboard" -H "Authorization: Bearer $token")"
           printf '%s' "$dashboard" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["connections"]==1; assert d["active_connections"]==1; assert d["succeeded_exports"]==2; assert d["rows_exported"]==2; assert d["freshness_breaches"]==0'
 
+      - name: Smoke test platform extensibility and application marketplace
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          workspace="$(curl --fail --silent -X POST http://localhost:8080/api/workspaces -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 45 Marketplace Workspace"}')"
+          workspace_id="$(printf '%s' "$workspace" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          organization="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 45 Extension Customer","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          attach_payload="$(python3 -c 'import json,sys; print(json.dumps({"workspace_id":int(sys.argv[1])}))' "$workspace_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workspaces" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$attach_payload" >/dev/null
+
+          publisher="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/marketplace/publishers" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Marketplace Publisher","slug":"ci-marketplace-publisher","website_url":"https://example.com"}')"
+          publisher_id="$(printf '%s' "$publisher" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="draft"; print(d["id"])')"
+          curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/marketplace/publishers/$publisher_id/submit" -H "Authorization: Bearer $token" >/dev/null
+          verified="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/marketplace/publishers/$publisher_id/review" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"decision":"verify","note":"CI publisher verification"}')"
+          printf '%s' "$verified" | python3 -c 'import json,sys; assert json.load(sys.stdin)["data"]["status"]=="verified"'
+
+          app_payload="$(python3 -c 'import json,sys; print(json.dumps({"publisher_id":int(sys.argv[1]),"slug":"ci-task-insights","name":"CI Task Insights","summary":"Remote marketplace extension","description":"Scoped API plus durable event webhook marketplace smoke.","version":"1.0.0","homepage_url":"https://example.com/apps/task-insights","privacy_url":"https://example.com/privacy","categories":["analytics","productivity"],"requested_scopes":["tasks:read","workspace:read"],"event_types":["marketplace.sample"],"config_schema":[{"key":"region","label":"Region","required":True,"secret":False},{"key":"api-secret","label":"API Secret","required":True,"secret":True}],"packs":[{"type":"workflow","name":"CI Workflow Pack","version":"1.0.0","definition":{"trigger":"marketplace.sample"}},{"type":"reporting","name":"CI Reporting Pack","version":"1.0.0","definition":{"dataset":"tasks"}}],"daily_request_limit":20,"monthly_request_limit":500}))' "$publisher_id")"
+          app="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/marketplace/apps" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$app_payload")"
+          app_id="$(printf '%s' "$app" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["execution_model"]=="remote_webhook_api"; assert d["status"]=="draft"; print(d["id"])')"
+          curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/marketplace/apps/$app_id/submit" -H "Authorization: Bearer $token" >/dev/null
+          approved="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/marketplace/apps/$app_id/review" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"decision":"approve","note":"CI application review"}')"
+          printf '%s' "$approved" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="approved"; assert len(d["packs"])==2'
+
+          marketplace="$(curl --fail --silent "http://localhost:8080/api/marketplace/apps?category=analytics" -H "Authorization: Bearer $token")"
+          printf '%s' "$marketplace" | APP_ID="$app_id" python3 -c 'import json,os,sys; aid=int(os.environ["APP_ID"]); d=json.load(sys.stdin)["data"]; item=next(x for x in d if x["application"]["id"]==aid); assert item["publisher"]["status"]=="verified"'
+
+          install_payload="$(python3 -c 'import json,sys; print(json.dumps({"application_id":int(sys.argv[1]),"workspace_id":int(sys.argv[2]),"granted_scopes":["tasks:read"],"config":{"region":"ap-southeast"},"secret_refs":{"api-secret":"secret://ci/marketplace/task-insights"}}))' "$app_id" "$workspace_id")"
+          installed="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/extensions/installations" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$install_payload")"
+          installation_id="$(printf '%s' "$installed" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["installation"]["status"]=="active"; assert d["secret"].startswith("stm_ext_"); print(d["installation"]["id"])')"
+          installation_secret="$(printf '%s' "$installed" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["secret"])')"
+
+          extension_token_response="$(curl --fail --silent -X POST http://localhost:8080/api/extensions/token -H 'Content-Type: application/json' -d "$(python3 -c 'import json,sys; print(json.dumps({"secret":sys.argv[1]}))' "$installation_secret")")"
+          extension_token="$(printf '%s' "$extension_token_response" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["token_type"]=="Bearer"; assert d["scopes"]==["tasks:read"]; print(d["access_token"])')"
+
+          extension_tasks="$(curl --fail --silent http://localhost:8080/api/tasks -H "Authorization: Bearer $extension_token" -H "X-Workspace-ID: $workspace_id")"
+          printf '%s' "$extension_tasks" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["success"] is True; assert isinstance(d["data"]["items"],list)'
+
+          usage="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/extensions/installations/$installation_id/usage?days=30" -H "Authorization: Bearer $token")"
+          printf '%s' "$usage" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["today_requests"]>=1; assert d["daily_request_limit"]==20'
+
+          subscription="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/extensions/installations/$installation_id/subscriptions" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"url":"https://example.com/hooks/phase45","event_types":["marketplace.sample"]}')"
+          subscription_id="$(printf '%s' "$subscription" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["signing_secret"].startswith("whsec_"); print(d["subscription"]["id"])')"
+          test "$subscription_id" -gt 0
+
+          rotated="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/extensions/installations/$installation_id/secret/rotate" -H "Authorization: Bearer $token")"
+          rotated_secret="$(printf '%s' "$rotated" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["secret"].startswith("stm_ext_"); print(d["secret"])')"
+          test "$rotated_secret" != "$installation_secret"
+
+          old_secret_status="$(curl --silent --output /tmp/phase45-old-secret.json --write-out '%{http_code}' -X POST http://localhost:8080/api/extensions/token -H 'Content-Type: application/json' -d "$(python3 -c 'import json,sys; print(json.dumps({"secret":sys.argv[1]}))' "$installation_secret")")"
+          test "$old_secret_status" = "401"
+          curl --fail --silent -X POST http://localhost:8080/api/extensions/token -H 'Content-Type: application/json' -d "$(python3 -c 'import json,sys; print(json.dumps({"secret":sys.argv[1]}))' "$rotated_secret")" >/dev/null
+
+          uninstalled="$(curl --fail --silent -X DELETE "http://localhost:8080/api/organizations/$organization_id/extensions/installations/$installation_id" -H "Authorization: Bearer $token")"
+          printf '%s' "$uninstalled" | python3 -c 'import json,sys; assert json.load(sys.stdin)["data"]["status"]=="uninstalled"'
+
+          revoked_token_status="$(curl --silent --output /tmp/phase45-revoked-token.json --write-out '%{http_code}' http://localhost:8080/api/tasks -H "Authorization: Bearer $extension_token" -H "X-Workspace-ID: $workspace_id")"
+          test "$revoked_token_status" = "403"
+
       - name: Smoke test advanced search reporting analytics
         run: |
           login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
@@ -1115,7 +1175,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "29"
+          test "$migration_count" = "30"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
