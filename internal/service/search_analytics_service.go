@@ -106,7 +106,7 @@ func (s *SearchAnalyticsService) DeleteSavedView(actorUserID, workspaceID, viewI
 	return s.audit(workspaceID, actorUserID, "search.saved_view.deleted", "saved_search_view", strconv.FormatInt(viewID, 10), nil)
 }
 
-func (s *SearchAnalyticsService) Dashboard(workspaceID, days int) (model.AnalyticsDashboard, error) {
+func (s *SearchAnalyticsService) Dashboard(workspaceID int64, days int) (model.AnalyticsDashboard, error) {
 	if days == 0 {
 		days = 30
 	}
