@@ -31,6 +31,7 @@ tags:
   - name: Files & Attachments
   - name: Advanced Search & Analytics
   - name: Enterprise Integrations
+  - name: Enterprise Event Fabric
 
 paths:
   /health:
@@ -2859,6 +2860,116 @@ paths:
       responses:
         '200':
           description: Credential audit records
+
+  /api/workspaces/{id}/event-fabric/adapters:
+    get:
+      tags: [Enterprise Event Fabric]
+      summary: List event bus adapter capabilities and configuration state
+      operationId: listEventFabricAdapters
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Event bus adapter catalog }
+  /api/workspaces/{id}/event-fabric/schemas:
+    get:
+      tags: [Enterprise Event Fabric]
+      summary: List governed event schema versions
+      operationId: listEventSchemas
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Event schema versions }
+    post:
+      tags: [Enterprise Event Fabric]
+      summary: Publish a compatible event schema version
+      operationId: createEventSchema
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Event schema version created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Schema compatibility violation }
+  /api/workspaces/{id}/event-fabric/schemas/{schema_id}/deprecate:
+    post:
+      tags: [Enterprise Event Fabric]
+      summary: Deprecate an event schema version
+      operationId: deprecateEventSchema
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Event schema deprecated }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/workspaces/{id}/event-fabric/subscriptions:
+    get:
+      tags: [Enterprise Event Fabric]
+      summary: List durable event subscriptions
+      operationId: listEventFabricSubscriptions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Durable event subscriptions }
+    post:
+      tags: [Enterprise Event Fabric]
+      summary: Create a durable event subscription
+      operationId: createEventFabricSubscription
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Durable event subscription created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/workspaces/{id}/event-fabric/subscriptions/{subscription_id}:
+    patch:
+      tags: [Enterprise Event Fabric]
+      summary: Pause or resume a durable event subscription
+      operationId: updateEventFabricSubscription
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Durable event subscription updated }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/workspaces/{id}/event-fabric/subscriptions/{subscription_id}/offset:
+    get:
+      tags: [Enterprise Event Fabric]
+      summary: Read durable consumer offset
+      operationId: getEventFabricOffset
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Durable consumer offset }
+  /api/workspaces/{id}/event-fabric/subscriptions/{subscription_id}/replay:
+    post:
+      tags: [Enterprise Event Fabric]
+      summary: Replay an outbox event ID range into a durable subscription
+      operationId: replayEventFabricSubscription
+      security: [{ bearerAuth: [] }]
+      responses:
+        '202': { description: Event replay queued }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/workspaces/{id}/event-fabric/routes:
+    get:
+      tags: [Enterprise Event Fabric]
+      summary: List event routing rules
+      operationId: listEventFabricRoutes
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Event routing rules }
+    post:
+      tags: [Enterprise Event Fabric]
+      summary: Create an event routing rule
+      operationId: createEventFabricRoute
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Event routing rule created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/workspaces/{id}/event-fabric/deliveries:
+    get:
+      tags: [Enterprise Event Fabric]
+      summary: List durable event deliveries including DLQ state
+      operationId: listEventFabricDeliveries
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Durable event deliveries }
+  /api/workspaces/{id}/event-fabric/deliveries/{delivery_id}/redrive:
+    post:
+      tags: [Enterprise Event Fabric]
+      summary: Redrive one durable event delivery
+      operationId: redriveEventFabricDelivery
+      security: [{ bearerAuth: [] }]
+      responses:
+        '202': { description: Durable event delivery queued for redrive }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/task-projects:
     get:
