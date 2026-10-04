@@ -2,8 +2,8 @@ package service
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -52,11 +52,11 @@ func TestZeroTrustWorkloadMTLSBindingAndRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	workload, err := svc.CreateWorkload(1, orgID, model.CreateWorkloadIdentityRequest{
-		WorkspaceID: workspaceID,
-		Name: "payments-worker",
-		SPIFFEID: "spiffe://simple-task-manager/workload/payments",
+		WorkspaceID:   workspaceID,
+		Name:          "payments-worker",
+		SPIFFEID:      "spiffe://simple-task-manager/workload/payments",
 		AllowedScopes: []string{model.ScopeTasksRead, model.ScopeTasksWrite},
-		MTLSRequired: true,
+		MTLSRequired:  true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -110,8 +110,8 @@ func TestZeroTrustRiskRevokesHighRiskSessionAndBuildsAuditChain(t *testing.T) {
 	}
 	evaluation, err := svc.EvaluateRisk(1, orgID, false, model.RiskEvaluationRequest{
 		SessionID: sessions[0].ID,
-		SourceIP: "203.0.113.10",
-		WAFScore: 95,
+		SourceIP:  "203.0.113.10",
+		WAFScore:  95,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestZeroTrustImpossibleTravelRequiresStepUp(t *testing.T) {
 	currentLat, currentLon := 40.7128, -74.0060
 	previousSeen := time.Now().UTC().Add(-2 * time.Hour)
 	result, err := svc.EvaluateRisk(1, orgID, false, model.RiskEvaluationRequest{
-		SourceIP: "10.0.0.1",
+		SourceIP:         "10.0.0.1",
 		PreviousLatitude: &previousLat, PreviousLongitude: &previousLon,
 		CurrentLatitude: &currentLat, CurrentLongitude: &currentLon,
 		PreviousSeenAt: &previousSeen,
@@ -191,12 +191,12 @@ func testWorkloadCertificate(t *testing.T, spiffeID string, notAfter time.Time) 
 	now := time.Now().UTC().Add(-time.Minute)
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(42),
-		Subject: pkix.Name{CommonName: "phase43-test-workload"},
-		NotBefore: now,
-		NotAfter: notAfter,
-		KeyUsage: x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-		URIs: []*url.URL{uri},
+		Subject:      pkix.Name{CommonName: "phase43-test-workload"},
+		NotBefore:    now,
+		NotAfter:     notAfter,
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		URIs:         []*url.URL{uri},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
