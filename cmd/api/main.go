@@ -68,6 +68,7 @@ func main() {
 	var eventRepo repository.EventRepository
 	var eventFabricRepo repository.EventFabricRepository
 	var enterpriseRepo repository.EnterpriseIdentityRepository
+	var developerPlatformRepo repository.DeveloperPlatformRepository
 	var governanceRepo repository.GovernanceRepository
 	var lifecycleRepo repository.LifecycleRepository
 	var organizationRepo repository.OrganizationRepository
@@ -105,6 +106,7 @@ func main() {
 		eventRepo = repository.NewPostgresEventRepository(db)
 		eventFabricRepo = repository.NewPostgresEventFabricRepository(db)
 		enterpriseRepo = repository.NewPostgresEnterpriseIdentityRepository(db)
+		developerPlatformRepo = repository.NewPostgresDeveloperPlatformRepository(db)
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
 		organizationRepo = repository.NewPostgresOrganizationRepository(db)
@@ -135,6 +137,7 @@ func main() {
 		eventRepo = repository.NewInMemoryEventRepository()
 		eventFabricRepo = repository.NewInMemoryEventFabricRepository()
 		enterpriseRepo = repository.NewInMemoryEnterpriseIdentityRepository()
+		developerPlatformRepo = repository.NewInMemoryDeveloperPlatformRepository()
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
 		organizationRepo = repository.NewInMemoryOrganizationRepository()
@@ -210,6 +213,9 @@ func main() {
 	webhookService := service.NewWebhookService(workspaceRepo, eventRepo, cfg.WebhookAllowInsecure)
 	eventFabricService := service.NewEventFabricService(eventFabricRepo, workspaceRepo, service.NewEventFabricAdapterRegistry())
 	enterpriseService := service.NewEnterpriseIdentityService(enterpriseRepo, workspaceRepo, userRepo, tokenManager)
+	developerPlatformService := service.NewDeveloperPlatformService(
+		developerPlatformRepo, workspaceRepo, enterpriseService, cfg.WebhookAllowInsecure, apidocs.Spec(),
+	)
 	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
 	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)
 	organizationService := service.NewOrganizationService(organizationRepo, userRepo, workspaceRepo)
@@ -254,6 +260,7 @@ func main() {
 	webhookHandler := handler.NewWebhookHandler(webhookService)
 	eventFabricHandler := handler.NewEventFabricHandler(eventFabricService)
 	enterpriseHandler := handler.NewEnterpriseIdentityHandler(enterpriseService)
+	developerPlatformHandler := handler.NewDeveloperPlatformHandler(developerPlatformService)
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
 	organizationHandler := handler.NewOrganizationHandler(organizationService)
@@ -273,6 +280,7 @@ func main() {
 	workspaceMiddleware := middleware.WorkspaceScope(workspaceRepo)
 	enterprisePolicyMiddleware := middleware.EnterpriseWorkspacePolicy(enterpriseRepo)
 	idempotencyMiddleware := middleware.Idempotency(eventRepo, cfg.IdempotencyTTL)
+	developerUsageMiddleware := middleware.DeveloperPlatformUsage(developerPlatformService)
 
 	var authRateLimiter middleware.AuthRateLimiter
 	if redisClient != nil {
@@ -310,10 +318,13 @@ func main() {
 		return authMiddleware(middleware.RequireFirstPartyUser(authRateLimiter.Handler(http.HandlerFunc(h))))
 	}
 	protectedWorkspace := func(h http.HandlerFunc) http.Handler {
-		return serviceAuthMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(http.HandlerFunc(h))))
+		return serviceAuthMiddleware(developerUsageMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(http.HandlerFunc(h)))))
 	}
 	protectedWorkspaceIdempotent := func(h http.HandlerFunc) http.Handler {
-		return serviceAuthMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(idempotencyMiddleware(http.HandlerFunc(h)))))
+		return serviceAuthMiddleware(developerUsageMiddleware(workspaceMiddleware(enterprisePolicyMiddleware(idempotencyMiddleware(http.HandlerFunc(h))))))
+	}
+	protectedDeveloperSandbox := func(h http.HandlerFunc) http.Handler {
+		return serviceAuthMiddleware(developerUsageMiddleware(http.HandlerFunc(h)))
 	}
 
 	ready := readiness.New(db, redisClient, cfg.ReadinessTimeout, metrics)
@@ -348,6 +359,10 @@ func main() {
 	mux.Handle("/api/oauth/api-key", rateLimited(enterpriseHandler.APIKeyExchange))
 	mux.Handle("/api/auth/mfa/webauthn/login/begin", rateLimited(webAuthnHandler.LoginBegin))
 	mux.Handle("/api/auth/mfa/webauthn/login/finish", rateLimited(webAuthnHandler.LoginFinish))
+	mux.Handle("/api/developer/docs/search", protectedFirstParty(developerPlatformHandler.DocsSearch))
+	mux.Handle("/api/developer/sdks", protectedFirstParty(developerPlatformHandler.SDKs))
+	mux.Handle("/api/developer/sandbox", protectedDeveloperSandbox(developerPlatformHandler.SandboxEcho))
+	mux.Handle("/api/developer/sandbox/echo", protectedDeveloperSandbox(developerPlatformHandler.SandboxEcho))
 
 	mux.Handle("/api/auth/change-password", protectedFirstPartyRateLimited(authHandler.ChangePassword))
 	mux.Handle("/api/auth/logout-all", protectedFirstParty(authHandler.LogoutAll))
@@ -468,6 +483,15 @@ func main() {
 	mux.Handle("/api/workspaces/{id}/identity/policy", protectedIdentityAdmin(enterpriseHandler.Policy))
 	mux.Handle("/api/workspaces/{id}/identity/oidc", protectedIdentityAdmin(enterpriseHandler.OIDC))
 	mux.Handle("/api/workspaces/{id}/identity/scim/users", protectedIdentityAdmin(enterpriseHandler.SCIMUsers))
+	mux.Handle("/api/workspaces/{id}/developer/apps", protectedFirstParty(developerPlatformHandler.Applications))
+	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}", protectedFirstParty(developerPlatformHandler.ApplicationByID))
+	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/submit", protectedFirstParty(developerPlatformHandler.Submit))
+	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/review", protectedFirstParty(developerPlatformHandler.Review))
+	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/credentials", protectedFirstParty(developerPlatformHandler.Credentials))
+	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/credentials/{credential_id}", protectedFirstParty(developerPlatformHandler.CredentialByID))
+	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/credentials/{credential_id}/rotate", protectedFirstParty(developerPlatformHandler.RotateCredential))
+	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/analytics", protectedFirstParty(developerPlatformHandler.Analytics))
+	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/webhook-tests", protectedFirstParty(developerPlatformHandler.WebhookTests))
 	mux.Handle("/api/workspaces/{id}/governance/policy", protectedFirstParty(governanceHandler.Policy))
 	mux.Handle("/api/workspaces/{id}/governance/data-inventory", protectedFirstParty(governanceHandler.DataInventory))
 	mux.Handle("/api/workspaces/{id}/governance/legal-holds", protectedFirstParty(governanceHandler.LegalHolds))
