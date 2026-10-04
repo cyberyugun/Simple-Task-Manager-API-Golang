@@ -268,10 +268,10 @@ func (r *PostgresEventFabricRepository) CreateDelivery(item model.EventFabricDel
 			workspace_id,subscription_id,outbox_event_id,event_key,event_type,schema_version,payload,
 			correlation_id,causation_id,occurred_at,status,attempts,max_attempts,available_at,locked_at,locked_by,
 			last_error,delivered_at,dead_lettered_at,created_at,updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		ON CONFLICT (subscription_id,outbox_event_id) DO NOTHING
 		RETURNING id,workspace_id,subscription_id,outbox_event_id,event_key,event_type,schema_version,payload,
-			correlation_id,causation_id,status,attempts,max_attempts,available_at,locked_at,locked_by,
+			correlation_id,causation_id,occurred_at,status,attempts,max_attempts,available_at,locked_at,locked_by,
 			last_error,delivered_at,dead_lettered_at,created_at,updated_at
 	`, item.WorkspaceID, item.SubscriptionID, item.OutboxEventID, item.EventKey, item.EventType,
 		item.SchemaVersion, string(raw), item.CorrelationID, item.CausationID, item.OccurredAt, item.Status, item.Attempts,
@@ -405,7 +405,7 @@ func (r *PostgresEventFabricRepository) ReleaseDeliveryLocks(before time.Time) (
 func (r *PostgresEventFabricRepository) GetDelivery(workspaceID, deliveryID int64) (model.EventFabricDelivery, error) {
 	item, err := scanEventFabricDelivery(r.db.QueryRow(`
 		SELECT id,workspace_id,subscription_id,outbox_event_id,event_key,event_type,schema_version,payload,
-			correlation_id,causation_id,status,attempts,max_attempts,available_at,locked_at,locked_by,
+			correlation_id,causation_id,occurred_at,status,attempts,max_attempts,available_at,locked_at,locked_by,
 			last_error,delivered_at,dead_lettered_at,created_at,updated_at
 		FROM event_fabric_deliveries WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, deliveryID))
@@ -418,7 +418,7 @@ func (r *PostgresEventFabricRepository) GetDelivery(workspaceID, deliveryID int6
 func (r *PostgresEventFabricRepository) ListDeliveries(workspaceID, subscriptionID int64, status string, limit int) ([]model.EventFabricDelivery, error) {
 	rows, err := r.db.Query(`
 		SELECT id,workspace_id,subscription_id,outbox_event_id,event_key,event_type,schema_version,payload,
-			correlation_id,causation_id,status,attempts,max_attempts,available_at,locked_at,locked_by,
+			correlation_id,causation_id,occurred_at,status,attempts,max_attempts,available_at,locked_at,locked_by,
 			last_error,delivered_at,dead_lettered_at,created_at,updated_at
 		FROM event_fabric_deliveries
 		WHERE workspace_id=$1
@@ -540,7 +540,7 @@ func (r *PostgresEventFabricRepository) GetOffset(workspaceID, subscriptionID in
 func (r *PostgresEventFabricRepository) getDeliveryBySubscriptionEvent(subscriptionID, eventID int64) (model.EventFabricDelivery, error) {
 	item, err := scanEventFabricDelivery(r.db.QueryRow(`
 		SELECT id,workspace_id,subscription_id,outbox_event_id,event_key,event_type,schema_version,payload,
-			correlation_id,causation_id,status,attempts,max_attempts,available_at,locked_at,locked_by,
+			correlation_id,causation_id,occurred_at,status,attempts,max_attempts,available_at,locked_at,locked_by,
 			last_error,delivered_at,dead_lettered_at,created_at,updated_at
 		FROM event_fabric_deliveries WHERE subscription_id=$1 AND outbox_event_id=$2
 	`, subscriptionID, eventID))
