@@ -687,6 +687,30 @@ jobs:
           usage="$(curl --fail --silent http://localhost:8080/api/attachments/usage -H "Authorization: Bearer $token")"
           printf '%s' "$usage" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["used_bytes"] >= 128; assert d["quota_bytes"] > 0'
 
+      - name: Smoke test connector OAuth and secret governance
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+          organization_response="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Connector Security","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          backends="$(curl --fail --silent http://localhost:8080/api/integrations/secret-backends -H "Authorization: Bearer $token")"
+          printf '%s' "$backends" | python3 -c 'import json,sys; keys={x["key"] for x in json.load(sys.stdin)["data"]}; assert {"database_envelope","aws_secrets_manager","azure_key_vault","gcp_secret_manager","hashicorp_vault"} <= keys'
+
+          connection="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/integrations/connections" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"provider":"github","name":"CI OAuth","auth_type":"oauth2","config":{"authorize_url":"https://example.com/oauth/authorize","token_url":"https://example.com/oauth/token","client_id":"ci-client","redirect_uri":"https://example.com/callback"},"credentials":{"client_secret":"ci-runtime-secret"}}')"
+          connection_id="$(printf '%s' "$connection" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+
+          started="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/integrations/connections/$connection_id/oauth/start" -H "Authorization: Bearer $token")"
+          printf '%s' "$started" | python3 -c 'import json,sys,urllib.parse; d=json.load(sys.stdin)["data"]; q=urllib.parse.parse_qs(urllib.parse.urlparse(d["authorization_url"]).query); assert d["state"]; assert q["code_challenge_method"]==["S256"]; assert q["code_challenge"][0]'
+
+          rotated="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/integrations/connections/$connection_id/credential/rotate" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"secret_backend":"database_envelope","key_version":2}')"
+          printf '%s' "$rotated" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["key_version"]==2; assert d["credential_version"]==1; assert d["status"]=="active"'
+
+          tested="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/integrations/connections/$connection_id/test" -H "Authorization: Bearer $token")"
+          printf '%s' "$tested" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["healthy"] is True; assert d["scopes_valid"] is True'
+
+          docker compose logs worker | grep -q connector_oauth_worker_started
+
       - name: Smoke test advanced search reporting analytics
         run: |
           login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"

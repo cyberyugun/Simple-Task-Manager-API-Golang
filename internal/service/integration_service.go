@@ -440,7 +440,7 @@ func validateIntegrationCredentials(authType string, credentials map[string]any)
 			return ErrInvalidIntegrationConnection
 		}
 	case model.IntegrationAuthOAuth2:
-		if credentialString(credentials, "access_token") == "" {
+		if credentialString(credentials, "access_token") == "" && credentialString(credentials, "client_secret") == "" {
 			return ErrInvalidIntegrationConnection
 		}
 	default:
