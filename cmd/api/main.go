@@ -72,6 +72,7 @@ func main() {
 	var aiAssistanceRepo repository.AIAssistanceRepository
 	var globalRegionRepo repository.GlobalRegionRepository
 	var zeroTrustRepo repository.ZeroTrustRepository
+	var dataPlatformRepo repository.DataPlatformRepository
 	var governanceRepo repository.GovernanceRepository
 	var lifecycleRepo repository.LifecycleRepository
 	var organizationRepo repository.OrganizationRepository
@@ -113,6 +114,7 @@ func main() {
 		aiAssistanceRepo = repository.NewPostgresAIAssistanceRepository(db)
 		globalRegionRepo = repository.NewPostgresGlobalRegionRepository(db)
 		zeroTrustRepo = repository.NewPostgresZeroTrustRepository(db)
+		dataPlatformRepo = repository.NewPostgresDataPlatformRepository(db)
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
 		organizationRepo = repository.NewPostgresOrganizationRepository(db)
@@ -147,6 +149,7 @@ func main() {
 		aiAssistanceRepo = repository.NewInMemoryAIAssistanceRepository()
 		globalRegionRepo = repository.NewInMemoryGlobalRegionRepository()
 		zeroTrustRepo = repository.NewInMemoryZeroTrustRepository()
+		dataPlatformRepo = repository.NewInMemoryDataPlatformRepository()
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
 		organizationRepo = repository.NewInMemoryOrganizationRepository()
@@ -258,6 +261,7 @@ func main() {
 	}
 	attachmentService := service.NewAttachmentService(attachmentRepo, taskRepo, taskCollaborationRepo, workspaceRepo, attachmentStore, service.NoopAttachmentScanner{}, attachmentConfig)
 	searchAnalyticsService := service.NewSearchAnalyticsService(searchAnalyticsRepo, workspaceRepo)
+	dataPlatformService := service.NewDataPlatformService(dataPlatformRepo, organizationRepo, searchAnalyticsRepo, governanceRepo)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {
 		logger.Error("integration_cipher_configuration_failed", "error", err)
@@ -278,6 +282,7 @@ func main() {
 	aiAssistanceHandler := handler.NewAIAssistanceHandler(aiAssistanceService)
 	globalRegionHandler := handler.NewGlobalRegionHandler(globalRegionService)
 	zeroTrustHandler := handler.NewZeroTrustHandler(zeroTrustService)
+	dataPlatformHandler := handler.NewDataPlatformHandler(dataPlatformService)
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
 	organizationHandler := handler.NewOrganizationHandler(organizationService)
@@ -375,6 +380,8 @@ func main() {
 	mux.Handle("/api/oauth/token", rateLimited(enterpriseHandler.OAuthToken))
 	mux.Handle("/api/oauth/api-key", rateLimited(enterpriseHandler.APIKeyExchange))
 	mux.Handle("/api/security/workload/token", rateLimited(zeroTrustHandler.WorkloadToken))
+	mux.Handle("/api/data-platform/adapters", protectedFirstParty(dataPlatformHandler.Adapters))
+	mux.Handle("/api/data-platform/bi-contracts", protectedFirstParty(dataPlatformHandler.BIContracts))
 	mux.Handle("/api/auth/mfa/webauthn/login/begin", rateLimited(webAuthnHandler.LoginBegin))
 	mux.Handle("/api/auth/mfa/webauthn/login/finish", rateLimited(webAuthnHandler.LoginFinish))
 	mux.Handle("/api/developer/docs/search", protectedFirstParty(developerPlatformHandler.DocsSearch))
@@ -458,6 +465,13 @@ func main() {
 	mux.Handle("/api/organizations/{id}/security/worm-exports", protectedFirstParty(zeroTrustHandler.WORMExports))
 	mux.Handle("/api/organizations/{id}/security/siem", protectedFirstParty(zeroTrustHandler.SIEM))
 	mux.Handle("/api/organizations/{id}/security/siem/feed", protectedFirstParty(zeroTrustHandler.SIEMFeed))
+	mux.Handle("/api/organizations/{id}/data-platform/connections", protectedFirstParty(dataPlatformHandler.Connections))
+	mux.Handle("/api/organizations/{id}/data-platform/connections/{connection_id}/schemas", protectedFirstParty(dataPlatformHandler.Schemas))
+	mux.Handle("/api/organizations/{id}/data-platform/connections/{connection_id}/exports", protectedFirstParty(dataPlatformHandler.Exports))
+	mux.Handle("/api/organizations/{id}/data-platform/connections/{connection_id}/checkpoint", protectedFirstParty(dataPlatformHandler.Checkpoint))
+	mux.Handle("/api/organizations/{id}/data-platform/lineage", protectedFirstParty(dataPlatformHandler.Lineage))
+	mux.Handle("/api/organizations/{id}/data-platform/reverse-etl-hooks", protectedFirstParty(dataPlatformHandler.ReverseETLHooks))
+	mux.Handle("/api/organizations/{id}/data-platform/dashboard", protectedFirstParty(dataPlatformHandler.Dashboard))
 	mux.Handle("/api/organizations/{id}/billing/subscription", protectedFirstParty(billingHandler.Subscription))
 	mux.Handle("/api/organizations/{id}/billing/subscription/cancel", protectedFirstParty(billingHandler.CancelSubscription))
 	mux.Handle("/api/organizations/{id}/billing/entitlements", protectedFirstParty(billingHandler.Entitlements))
