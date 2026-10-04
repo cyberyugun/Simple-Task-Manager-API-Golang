@@ -56,6 +56,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Global multi-region control plane with tenant home regions, data-residency enforcement, governed migrations/transfers, regional placement inventory, routing decisions, and failover RPO/RTO evidence
 - Zero trust security with workload mTLS identities, certificate rotation and token binding, adaptive device/network/session risk, automatic high-risk session revocation, signed audit checkpoints, WORM export manifests, and SIEM federation feeds
 - Enterprise data platform and BI federation with governed BigQuery/Snowflake/Redshift/Databricks adapters, Power BI/Tableau/Looker contracts, incremental checkpoints, masking, schema evolution, lineage, reverse-ETL metadata, export cost controls, and freshness SLOs
+- Platform extensibility and application marketplace with remote-only app manifests, publisher verification/review, organization install/uninstall, scoped extension tokens, governed webhooks, configuration/secret references, quotas, usage analytics, categories, and declarative workflow/compliance/reporting packs
 
 ## Environment
 
@@ -217,6 +218,8 @@ Global region routing, residency policy, migration/transfer approval, placement 
 Zero trust workload identity, mTLS certificate rotation/token binding, adaptive risk, security dashboards, signed audit checkpoints, WORM manifests, and SIEM federation are documented in [`docs/zero-trust-advanced-security.md`](docs/zero-trust-advanced-security.md).
 
 Enterprise warehouse federation, BI contracts, incremental export checkpoints, masking, schema evolution, lineage, reverse ETL metadata, and export SLOs are documented in [`docs/enterprise-data-platform-bi-federation.md`](docs/enterprise-data-platform-bi-federation.md).
+
+Platform extensibility, marketplace publisher/app review, organization installations, scoped API access, webhook subscriptions, quotas, and declarative extension packs are documented in [`docs/platform-extensibility-application-marketplace.md`](docs/platform-extensibility-application-marketplace.md).
 
 ## Public endpoints
 
