@@ -76,7 +76,11 @@ func (r *PostgresDeveloperPlatformRepository) CreateCredential(item model.Develo
 	if err != nil {
 		return model.DeveloperCredential{}, err
 	}
-	redirects, err := json.Marshal(item.RedirectURIs)
+	redirectValues := item.RedirectURIs
+	if redirectValues == nil {
+		redirectValues = []string{}
+	}
+	redirects, err := json.Marshal(redirectValues)
 	if err != nil {
 		return model.DeveloperCredential{}, err
 	}
