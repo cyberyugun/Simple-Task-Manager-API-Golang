@@ -21,9 +21,14 @@ import (
 	"go-simple-task-api/internal/repository"
 )
 
+type EventConsumer interface {
+	Consume(context.Context, model.DomainEvent) error
+}
+
 type Worker struct {
 	repo          repository.EventRepository
 	client        *http.Client
+	consumers     []EventConsumer
 	workerID      string
 	batchSize     int
 	pollInterval  time.Duration
@@ -40,6 +45,7 @@ type WorkerOptions struct {
 	HTTPTimeout   time.Duration
 	AllowInsecure bool
 	Logger        *slog.Logger
+	Consumers     []EventConsumer
 }
 
 func NewWorker(repo repository.EventRepository, options WorkerOptions) *Worker {
@@ -64,6 +70,7 @@ func NewWorker(repo repository.EventRepository, options WorkerOptions) *Worker {
 		workerID: options.WorkerID, batchSize: options.BatchSize,
 		pollInterval: options.PollInterval, lockTimeout: options.LockTimeout,
 		allowInsecure: options.AllowInsecure, logger: options.Logger,
+		consumers: append([]EventConsumer(nil), options.Consumers...),
 	}
 }
 
@@ -114,6 +121,15 @@ func (w *Worker) ProcessOnce(ctx context.Context) (int, error) {
 }
 
 func (w *Worker) processEvent(ctx context.Context, event model.DomainEvent) error {
+	for _, consumer := range w.consumers {
+		if consumer == nil {
+			continue
+		}
+		if err := consumer.Consume(ctx, event); err != nil {
+			return fmt.Errorf("event consumer: %w", err)
+		}
+	}
+
 	subscriptions, err := w.repo.PendingSubscriptions(event)
 	if err != nil {
 		return err
@@ -194,6 +210,10 @@ func Sign(secret, timestamp string, body []byte) string {
 	_, _ = mac.Write([]byte("."))
 	_, _ = mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func NewWebhookHTTPClient(timeout time.Duration, allowInsecure bool) *http.Client {
+	return newHTTPClient(timeout, allowInsecure)
 }
 
 func newHTTPClient(timeout time.Duration, allowInsecure bool) *http.Client {

@@ -74,6 +74,7 @@ func main() {
 	var operationsRepo repository.OperationsRepository
 	var automationRepo repository.AutomationRepository
 	var workflowRepo repository.WorkflowRepository
+	var notificationRepo repository.NotificationRepository
 	var integrationRepo repository.IntegrationRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
@@ -106,6 +107,7 @@ func main() {
 		operationsRepo = repository.NewPostgresOperationsRepository(db)
 		automationRepo = repository.NewPostgresAutomationRepository(db)
 		workflowRepo = repository.NewPostgresWorkflowRepository(db)
+		notificationRepo = repository.NewPostgresNotificationRepository(db)
 		integrationRepo = repository.NewPostgresIntegrationRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
@@ -131,6 +133,7 @@ func main() {
 		operationsRepo = repository.NewInMemoryOperationsRepository()
 		automationRepo = repository.NewInMemoryAutomationRepository()
 		workflowRepo = repository.NewInMemoryWorkflowRepository()
+		notificationRepo = repository.NewInMemoryNotificationRepository()
 		integrationRepo = repository.NewInMemoryIntegrationRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
@@ -202,6 +205,10 @@ func main() {
 	automationService := service.NewAutomationService(automationRepo, organizationRepo, operationsRepo, billingRepo, billingService)
 	workflowExecutors := service.NewWorkflowExecutorRegistry(taskRepo, operationsRepo)
 	workflowService := service.NewWorkflowService(workflowRepo, organizationRepo, workflowExecutors)
+	notificationService := service.NewNotificationService(
+		notificationRepo, userRepo, taskRepo, taskCollaborationRepo, workspaceRepo, organizationRepo,
+		service.NotificationConfig{AllowInsecure: cfg.WebhookAllowInsecure},
+	)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {
 		logger.Error("integration_cipher_configuration_failed", "error", err)
@@ -223,6 +230,7 @@ func main() {
 	operationsHandler := handler.NewOperationsHandler(operationsService)
 	automationHandler := handler.NewAutomationHandler(automationService)
 	workflowHandler := handler.NewWorkflowHandler(workflowService)
+	notificationHandler := handler.NewNotificationHandler(notificationService)
 	integrationHandler := handler.NewIntegrationHandler(integrationService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
@@ -381,11 +389,22 @@ func main() {
 	mux.Handle("/api/organizations/{id}/workflow-executions/{execution_id}/cancel", protectedFirstParty(workflowHandler.Cancel))
 	mux.Handle("/api/organizations/{id}/workflow-executions/{execution_id}/retry", protectedFirstParty(workflowHandler.Retry))
 	mux.Handle("/api/organizations/{id}/workflow-approvals/{approval_id}/decision", protectedFirstParty(workflowHandler.DecideApproval))
+	mux.Handle("/api/organizations/{id}/notification-templates", protectedFirstParty(notificationHandler.Templates))
+	mux.Handle("/api/organizations/{id}/notification-templates/{template_id}/publish", protectedFirstParty(notificationHandler.PublishTemplate))
 	mux.Handle("/api/organizations/{id}/integrations/connections", protectedFirstParty(integrationHandler.Connections))
 	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}", protectedFirstParty(integrationHandler.ConnectionByID))
 	mux.Handle("/api/organizations/{id}/integrations/deliveries", protectedFirstParty(integrationHandler.Deliveries))
 	mux.Handle("/api/organizations/{id}/integrations/deliveries/{delivery_id}/replay", protectedFirstParty(integrationHandler.ReplayDelivery))
 	mux.Handle("/api/organizations/{id}/integrations/inbound-events", protectedFirstParty(integrationHandler.InboundEvents))
+
+	mux.Handle("/api/notifications", protectedFirstParty(notificationHandler.Notifications))
+	mux.Handle("/api/notifications/preferences", protectedFirstParty(notificationHandler.Preferences))
+	mux.Handle("/api/notifications/endpoints", protectedFirstParty(notificationHandler.Endpoints))
+	mux.Handle("/api/notifications/endpoints/{endpoint_id}", protectedFirstParty(notificationHandler.EndpointByID))
+	mux.Handle("/api/notifications/items/{notification_id}/read", protectedFirstParty(notificationHandler.MarkRead))
+	mux.Handle("/api/notifications/read-all", protectedFirstParty(notificationHandler.MarkAllRead))
+	mux.Handle("/api/notifications/deliveries", protectedFirstParty(notificationHandler.Deliveries))
+	mux.Handle("/api/notifications/deliveries/{delivery_id}/retry", protectedFirstParty(notificationHandler.RetryDelivery))
 
 	mux.Handle("/api/workspaces", protected(workspaceHandler.Workspaces))
 	mux.Handle("/api/workspaces/{id}/webhooks", protected(webhookHandler.Subscriptions))
