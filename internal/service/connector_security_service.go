@@ -261,6 +261,9 @@ func (s *ConnectorSecurityService) Rotate(actorUserID, organizationID, connectio
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
+	now := time.Now().UTC()
+	connection.UpdatedByUserID = actorUserID
+	connection.UpdatedAt = now
 	ref := strings.TrimSpace(meta.SecretRef)
 	if ref == "" {
 		ref = connectorSecretRef(organizationID, connectionID)
@@ -274,7 +277,6 @@ func (s *ConnectorSecurityService) Rotate(actorUserID, organizationID, connectio
 	} else if keyVersion <= 0 {
 		keyVersion = meta.KeyVersion + 1
 	}
-	now := time.Now().UTC()
 	meta.SecretBackend = backend
 	meta.SecretRef = ref
 	meta.KeyVersion = keyVersion
@@ -623,7 +625,7 @@ func (s *ConnectorSecurityService) writeCredentialPayload(ctx context.Context, c
 		if _, err := s.integrations.UpdateIntegrationConnection(connection, &encrypted); err != nil {
 			return 0, err
 		}
-		return maxConnectorInt(1, time.Now().UTC().Nanosecond()), nil
+		return 0, nil
 	}
 	store, ok := s.secretStores[backend]
 	if !ok {
@@ -638,13 +640,6 @@ func (s *ConnectorSecurityService) writeCredentialPayload(ctx context.Context, c
 
 func connectorSecretRef(organizationID, connectionID int64) string {
 	return fmt.Sprintf("org/%d/integration/%d", organizationID, connectionID)
-}
-
-func maxConnectorInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func (s *ConnectorSecurityService) exchangeToken(connection model.IntegrationConnection, values url.Values) (map[string]any, error) {
