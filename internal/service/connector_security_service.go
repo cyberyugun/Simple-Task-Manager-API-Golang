@@ -37,6 +37,7 @@ type ConnectorSecurityService struct {
 	cipher        *IntegrationCredentialCipher
 	client        *http.Client
 	allowInsecure bool
+	secretStores  map[string]ConnectorSecretStore
 }
 
 func NewConnectorSecurityService(
@@ -49,6 +50,7 @@ func NewConnectorSecurityService(
 	return &ConnectorSecurityService{
 		repo: repo, integrations: integrations, orgs: orgs, cipher: cipher,
 		client: &http.Client{Timeout: 15 * time.Second}, allowInsecure: allowInsecure,
+		secretStores: map[string]ConnectorSecretStore{},
 	}
 }
 
@@ -58,13 +60,28 @@ func (s *ConnectorSecurityService) SetHTTPClient(client *http.Client) {
 	}
 }
 
+func (s *ConnectorSecurityService) RegisterSecretStore(store ConnectorSecretStore) {
+	if store == nil || store.Backend() == "" || store.Backend() == model.ConnectorSecretBackendDatabase {
+		return
+	}
+	s.secretStores[store.Backend()] = store
+}
+
+func (s *ConnectorSecurityService) backendConfigured(backend string) bool {
+	if backend == model.ConnectorSecretBackendDatabase {
+		return true
+	}
+	_, ok := s.secretStores[backend]
+	return ok
+}
+
 func (s *ConnectorSecurityService) SecretBackends() []model.ConnectorSecretBackend {
 	return []model.ConnectorSecretBackend{
-		{Key: model.ConnectorSecretBackendDatabase, DisplayName: "Database Envelope Encryption", EnvelopeEncryption: true, CustomerManagedKey: true},
-		{Key: model.ConnectorSecretBackendAWS, DisplayName: "AWS Secrets Manager", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true},
-		{Key: model.ConnectorSecretBackendAzure, DisplayName: "Azure Key Vault", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true},
-		{Key: model.ConnectorSecretBackendGCP, DisplayName: "GCP Secret Manager", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true},
-		{Key: model.ConnectorSecretBackendVault, DisplayName: "HashiCorp Vault", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true},
+		{Key: model.ConnectorSecretBackendDatabase, DisplayName: "Database Envelope Encryption", EnvelopeEncryption: true, CustomerManagedKey: true, Configured: true, NativeAdapter: true},
+		{Key: model.ConnectorSecretBackendAWS, DisplayName: "AWS Secrets Manager", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true, Configured: s.backendConfigured(model.ConnectorSecretBackendAWS), NativeAdapter: false},
+		{Key: model.ConnectorSecretBackendAzure, DisplayName: "Azure Key Vault", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true, Configured: s.backendConfigured(model.ConnectorSecretBackendAzure), NativeAdapter: false},
+		{Key: model.ConnectorSecretBackendGCP, DisplayName: "GCP Secret Manager", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true, Configured: s.backendConfigured(model.ConnectorSecretBackendGCP), NativeAdapter: false},
+		{Key: model.ConnectorSecretBackendVault, DisplayName: "HashiCorp Vault", ExternalVault: true, EnvelopeEncryption: true, CustomerManagedKey: true, Configured: s.backendConfigured(model.ConnectorSecretBackendVault), NativeAdapter: true},
 	}
 }
 
