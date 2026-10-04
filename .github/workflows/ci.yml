@@ -971,6 +971,60 @@ jobs:
           dashboard="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/security/dashboard" -H "Authorization: Bearer $token")"
           printf '%s' "$dashboard" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["active_workloads"]==1; assert d["trusted_devices"]==1; assert d["high_risk_events"]>=1; assert d["revoked_sessions"]>=1; assert d["latest_checkpoint"]["sequence"]==1'
 
+      - name: Smoke test enterprise data platform and BI federation
+        run: |
+          login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
+          token="$(printf '%s' "$login_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])')"
+
+          adapters="$(curl --fail --silent http://localhost:8080/api/data-platform/adapters -H "Authorization: Bearer $token")"
+          printf '%s' "$adapters" | python3 -c 'import json,sys; keys={x["key"] for x in json.load(sys.stdin)["data"]}; assert {"bigquery","snowflake","redshift","databricks"}.issubset(keys)'
+          contracts="$(curl --fail --silent http://localhost:8080/api/data-platform/bi-contracts -H "Authorization: Bearer $token")"
+          printf '%s' "$contracts" | python3 -c 'import json,sys; keys={x["key"] for x in json.load(sys.stdin)["data"]}; assert {"powerbi","tableau","looker"}.issubset(keys)'
+
+          workspace="$(curl --fail --silent -X POST http://localhost:8080/api/workspaces -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 44 Workspace"}')"
+          workspace_id="$(printf '%s' "$workspace" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          organization="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Phase 44 Data Platform","max_workspaces":20,"max_members":100}')"
+          organization_id="$(printf '%s' "$organization" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          attach_payload="$(python3 -c 'import json,sys; print(json.dumps({"workspace_id":int(sys.argv[1])}))' "$workspace_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workspaces" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$attach_payload" >/dev/null
+
+          governance_payload='{"default_classification":"confidential","audit_retention_days":365,"operational_retention_days":365,"privacy_request_sla_hours":720,"require_dpa":false,"restrict_cross_region_transfer":true,"allowed_data_regions":["ap-southeast"]}'
+          curl --fail --silent -X PUT "http://localhost:8080/api/workspaces/$workspace_id/governance/policy" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$governance_payload" >/dev/null
+
+          first_task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H "X-Workspace-ID: $workspace_id" -H 'Content-Type: application/json' -d '{"title":"Phase 44 sensitive analytics task","description":"warehouse federation smoke","status":"TODO","priority":"HIGH"}')"
+          first_task_id="$(printf '%s' "$first_task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          test "$first_task_id" -gt 0
+
+          connection_payload='{"name":"CI BigQuery","provider":"bigquery","target":"analytics.task_analytics","bi_contracts":["powerbi","tableau","looker"],"config":{"project_id":"ci-phase44","dataset":"analytics"},"secret_ref":"secret://ci/bigquery","masking":{"mode":"hash","fields":["title"]},"freshness_slo_minutes":60,"max_monthly_cost_usd":10}'
+          connection="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/data-platform/connections" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$connection_payload")"
+          connection_id="$(printf '%s' "$connection" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["provider"]=="bigquery"; assert d["masking"]["mode"]=="hash"; print(d["id"])')"
+
+          schemas="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/data-platform/connections/$connection_id/schemas" -H "Authorization: Bearer $token")"
+          printf '%s' "$schemas" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert len(d)==1; assert d[0]["version"]==1; assert any(f["name"]=="updated_at" for f in d[0]["fields"])'
+
+          first_export="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/data-platform/connections/$connection_id/exports" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"mode":"incremental"}')"
+          printf '%s' "$first_export" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="succeeded"; assert d["rows"]==1; assert len(d["payload_hash"])==64; assert d["delivery_uri"].startswith("warehouse://bigquery/")'
+
+          checkpoint_one="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/data-platform/connections/$connection_id/checkpoint" -H "Authorization: Bearer $token")"
+          printf '%s' "$checkpoint_one" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["version"]==1; assert d["last_job_id"]>0'
+
+          second_task="$(curl --fail --silent -X POST http://localhost:8080/api/tasks -H "Authorization: Bearer $token" -H "X-Workspace-ID: $workspace_id" -H 'Content-Type: application/json' -d '{"title":"Phase 44 second incremental task","description":"checkpoint continuation","status":"IN_PROGRESS","priority":"MEDIUM"}')"
+          second_task_id="$(printf '%s' "$second_task" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
+          test "$second_task_id" -gt "$first_task_id"
+
+          second_export="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/data-platform/connections/$connection_id/exports" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"mode":"incremental"}')"
+          printf '%s' "$second_export" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="succeeded"; assert d["rows"]==1; assert d["checkpoint_after"] != d["checkpoint_before"]'
+
+          lineage="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/data-platform/lineage" -H "Authorization: Bearer $token")"
+          printf '%s' "$lineage" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert len(d)>=2; assert "classification:confidential" in d[0]["governance_tags"]; assert "governance:cross_region_restricted" in d[0]["governance_tags"]'
+
+          hook_payload="$(python3 -c 'import json,sys; print(json.dumps({"connection_id":int(sys.argv[1]),"name":"CI reverse ETL","source_object":"analytics.customer_priority","destination":"task.custom_fields","field_mapping":{"customer_priority":"priority"},"enabled":True}))' "$connection_id")"
+          hook="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/data-platform/reverse-etl-hooks" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$hook_payload")"
+          printf '%s' "$hook" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["enabled"] is True; assert d["destination"]=="task.custom_fields"'
+
+          dashboard="$(curl --fail --silent "http://localhost:8080/api/organizations/$organization_id/data-platform/dashboard" -H "Authorization: Bearer $token")"
+          printf '%s' "$dashboard" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["connections"]==1; assert d["active_connections"]==1; assert d["succeeded_exports"]==2; assert d["rows_exported"]==2; assert d["freshness_breaches"]==0'
+
       - name: Smoke test advanced search reporting analytics
         run: |
           login_response="$(curl --fail --silent -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"ci@example.com","password":"new-password-456"}')"
@@ -1061,7 +1115,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "28"
+          test "$migration_count" = "29"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"
