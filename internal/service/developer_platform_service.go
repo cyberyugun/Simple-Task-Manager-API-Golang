@@ -654,8 +654,7 @@ func developerPrefix(value string) string {
 }
 
 func buildDeveloperDocs(spec []byte) []model.DeveloperDocEntry {
-	lines := strings.Split(string(spec), "
-")
+	lines := strings.Split(string(spec), "\n")
 	items := make([]model.DeveloperDocEntry, 0)
 	currentPath := ""
 	currentIndex := -1
@@ -679,7 +678,7 @@ func buildDeveloperDocs(spec []byte) []model.DeveloperDocEntry {
 			continue
 		}
 		if currentIndex >= 0 && strings.HasPrefix(trimmed, "summary:") {
-			items[currentIndex].Summary = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "summary:")), ""'")
+			items[currentIndex].Summary = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "summary:")), "\"'")
 		}
 	}
 	return items
