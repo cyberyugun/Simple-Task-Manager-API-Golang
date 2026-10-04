@@ -29,7 +29,7 @@ const (
 type EventSchemaVersion struct {
 	ID              int64          `json:"id"`
 	WorkspaceID     int64          `json:"workspace_id"`
-	EventType              int64          `json:"id"`
+	EventType       string         `json:"event_type"`
 	Version         int            `json:"version"`
 	Compatibility   string         `json:"compatibility"`
 	Status          string         `json:"status"`
