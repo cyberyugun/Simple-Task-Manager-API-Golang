@@ -558,7 +558,8 @@ func (s *AIAssistanceService) RunEvaluation(ctx context.Context, actorUserID, or
 	now := time.Now().UTC()
 	run, err := s.repo.CreateEvaluationRun(model.AIEvaluationRun{
 		OrganizationID: organizationID, CaseID: caseID, Provider: provider.Key(), Model: result.Model,
-		ScoreBasisPoints: score, Passed: score >= 7000,
+		ScoreBasisPoints: score, InputUnits: result.InputUnits, OutputUnits: result.OutputUnits,
+		ActualCostCents: result.ActualCostCents, Passed: score >= 7000,
 		Metadata: map[string]any{"expected_keywords": len(testCase.ExpectedKeywords), "matched_keywords": matched, "redaction_count": redactionCount},
 		CreatedAt: now,
 	})
