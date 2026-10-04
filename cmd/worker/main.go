@@ -114,6 +114,16 @@ func main() {
 		logger.Error("attachment_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	reportPoll, err := durationEnv("REPORT_SCHEDULE_POLL_INTERVAL", time.Minute)
+	if err != nil {
+		logger.Error("report_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	reportBatch, err := intEnv("REPORT_SCHEDULE_BATCH_SIZE", 50)
+	if err != nil {
+		logger.Error("report_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	allowInsecure, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("WEBHOOK_ALLOW_INSECURE_HTTP")))
 	host, _ := os.Hostname()
 	workerID := fmt.Sprintf("%s-%d", host, os.Getpid())
@@ -207,6 +217,12 @@ func main() {
 		attachmentConfig,
 	)
 	go runAttachmentPlatform(ctx, attachmentService, attachmentPoll, attachmentRetentionPoll, attachmentBatch, logger)
+
+	searchAnalyticsService := service.NewSearchAnalyticsService(
+		repository.NewPostgresSearchAnalyticsRepository(db),
+		repository.NewPostgresWorkspaceRepository(db),
+	)
+	go runScheduledReports(ctx, searchAnalyticsService, reportPoll, reportBatch, logger)
 
 	integrationCipher, err := service.NewIntegrationCredentialCipher(os.Getenv("JWT_SECRET"))
 	if err != nil {
@@ -455,6 +471,40 @@ func runAttachmentPlatform(ctx context.Context, attachments *service.AttachmentS
 			runScan()
 		case <-retentionTicker.C:
 			runRetention()
+		}
+	}
+}
+
+
+func runScheduledReports(ctx context.Context, reports *service.SearchAnalyticsService, poll time.Duration, batch int, logger *slog.Logger) {
+	run := func() {
+		items, err := reports.ProcessScheduledReports(batch)
+		if err != nil {
+			logger.Error("report_schedule_batch_failed", "error", err)
+			return
+		}
+		for _, item := range items {
+			logger.Info(
+				"report_schedule_processed",
+				"workspace_id", item.WorkspaceID,
+				"schedule_id", item.ScheduleID,
+				"run_id", item.ID,
+				"status", item.Status,
+				"row_count", item.RowCount,
+			)
+		}
+	}
+	logger.Info("report_worker_started", "poll_interval", poll, "batch_size", batch)
+	run()
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("report_worker_stopped")
+			return
+		case <-ticker.C:
+			run()
 		}
 	}
 }
