@@ -97,12 +97,12 @@ func TestAzureBlobObjectStoreAccountKeyPresignVerifyAndDelete(t *testing.T) {
 
 	accountKey := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
 	store, err := NewAzureBlobObjectStore(AzureBlobObjectStoreConfig{
-		AccountName: "testaccount",
-		AccountKey:  accountKey,
-		Container:   "files",
-		Endpoint:    server.URL,
-		AllowInsecure: true,
-		Encryption:  "azure_cmk",
+		AccountName:     "testaccount",
+		AccountKey:      accountKey,
+		Container:       "files",
+		Endpoint:        server.URL,
+		AllowInsecure:   true,
+		Encryption:      "azure_cmk",
 		EncryptionKeyID: "attachment-scope",
 	})
 	if err != nil {
