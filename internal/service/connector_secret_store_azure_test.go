@@ -32,7 +32,8 @@ func newAzureVaultTestServer(t *testing.T, token string) (*httptest.Server, *azu
 	state := &azureVaultTestState{
 		token: token, secrets: map[string]string{}, deleted: map[string]bool{},
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer "+state.token {
 			http.Error(w, "bad authorization", http.StatusUnauthorized)
 			return
@@ -64,7 +65,7 @@ func newAzureVaultTestServer(t *testing.T, token string) (*httptest.Server, *azu
 				}
 				state.secrets[name] = strings.TrimSpace(body["value"].(string))
 				state.deleted[name] = false
-				_ = json.NewEncoder(w).Encode(map[string]any{"id": serverURLPlaceholder + "/secrets/" + name + "/v1"})
+				_ = json.NewEncoder(w).Encode(map[string]any{"id": server.URL + "/secrets/" + name + "/v1"})
 			case http.MethodDelete:
 				state.deleted[name] = true
 				_ = json.NewEncoder(w).Encode(map[string]any{"recoveryId": "deleted/" + name})
@@ -89,7 +90,7 @@ func newAzureVaultTestServer(t *testing.T, token string) (*httptest.Server, *azu
 			state.encryptCalls++
 			wrapped := append([]byte("wrapped:"), raw...)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"kid": serverURLPlaceholder + "/keys/cmk/v1",
+				"kid": server.URL + "/keys/cmk/v1",
 				"value": base64.RawURLEncoding.EncodeToString(wrapped),
 			})
 		case strings.HasSuffix(r.URL.Path, "/decrypt"):
@@ -118,8 +119,6 @@ func newAzureVaultTestServer(t *testing.T, token string) (*httptest.Server, *azu
 	}))
 	return server, state
 }
-
-const serverURLPlaceholder = "http://127.0.0.1"
 
 func TestAzureKeyVaultSecretStoreLifecycleWithCMK(t *testing.T) {
 	server, state := newAzureVaultTestServer(t, "azure-test-token")
