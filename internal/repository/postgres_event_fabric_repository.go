@@ -266,7 +266,7 @@ func (r *PostgresEventFabricRepository) CreateDelivery(item model.EventFabricDel
 	err = r.db.QueryRow(`
 		INSERT INTO event_fabric_deliveries (
 			workspace_id,subscription_id,outbox_event_id,event_key,event_type,schema_version,payload,
-			correlation_id,causation_id,status,attempts,max_attempts,available_at,locked_at,locked_by,
+			correlation_id,causation_id,occurred_at,status,attempts,max_attempts,available_at,locked_at,locked_by,
 			last_error,delivered_at,dead_lettered_at,created_at,updated_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		ON CONFLICT (subscription_id,outbox_event_id) DO NOTHING
@@ -274,11 +274,11 @@ func (r *PostgresEventFabricRepository) CreateDelivery(item model.EventFabricDel
 			correlation_id,causation_id,status,attempts,max_attempts,available_at,locked_at,locked_by,
 			last_error,delivered_at,dead_lettered_at,created_at,updated_at
 	`, item.WorkspaceID, item.SubscriptionID, item.OutboxEventID, item.EventKey, item.EventType,
-		item.SchemaVersion, string(raw), item.CorrelationID, item.CausationID, item.Status, item.Attempts,
+		item.SchemaVersion, string(raw), item.CorrelationID, item.CausationID, item.OccurredAt, item.Status, item.Attempts,
 		item.MaxAttempts, item.AvailableAt, item.LockedAt, item.LockedBy, item.LastError, item.DeliveredAt,
 		item.DeadLetteredAt, item.CreatedAt, item.UpdatedAt).Scan(
 		&item.ID, &item.WorkspaceID, &item.SubscriptionID, &item.OutboxEventID, &item.EventKey, &item.EventType,
-		&item.SchemaVersion, &payloadRaw, &item.CorrelationID, &item.CausationID, &item.Status, &item.Attempts,
+		&item.SchemaVersion, &payloadRaw, &item.CorrelationID, &item.CausationID, &item.OccurredAt, &item.Status, &item.Attempts,
 		&item.MaxAttempts, &item.AvailableAt, &item.LockedAt, &item.LockedBy, &item.LastError, &item.DeliveredAt,
 		&item.DeadLetteredAt, &item.CreatedAt, &item.UpdatedAt,
 	)
@@ -303,7 +303,7 @@ func (r *PostgresEventFabricRepository) ClaimDeliveries(workerID string, limit i
 	defer tx.Rollback()
 	rows, err := tx.Query(`
 		SELECT d.id,d.workspace_id,d.subscription_id,d.outbox_event_id,d.event_key,d.event_type,
-			d.schema_version,d.payload,d.correlation_id,d.causation_id,d.status,d.attempts,d.max_attempts,
+			d.schema_version,d.payload,d.correlation_id,d.causation_id,d.occurred_at,d.status,d.attempts,d.max_attempts,
 			d.available_at,d.locked_at,d.locked_by,d.last_error,d.delivered_at,d.dead_lettered_at,d.created_at,d.updated_at
 		FROM event_fabric_deliveries d
 		JOIN event_fabric_subscriptions s ON s.id=d.subscription_id
@@ -465,10 +465,10 @@ func (r *PostgresEventFabricRepository) ReplayRange(workspaceID, subscriptionID,
 	res, err := r.db.Exec(`
 		INSERT INTO event_fabric_deliveries (
 			workspace_id,subscription_id,outbox_event_id,event_key,event_type,schema_version,payload,
-			correlation_id,causation_id,status,attempts,max_attempts,available_at,created_at,updated_at
+			correlation_id,causation_id,occurred_at,status,attempts,max_attempts,available_at,created_at,updated_at
 		)
 		SELECT e.workspace_id,s.id,e.id,e.event_key,e.event_type,e.schema_version,e.payload,
-			COALESCE(NULLIF(e.correlation_id,''),e.event_key),COALESCE(e.causation_id,''),
+			COALESCE(NULLIF(e.correlation_id,''),e.event_key),COALESCE(e.causation_id,''),e.occurred_at,
 			'pending',0,s.max_attempts,$5,$5,$5
 		FROM outbox_events e
 		JOIN event_fabric_subscriptions s ON s.id=$2 AND s.workspace_id=$1
@@ -591,7 +591,7 @@ func scanEventFabricDelivery(scanner eventFabricScanner) (model.EventFabricDeliv
 	var raw []byte
 	err := scanner.Scan(
 		&item.ID, &item.WorkspaceID, &item.SubscriptionID, &item.OutboxEventID, &item.EventKey,
-		&item.EventType, &item.SchemaVersion, &raw, &item.CorrelationID, &item.CausationID, &item.Status,
+		&item.EventType, &item.SchemaVersion, &raw, &item.CorrelationID, &item.CausationID, &item.OccurredAt, &item.Status,
 		&item.Attempts, &item.MaxAttempts, &item.AvailableAt, &item.LockedAt, &item.LockedBy,
 		&item.LastError, &item.DeliveredAt, &item.DeadLetteredAt, &item.CreatedAt, &item.UpdatedAt,
 	)
