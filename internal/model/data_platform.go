@@ -28,8 +28,8 @@ const (
 	MaskingHash   = "hash"
 
 	SchemaCompatibilityBackward = "backward"
-	SchemaStatusActive           = "active"
-	SchemaStatusDeprecated       = "deprecated"
+	SchemaStatusActive          = "active"
+	SchemaStatusDeprecated      = "deprecated"
 )
 
 type DataMaskingPolicy struct {
@@ -48,11 +48,11 @@ type DataPlatformConnection struct {
 	SecretRef           string            `json:"secret_ref,omitempty"`
 	Status              string            `json:"status"`
 	Masking             DataMaskingPolicy `json:"masking"`
-	FreshnessSLOMinutes int                `json:"freshness_slo_minutes"`
-	MaxMonthlyCostUSD   float64            `json:"max_monthly_cost_usd"`
-	CreatedByUserID     int64              `json:"created_by_user_id"`
-	CreatedAt           time.Time          `json:"created_at"`
-	UpdatedAt           time.Time          `json:"updated_at"`
+	FreshnessSLOMinutes int               `json:"freshness_slo_minutes"`
+	MaxMonthlyCostUSD   float64           `json:"max_monthly_cost_usd"`
+	CreatedByUserID     int64             `json:"created_by_user_id"`
+	CreatedAt           time.Time         `json:"created_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
 }
 
 type CreateDataPlatformConnectionRequest struct {
@@ -63,8 +63,8 @@ type CreateDataPlatformConnectionRequest struct {
 	Config              map[string]string `json:"config,omitempty"`
 	SecretRef           string            `json:"secret_ref,omitempty"`
 	Masking             DataMaskingPolicy `json:"masking"`
-	FreshnessSLOMinutes int                `json:"freshness_slo_minutes"`
-	MaxMonthlyCostUSD   float64            `json:"max_monthly_cost_usd"`
+	FreshnessSLOMinutes int               `json:"freshness_slo_minutes"`
+	MaxMonthlyCostUSD   float64           `json:"max_monthly_cost_usd"`
 }
 
 type DatasetField struct {
@@ -103,24 +103,24 @@ type DataExportCheckpoint struct {
 }
 
 type DataExportJob struct {
-	ID                 int64      `json:"id"`
-	OrganizationID     int64      `json:"organization_id"`
-	ConnectionID       int64      `json:"connection_id"`
-	Mode               string     `json:"mode"`
-	Status             string     `json:"status"`
-	SchemaVersion      int        `json:"schema_version"`
-	RequestedByUserID  int64      `json:"requested_by_user_id"`
-	Rows               int        `json:"rows"`
-	Bytes              int64      `json:"bytes"`
-	EstimatedCostUSD   float64    `json:"estimated_cost_usd"`
-	DeliveryURI        string     `json:"delivery_uri,omitempty"`
-	PayloadHash        string     `json:"payload_hash,omitempty"`
-	CheckpointBefore   string     `json:"checkpoint_before,omitempty"`
-	CheckpointAfter    string     `json:"checkpoint_after,omitempty"`
-	Error              string     `json:"error,omitempty"`
-	StartedAt          time.Time  `json:"started_at"`
-	FinishedAt         *time.Time `json:"finished_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
+	ID                int64      `json:"id"`
+	OrganizationID    int64      `json:"organization_id"`
+	ConnectionID      int64      `json:"connection_id"`
+	Mode              string     `json:"mode"`
+	Status            string     `json:"status"`
+	SchemaVersion     int        `json:"schema_version"`
+	RequestedByUserID int64      `json:"requested_by_user_id"`
+	Rows              int        `json:"rows"`
+	Bytes             int64      `json:"bytes"`
+	EstimatedCostUSD  float64    `json:"estimated_cost_usd"`
+	DeliveryURI       string     `json:"delivery_uri,omitempty"`
+	PayloadHash       string     `json:"payload_hash,omitempty"`
+	CheckpointBefore  string     `json:"checkpoint_before,omitempty"`
+	CheckpointAfter   string     `json:"checkpoint_after,omitempty"`
+	Error             string     `json:"error,omitempty"`
+	StartedAt         time.Time  `json:"started_at"`
+	FinishedAt        *time.Time `json:"finished_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
 }
 
 type RunDataExportRequest struct {
@@ -204,15 +204,15 @@ type CreateReverseETLHookRequest struct {
 }
 
 type DataPlatformDashboard struct {
-	OrganizationID       int64                    `json:"organization_id"`
-	Connections          int                      `json:"connections"`
-	ActiveConnections    int                      `json:"active_connections"`
-	SucceededExports     int                      `json:"succeeded_exports"`
-	FailedExports        int                      `json:"failed_exports"`
-	RowsExported         int64                    `json:"rows_exported"`
-	EstimatedCostUSD     float64                  `json:"estimated_cost_usd"`
-	FreshnessBreaches    int                      `json:"freshness_breaches"`
-	LatestJobs           []DataExportJob          `json:"latest_jobs"`
-	ConnectionFreshness  map[int64]time.Time       `json:"connection_freshness"`
-	GeneratedAt          time.Time                `json:"generated_at"`
+	OrganizationID      int64               `json:"organization_id"`
+	Connections         int                 `json:"connections"`
+	ActiveConnections   int                 `json:"active_connections"`
+	SucceededExports    int                 `json:"succeeded_exports"`
+	FailedExports       int                 `json:"failed_exports"`
+	RowsExported        int64               `json:"rows_exported"`
+	EstimatedCostUSD    float64             `json:"estimated_cost_usd"`
+	FreshnessBreaches   int                 `json:"freshness_breaches"`
+	LatestJobs          []DataExportJob     `json:"latest_jobs"`
+	ConnectionFreshness map[int64]time.Time `json:"connection_freshness"`
+	GeneratedAt         time.Time           `json:"generated_at"`
 }
