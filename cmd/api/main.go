@@ -75,6 +75,7 @@ func main() {
 	var automationRepo repository.AutomationRepository
 	var workflowRepo repository.WorkflowRepository
 	var notificationRepo repository.NotificationRepository
+	var attachmentRepo repository.AttachmentRepository
 	var integrationRepo repository.IntegrationRepository
 	var mfaRepo repository.MFARepository
 	var webAuthnRepo repository.WebAuthnRepository
@@ -108,6 +109,7 @@ func main() {
 		automationRepo = repository.NewPostgresAutomationRepository(db)
 		workflowRepo = repository.NewPostgresWorkflowRepository(db)
 		notificationRepo = repository.NewPostgresNotificationRepository(db)
+		attachmentRepo = repository.NewPostgresAttachmentRepository(db)
 		integrationRepo = repository.NewPostgresIntegrationRepository(db)
 		mfaRepo = repository.NewPostgresMFARepository(db)
 		webAuthnRepo = repository.NewPostgresWebAuthnRepository(db)
@@ -134,6 +136,7 @@ func main() {
 		automationRepo = repository.NewInMemoryAutomationRepository()
 		workflowRepo = repository.NewInMemoryWorkflowRepository()
 		notificationRepo = repository.NewInMemoryNotificationRepository()
+		attachmentRepo = repository.NewInMemoryAttachmentRepository()
 		integrationRepo = repository.NewInMemoryIntegrationRepository()
 		mfaRepo = repository.NewInMemoryMFARepository()
 		webAuthnRepo = repository.NewInMemoryWebAuthnRepository()
@@ -209,6 +212,21 @@ func main() {
 		notificationRepo, userRepo, taskRepo, taskCollaborationRepo, workspaceRepo, organizationRepo,
 		service.NotificationConfig{AllowInsecure: cfg.WebhookAllowInsecure},
 	)
+	attachmentConfig := service.AttachmentConfig{
+		Provider: os.Getenv("ATTACHMENT_STORAGE_PROVIDER"), Bucket: os.Getenv("ATTACHMENT_STORAGE_BUCKET"),
+		BaseURL: os.Getenv("ATTACHMENT_STORAGE_BASE_URL"), SigningSecret: os.Getenv("ATTACHMENT_SIGNING_SECRET"),
+		Encryption: os.Getenv("ATTACHMENT_ENCRYPTION"), EncryptionKeyID: os.Getenv("ATTACHMENT_ENCRYPTION_KEY_ID"),
+		Deduplicate: os.Getenv("ATTACHMENT_DEDUPLICATE") == "true", AllowInsecure: cfg.WebhookAllowInsecure,
+	}
+	if attachmentConfig.SigningSecret == "" {
+		attachmentConfig.SigningSecret = cfg.JWTSecret
+	}
+	attachmentStore, err := service.NewSignedObjectStore(attachmentConfig)
+	if err != nil {
+		logger.Error("attachment_storage_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	attachmentService := service.NewAttachmentService(attachmentRepo, taskRepo, taskCollaborationRepo, workspaceRepo, attachmentStore, service.NoopAttachmentScanner{}, attachmentConfig)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {
 		logger.Error("integration_cipher_configuration_failed", "error", err)
@@ -231,6 +249,7 @@ func main() {
 	automationHandler := handler.NewAutomationHandler(automationService)
 	workflowHandler := handler.NewWorkflowHandler(workflowService)
 	notificationHandler := handler.NewNotificationHandler(notificationService)
+	attachmentHandler := handler.NewAttachmentHandler(attachmentService)
 	integrationHandler := handler.NewIntegrationHandler(integrationService)
 	mfaHandler := handler.NewMFAHandler(mfaService)
 	webAuthnHandler := handler.NewWebAuthnHandler(webAuthnService, authService)
@@ -436,6 +455,14 @@ func main() {
 	mux.Handle("/api/task-lists/{list_id}", protectedWorkspace(taskCollaborationHandler.ListByID))
 	mux.Handle("/api/task-labels", protectedWorkspaceIdempotent(taskCollaborationHandler.Labels))
 	mux.Handle("/api/task-custom-fields", protectedWorkspaceIdempotent(taskCollaborationHandler.CustomFields))
+
+	mux.Handle("/api/attachments/uploads", protectedWorkspaceIdempotent(attachmentHandler.Uploads))
+	mux.Handle("/api/attachments", protectedWorkspace(attachmentHandler.Attachments))
+	mux.Handle("/api/attachments/usage", protectedWorkspace(attachmentHandler.Usage))
+	mux.Handle("/api/attachments/{attachment_id}", protectedWorkspace(attachmentHandler.AttachmentByID))
+	mux.Handle("/api/attachments/{attachment_id}/complete", protectedWorkspaceIdempotent(attachmentHandler.Complete))
+	mux.Handle("/api/attachments/{attachment_id}/download", protectedWorkspace(attachmentHandler.Download))
+	mux.Handle("/api/attachments/{attachment_id}/governance", protectedWorkspace(attachmentHandler.Governance))
 
 	mux.Handle("/api/tasks", protectedWorkspaceIdempotent(taskHandler.Tasks))
 	mux.Handle("/api/tasks/{id}/labels", protectedWorkspaceIdempotent(taskCollaborationHandler.TaskLabels))
