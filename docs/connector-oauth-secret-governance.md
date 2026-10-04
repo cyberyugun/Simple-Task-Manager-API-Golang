@@ -85,7 +85,28 @@ CONNECTOR_AWS_RECOVERY_WINDOW_DAYS=7
 
 The AWS adapter stores an application-level credential version inside each Secrets Manager value, signs every Secrets Manager request with SigV4, and uses a recovery window rather than force deletion. When migrated from the database envelope backend, the database credential copy is scrubbed after the external write and metadata cutover. Existing legacy records that previously used AWS only as metadata can still fall back to the old database envelope until their next successful external write migrates them.
 
-Azure Key Vault and GCP Secret Manager remain post-roadmap hardening work and should implement the same store contract with workload identity rather than provider credentials embedded in connector configuration.
+Azure Key Vault is now also implemented as a native adapter. It supports three identity modes: AKS workload identity through `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_FEDERATED_TOKEN_FILE`; Azure Managed Identity through the IMDS endpoint; and an explicit access token for local/test environments.
+
+Optional customer-managed-key protection uses envelope encryption rather than attempting to encrypt the whole connector payload with RSA. A fresh AES-256-GCM data key encrypts each credential payload locally; Azure Key Vault wraps and unwraps that data key with the configured RSA CMK using RSA-OAEP-256. The stored Key Vault secret contains only ciphertext, nonce, wrapped data key, logical version and key id.
+
+### Azure Key Vault configuration
+
+```text
+CONNECTOR_AZURE_KEY_VAULT_ENABLED=true
+CONNECTOR_AZURE_KEY_VAULT_URL=https://<vault-name>.vault.azure.net
+CONNECTOR_AZURE_SECRET_PREFIX=stm-connectors
+AZURE_TENANT_ID=<tenant-id>
+AZURE_CLIENT_ID=<workload-identity-client-id>
+AZURE_FEDERATED_TOKEN_FILE=/var/run/secrets/azure/tokens/azure-identity-token
+CONNECTOR_AZURE_CMK_KEY_ID=https://<vault-name>.vault.azure.net/keys/<key>/<version>
+CONNECTOR_AZURE_TIMEOUT=10s
+```
+
+For VM/VMSS/App Service style managed identity deployments, set `CONNECTOR_AZURE_USE_MANAGED_IDENTITY=true`; the default IMDS endpoint is the Azure link-local metadata service and an optional `AZURE_CLIENT_ID` selects a user-assigned identity. Custom HTTP identity endpoints are allowed only under the existing explicit insecure-development flag.
+
+The adapter uses soft-delete semantics supplied by Key Vault, deterministic server-side secret names derived from the logical connector reference, bounded responses, redirect refusal, and same-vault validation for CMK identifiers. Database credential copies are scrubbed after successful external cutover.
+
+GCP Secret Manager remains the last native cloud secret backend in this hardening sequence and should use workload identity/CMEK behind the same store contract.
 
 ## Worker
 
