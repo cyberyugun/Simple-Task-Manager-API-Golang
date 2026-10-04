@@ -46,7 +46,7 @@ func testBigQueryConnection(t *testing.T, svc *DataPlatformService, orgID int64,
 	item, err := svc.CreateConnection(1, orgID, model.CreateDataPlatformConnectionRequest{
 		Name: "Analytics Warehouse", Provider: model.DataWarehouseBigQuery,
 		Target: "analytics.task_analytics", BIContracts: []string{model.BIContractPowerBI, model.BIContractLooker},
-		Config: map[string]string{"project_id": "test-project", "dataset": "analytics"},
+		Config:    map[string]string{"project_id": "test-project", "dataset": "analytics"},
 		SecretRef: "secret://warehouse/bigquery", Masking: masking,
 		FreshnessSLOMinutes: 60, MaxMonthlyCostUSD: 10,
 	})
@@ -166,7 +166,7 @@ func TestWarehouseAdapterRecoveryDoesNotAdvanceCheckpoint(t *testing.T) {
 	connection, err := svc.CreateConnection(1, orgID, model.CreateDataPlatformConnectionRequest{
 		Name: "Failing Warehouse", Provider: model.DataWarehouseBigQuery,
 		Target: "analytics.task_analytics", BIContracts: []string{model.BIContractTableau},
-		Config: map[string]string{"project_id": "test-project", "dataset": "analytics", "fail_delivery": "true"},
+		Config:  map[string]string{"project_id": "test-project", "dataset": "analytics", "fail_delivery": "true"},
 		Masking: model.DataMaskingPolicy{Mode: model.MaskingNone}, FreshnessSLOMinutes: 60,
 	})
 	if err != nil {
