@@ -600,7 +600,7 @@ func normalizeDatasetFields(fields []model.DatasetField) ([]model.DatasetField, 
 			return nil, false
 		}
 		seen[field.Name] = true
-		field.Tags = normalizeStrings(field.Tags)
+		field.Tags = normalizeDataPlatformStrings(field.Tags)
 		out = append(out, field)
 	}
 	return out, true
@@ -638,7 +638,7 @@ func validDatasetType(value string) bool {
 
 func normalizeBIContracts(values []string) ([]string, bool) {
 	allowed := map[string]bool{model.BIContractPowerBI: true, model.BIContractTableau: true, model.BIContractLooker: true}
-	out := normalizeStrings(values)
+	out := normalizeDataPlatformStrings(values)
 	for _, value := range out {
 		if !allowed[value] {
 			return nil, false
@@ -655,7 +655,7 @@ func normalizeMasking(masking model.DataMaskingPolicy) (model.DataMaskingPolicy,
 	if masking.Mode != model.MaskingNone && masking.Mode != model.MaskingRedact && masking.Mode != model.MaskingHash {
 		return model.DataMaskingPolicy{}, false
 	}
-	masking.Fields = normalizeStrings(masking.Fields)
+	masking.Fields = normalizeDataPlatformStrings(masking.Fields)
 	for _, field := range masking.Fields {
 		if field != "title" {
 			return model.DataMaskingPolicy{}, false
@@ -709,7 +709,7 @@ func validWarehouseConfig(provider string, config map[string]string) bool {
 	return true
 }
 
-func normalizeStrings(values []string) []string {
+func normalizeDataPlatformStrings(values []string) []string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(values))
 	for _, value := range values {
