@@ -561,6 +561,57 @@ func (s *ConnectorSecurityService) persistCredential(connection model.Integratio
 	return meta, err
 }
 
+func (s *ConnectorSecurityService) StoreCredentialsForConnection(ctx context.Context, connection model.IntegrationConnection, actorUserID int64, credentials map[string]any) error {
+	raw, err := json.Marshal(credentials)
+	if err != nil {
+		return err
+	}
+	meta, err := s.repo.GetCredentialMetadata(connection.OrganizationID, connection.ID)
+	if errors.Is(err, repository.ErrConnectorCredentialNotFound) {
+		meta = defaultCredentialMetadata(connection)
+	} else if err != nil {
+		return err
+	}
+	if !s.backendConfigured(meta.SecretBackend) {
+		return ErrConnectorSecretBackendUnavailable
+	}
+	ref := strings.TrimSpace(meta.SecretRef)
+	if ref == "" {
+		ref = connectorSecretRef(connection.OrganizationID, connection.ID)
+	}
+	version, err := s.writeCredentialPayload(ctx, connection, meta.SecretBackend, ref, raw)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	meta.SecretRef = ref
+	if version > 0 {
+		meta.KeyVersion = version
+	}
+	meta.CredentialVersion++
+	meta.Status = model.ConnectorCredentialActive
+	meta.UpdatedAt = now
+	meta, err = s.repo.UpsertCredentialMetadata(meta)
+	if err != nil {
+		return err
+	}
+	if meta.SecretBackend != model.ConnectorSecretBackendDatabase {
+		empty := ""
+		if _, err := s.integrations.UpdateIntegrationConnection(connection, &empty); err != nil {
+			return err
+		}
+	}
+	var actor *int64
+	if actorUserID > 0 {
+		actor = &actorUserID
+	}
+	s.recordAccess(meta, actor, "write")
+	s.audit(connection.OrganizationID, actorUserID, "integration.credential.updated", "integration_connection", fmt.Sprint(connection.ID), map[string]any{
+		"backend": meta.SecretBackend,
+	})
+	return nil
+}
+
 func (s *ConnectorSecurityService) CredentialsForConnection(ctx context.Context, connectionID int64) (map[string]any, error) {
 	secretRow, err := s.integrations.GetIntegrationConnectionSecret(connectionID)
 	if err != nil {
