@@ -53,7 +53,8 @@ func (r *PostgresEventRepository) ClaimReady(workerID string, limit int, now tim
 
 	rows, err := tx.Query(`
 		SELECT id, event_key, workspace_id, event_type, aggregate_type, aggregate_id,
-		       schema_version, payload, occurred_at, attempts, max_attempts
+		       schema_version, COALESCE(NULLIF(correlation_id,''),event_key), COALESCE(causation_id,''), payload,
+		       occurred_at, attempts, max_attempts
 		FROM outbox_events
 		WHERE processed_at IS NULL
 		  AND dead_lettered_at IS NULL
@@ -76,7 +77,7 @@ func (r *PostgresEventRepository) ClaimReady(workerID string, limit int, now tim
 		if err := rows.Scan(
 			&event.ID, &event.EventKey, &event.WorkspaceID, &event.EventType,
 			&event.AggregateType, &event.AggregateID, &event.SchemaVersion,
-			&raw, &event.OccurredAt, &event.Attempts, &event.MaxAttempts,
+			&event.CorrelationID, &event.CausationID, &raw, &event.OccurredAt, &event.Attempts, &event.MaxAttempts,
 		); err != nil {
 			return nil, err
 		}
@@ -453,9 +454,9 @@ func insertOutbox(tx *sql.Tx, workspaceID int64, eventType, aggregateType, aggre
 	_, err = tx.Exec(`
 		INSERT INTO outbox_events (
 			event_key, workspace_id, event_type, aggregate_type, aggregate_id,
-			schema_version, payload, occurred_at, available_at, created_at
+			schema_version, correlation_id, causation_id, payload, occurred_at, available_at, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, 1, $6::jsonb, $7, $7, $7)
+		VALUES ($1, $2, $3, $4, $5, 1, $1, '', $6::jsonb, $7, $7, $7)
 	`, eventKey, workspaceID, eventType, aggregateType, aggregateID, string(raw), occurredAt)
 	return err
 }
