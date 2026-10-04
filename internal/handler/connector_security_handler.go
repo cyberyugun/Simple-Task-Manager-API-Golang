@@ -181,7 +181,8 @@ func (h *ConnectorSecurityHandler) handleError(w http.ResponseWriter, err error)
 		errors.Is(err, service.ErrConnectorOAuthState),
 		errors.Is(err, service.ErrConnectorOAuthExchange),
 		errors.Is(err, service.ErrConnectorScopeMismatch),
-		errors.Is(err, service.ErrConnectorCredentialRotation):
+		errors.Is(err, service.ErrConnectorCredentialRotation),
+		errors.Is(err, service.ErrConnectorSecretBackendUnavailable):
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrConnectorCredentialRevoked),
 		errors.Is(err, service.ErrConnectorCredentialExpired):
