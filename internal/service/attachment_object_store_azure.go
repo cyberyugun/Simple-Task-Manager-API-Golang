@@ -516,7 +516,7 @@ func (s *AzureBlobObjectStore) userDelegationKey(ctx context.Context, neededExpi
 		return azureUserDelegationKey{}, err
 	}
 	u := *s.endpoint
-	u.Path = "/"
+	u.Path = strings.TrimRight(u.Path, "/") + "/"
 	q := u.Query()
 	q.Set("restype", "service")
 	q.Set("comp", "userdelegationkey")
@@ -569,19 +569,11 @@ func (s *AzureBlobObjectStore) objectURL(objectKey string) (*url.URL, error) {
 		return nil, ErrInvalidAttachment
 	}
 	u := *s.endpoint
-	u.Path = "/" + url.PathEscape(s.container) + "/" + azureBlobEscapePath(objectKey)
+	u.Path = strings.TrimRight(u.Path, "/") + "/" + s.container + "/" + objectKey
 	u.RawPath = ""
 	u.RawQuery = ""
 	u.Fragment = ""
 	return &u, nil
-}
-
-func azureBlobEscapePath(value string) string {
-	parts := strings.Split(value, "/")
-	for i := range parts {
-		parts[i] = url.PathEscape(parts[i])
-	}
-	return strings.Join(parts, "/")
 }
 
 func azureSASTime(value time.Time) string {
