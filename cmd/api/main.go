@@ -305,6 +305,14 @@ func main() {
 	if azureSecretStore != nil {
 		connectorSecurityService.RegisterSecretStore(azureSecretStore)
 	}
+	gcpSecretStore, err := service.NewGCPSecretManagerSecretStoreFromEnv(cfg.WebhookAllowInsecure)
+	if err != nil {
+		logger.Error("connector_gcp_secret_manager_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if gcpSecretStore != nil {
+		connectorSecurityService.RegisterSecretStore(gcpSecretStore)
+	}
 	integrationService.SetCredentialProvider(connectorSecurityService)
 	organizationService.SetEntitlementProvider(billingService)
 	workspaceService.SetDeletionGuard(governanceService)
