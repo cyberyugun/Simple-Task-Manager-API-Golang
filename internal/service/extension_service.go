@@ -3,7 +3,6 @@ package service
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -924,6 +923,3 @@ func extensionContains(values []string, target string) bool {
 	return false
 }
 
-func (r model.ExtensionTokenResult) String() string {
-	return fmt.Sprintf("extension installation %d (%d scopes)", r.InstallationID, len(r.Scopes))
-}
