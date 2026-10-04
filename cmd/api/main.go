@@ -71,6 +71,7 @@ func main() {
 	var developerPlatformRepo repository.DeveloperPlatformRepository
 	var aiAssistanceRepo repository.AIAssistanceRepository
 	var globalRegionRepo repository.GlobalRegionRepository
+	var zeroTrustRepo repository.ZeroTrustRepository
 	var governanceRepo repository.GovernanceRepository
 	var lifecycleRepo repository.LifecycleRepository
 	var organizationRepo repository.OrganizationRepository
@@ -111,6 +112,7 @@ func main() {
 		developerPlatformRepo = repository.NewPostgresDeveloperPlatformRepository(db)
 		aiAssistanceRepo = repository.NewPostgresAIAssistanceRepository(db)
 		globalRegionRepo = repository.NewPostgresGlobalRegionRepository(db)
+		zeroTrustRepo = repository.NewPostgresZeroTrustRepository(db)
 		governanceRepo = repository.NewPostgresGovernanceRepository(db)
 		lifecycleRepo = repository.NewPostgresLifecycleRepository(db)
 		organizationRepo = repository.NewPostgresOrganizationRepository(db)
@@ -144,6 +146,7 @@ func main() {
 		developerPlatformRepo = repository.NewInMemoryDeveloperPlatformRepository()
 		aiAssistanceRepo = repository.NewInMemoryAIAssistanceRepository()
 		globalRegionRepo = repository.NewInMemoryGlobalRegionRepository()
+		zeroTrustRepo = repository.NewInMemoryZeroTrustRepository()
 		governanceRepo = repository.NewInMemoryGovernanceRepository()
 		lifecycleRepo = repository.NewInMemoryLifecycleRepository()
 		organizationRepo = repository.NewInMemoryOrganizationRepository()
@@ -226,6 +229,7 @@ func main() {
 		aiAssistanceRepo, organizationRepo, operationsRepo, taskRepo, taskService, service.NewAIProviderRegistry(),
 	)
 	globalRegionService := service.NewGlobalRegionService(globalRegionRepo, organizationRepo, governanceRepo)
+	zeroTrustService := service.NewZeroTrustService(zeroTrustRepo, organizationRepo, refreshRepo, tokenManager, cfg.JWTSecret)
 	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
 	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)
 	organizationService := service.NewOrganizationService(organizationRepo, userRepo, workspaceRepo)
@@ -273,6 +277,7 @@ func main() {
 	developerPlatformHandler := handler.NewDeveloperPlatformHandler(developerPlatformService)
 	aiAssistanceHandler := handler.NewAIAssistanceHandler(aiAssistanceService)
 	globalRegionHandler := handler.NewGlobalRegionHandler(globalRegionService)
+	zeroTrustHandler := handler.NewZeroTrustHandler(zeroTrustService)
 	governanceHandler := handler.NewGovernanceHandler(governanceService)
 	lifecycleHandler := handler.NewLifecycleHandler(lifecycleService)
 	organizationHandler := handler.NewOrganizationHandler(organizationService)
@@ -369,6 +374,7 @@ func main() {
 	mux.Handle("/api/auth/email-verification/confirm", rateLimited(authHandler.VerifyEmail))
 	mux.Handle("/api/oauth/token", rateLimited(enterpriseHandler.OAuthToken))
 	mux.Handle("/api/oauth/api-key", rateLimited(enterpriseHandler.APIKeyExchange))
+	mux.Handle("/api/security/workload/token", rateLimited(zeroTrustHandler.WorkloadToken))
 	mux.Handle("/api/auth/mfa/webauthn/login/begin", rateLimited(webAuthnHandler.LoginBegin))
 	mux.Handle("/api/auth/mfa/webauthn/login/finish", rateLimited(webAuthnHandler.LoginFinish))
 	mux.Handle("/api/developer/docs/search", protectedFirstParty(developerPlatformHandler.DocsSearch))
@@ -439,6 +445,19 @@ func main() {
 	mux.Handle("/api/organizations/{id}/regions/failover-exercises/{exercise_id}/complete", protectedFirstParty(globalRegionHandler.FailoverComplete))
 	mux.Handle("/api/organizations/{id}/regions/route", protectedFirstParty(globalRegionHandler.Route))
 	mux.Handle("/api/organizations/{id}/regions/report", protectedFirstParty(globalRegionHandler.Report))
+	mux.Handle("/api/organizations/{id}/security/policy", protectedFirstParty(zeroTrustHandler.Policy))
+	mux.Handle("/api/organizations/{id}/security/workloads", protectedFirstParty(zeroTrustHandler.Workloads))
+	mux.Handle("/api/organizations/{id}/security/workloads/{workload_id}", protectedFirstParty(zeroTrustHandler.WorkloadByID))
+	mux.Handle("/api/organizations/{id}/security/workloads/{workload_id}/certificates", protectedFirstParty(zeroTrustHandler.WorkloadCertificates))
+	mux.Handle("/api/organizations/{id}/security/devices", protectedFirstParty(zeroTrustHandler.Devices))
+	mux.Handle("/api/organizations/{id}/security/devices/{device_id}", protectedFirstParty(zeroTrustHandler.DeviceByID))
+	mux.Handle("/api/organizations/{id}/security/risk/evaluate", protectedFirstParty(zeroTrustHandler.EvaluateRisk))
+	mux.Handle("/api/organizations/{id}/security/events", protectedFirstParty(zeroTrustHandler.Events))
+	mux.Handle("/api/organizations/{id}/security/dashboard", protectedFirstParty(zeroTrustHandler.Dashboard))
+	mux.Handle("/api/organizations/{id}/security/checkpoints", protectedFirstParty(zeroTrustHandler.Checkpoints))
+	mux.Handle("/api/organizations/{id}/security/worm-exports", protectedFirstParty(zeroTrustHandler.WORMExports))
+	mux.Handle("/api/organizations/{id}/security/siem", protectedFirstParty(zeroTrustHandler.SIEM))
+	mux.Handle("/api/organizations/{id}/security/siem/feed", protectedFirstParty(zeroTrustHandler.SIEMFeed))
 	mux.Handle("/api/organizations/{id}/billing/subscription", protectedFirstParty(billingHandler.Subscription))
 	mux.Handle("/api/organizations/{id}/billing/subscription/cancel", protectedFirstParty(billingHandler.CancelSubscription))
 	mux.Handle("/api/organizations/{id}/billing/entitlements", protectedFirstParty(billingHandler.Entitlements))
