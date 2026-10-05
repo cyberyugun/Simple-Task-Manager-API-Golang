@@ -21,7 +21,7 @@ The remaining work is not a missing Phase 45 feature. The material gaps are prod
 | Phase 38 Connector OAuth & Secret Governance | OAuth PKCE, refresh, rotation, envelope encryption, health and audit exist | **Native vault adapters not implemented** |
 | Phase 39 Event Fabric | Schema registry, compatibility, routing, durable subscriptions, replay/DLQ and outbox adapter | Complete at repository level; external buses are optional |
 | Phase 40 Developer Platform | Apps, credentials, scopes/quotas, sandbox, webhook console, analytics and generated SDKs | Complete at repository level |
-| Phase 41 AI Assistance | Governance, redaction, structured provider boundary, approvals, budgets, evaluations and local provider | Complete definition-of-done; external provider remains deployment extension |
+| Phase 41 AI Assistance | Governance, redaction, structured provider boundary, approvals, budgets, evaluations, local provider and opt-in remote structured provider | Complete at repository level; live gateway/provider validation remains environment-level |
 | Phase 42 Multi-Region & Residency | Region policy, placement, migration/transfer approval, route decision, failover evidence and compliance report | Complete control-plane foundation; cloud failover execution remains external |
 | Phase 43 Zero Trust | Workload mTLS, certificate rotation, adaptive risk, revocation, audit checkpoints, WORM/SIEM | Complete at repository level |
 | Phase 44 Data Platform | Incremental checkpoints, masking, lineage, schemas, export jobs, BI contracts and dashboard | **Live warehouse delivery still abstracted** |
@@ -86,9 +86,11 @@ All four Phase 44 warehouse providers now have native repository adapters. Addit
 
 ### P2 — Phase 41 external AI provider
 
-Phase 41 deliberately ships only `local_rules`. This is not a roadmap definition-of-done blocker because the provider abstraction, privacy controls, budgets, approval gate and evaluations are implemented.
+Post-roadmap hardening now adds an opt-in `remote_structured` external provider. It uses an operator-configured HTTPS gateway, deterministic idempotency keys, bounded retries and response sizes, feature-specific structured-output validation, configurable supported classifications, recursive redaction of external context, and locally calculated estimate/actual costs from configured usage rates.
 
-A future production AI adapter should preserve the same classification-aware routing and structured-output contract.
+The existing organization policy still controls whether AI is enabled, which classifications may be processed, and the maximum classification that may leave the platform. AI-originated mutations remain human-gated.
+
+Repository-level provider work is complete. Remaining production work is live gateway/model contract validation, credential/IAM deployment policy, outage exercises and pricing calibration for the selected external provider.
 
 ### P2 — Phase 42 cloud multi-region execution
 
@@ -101,7 +103,7 @@ Production readiness therefore still requires real cloud-region game days and me
 1. **Production Storage & Content Security Hardening** — scanner gateway plus native S3/S3-compatible, Azure Blob, and GCS storage are implemented; remaining work is live-provider contract validation and deployment-specific IAM/policy testing.
 2. **Native Secret Vault & KMS Adapters** — complete at repository level: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager now share the same authoritative runtime credential contract.
 3. **Live Warehouse Delivery** — native BigQuery, Snowflake, Redshift and Databricks delivery are implemented; remaining work is live-provider IAM/outage and deployment-specific contract validation.
-4. **External AI Provider Pack** — add one structured-output provider with classification and cost regression tests.
+4. **External AI Provider Pack** — complete at repository level with the opt-in remote structured provider; remaining work is live gateway/provider validation and pricing calibration.
 5. **Multi-Region Automation Integration** — connect approved control-plane actions to cloud deployment automation and record real failover evidence.
 
 ## Merge rule
