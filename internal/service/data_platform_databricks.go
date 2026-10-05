@@ -95,7 +95,7 @@ func NewDatabricksWarehouseAdapter(cfg DatabricksWarehouseConfig) (*DatabricksWa
 	}
 	return &DatabricksWarehouseAdapter{
 		endpoint: endpoint,
-		token: strings.TrimSpace(cfg.Token),
+		token:    strings.TrimSpace(cfg.Token),
 		client: &http.Client{
 			Timeout: timeout,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -105,7 +105,7 @@ func NewDatabricksWarehouseAdapter(cfg DatabricksWarehouseConfig) (*DatabricksWa
 		retryAttempts: attempts,
 		retryBackoff:  backoff,
 		pollInterval:  poll,
-		allowInsecure:  cfg.AllowInsecure,
+		allowInsecure: cfg.AllowInsecure,
 	}, nil
 }
 
