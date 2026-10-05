@@ -297,6 +297,14 @@ func main() {
 	if redshiftWarehouse != nil {
 		dataPlatformService.RegisterWarehouseAdapter(redshiftWarehouse)
 	}
+	databricksWarehouse, err := service.NewDatabricksWarehouseAdapterFromEnv(cfg.WebhookAllowInsecure)
+	if err != nil {
+		logger.Error("databricks_warehouse_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if databricksWarehouse != nil {
+		dataPlatformService.RegisterWarehouseAdapter(databricksWarehouse)
+	}
 	extensionService := service.NewExtensionService(extensionRepo, workspaceRepo, organizationRepo, eventRepo, tokenManager, cfg.WebhookAllowInsecure)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {
