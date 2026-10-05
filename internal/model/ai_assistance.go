@@ -21,7 +21,7 @@ const (
 	AIRequestBlocked         = "blocked"
 	AIRequestFailed          = "failed"
 
-	AIProviderLocalRules = "local_rules"
+	AIProviderLocalRules       = "local_rules"
 	AIProviderRemoteStructured = "remote_structured"
 
 	AIApprovalApprove = "approve"
