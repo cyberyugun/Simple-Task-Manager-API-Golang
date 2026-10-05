@@ -196,11 +196,15 @@ func (a *SnowflakeWarehouseAdapter) run(ctx context.Context, endpoint *url.URL, 
 	}
 	u := *endpoint
 	u.Path = strings.TrimRight(u.Path, "/") + "/api/v2/statements"
-	q := u.Query()
-	q.Set("requestId", requestID)
-	u.RawQuery = q.Encode()
+	baseQuery := u.Query()
+	baseQuery.Set("requestId", requestID)
 	var lastErr error
 	for attempt := 0; attempt < a.retryAttempts; attempt++ {
+		q := baseQuery
+		if attempt > 0 {
+			q.Set("retry", "true")
+		}
+		u.RawQuery = q.Encode()
 		status, raw, err := a.request(ctx, http.MethodPost, u.String(), body)
 		if err != nil {
 			lastErr = err
