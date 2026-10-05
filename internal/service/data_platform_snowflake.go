@@ -84,7 +84,7 @@ func NewSnowflakeWarehouseAdapter(cfg SnowflakeWarehouseConfig) (*SnowflakeWareh
 	}
 	return &SnowflakeWarehouseAdapter{
 		endpoint: endpoint, token: strings.TrimSpace(cfg.Token), tokenType: tokenType,
-		client: &http.Client{Timeout: cfg.Timeout, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }},
+		client:        &http.Client{Timeout: cfg.Timeout, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }},
 		retryAttempts: cfg.RetryAttempts, retryBackoff: cfg.RetryBackoff, pollInterval: cfg.PollInterval,
 		allowInsecure: cfg.AllowInsecure,
 	}, nil
@@ -160,7 +160,7 @@ func (a *SnowflakeWarehouseAdapter) Deliver(connection model.DataPlatformConnect
 	receipt := model.WarehouseDeliveryReceipt{
 		Provider: model.DataWarehouseSnowflake, Target: connection.Target,
 		DeliveryURI: fmt.Sprintf("snowflake://%s/%s/%s/batches/%s", database, schema, table, hash[:16]),
-		BatchID: hash[:16], RowCount: len(rows), Bytes: int64(len(payload)), PayloadHash: hash,
+		BatchID:     hash[:16], RowCount: len(rows), Bytes: int64(len(payload)), PayloadHash: hash,
 	}
 	if len(rows) == 0 {
 		return receipt, nil
