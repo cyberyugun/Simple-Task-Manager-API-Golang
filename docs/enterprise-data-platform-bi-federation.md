@@ -135,7 +135,38 @@ DATA_PLATFORM_REDSHIFT_POLL_INTERVAL=300ms
 # DATA_PLATFORM_REDSHIFT_STS_ENDPOINT=https://sts.us-east-1.amazonaws.com
 ```
 
-BigQuery, Snowflake and Redshift now have opt-in native delivery. Databricks retains the deterministic contract adapter until its native provider is added.
+BigQuery, Snowflake and Redshift now have opt-in native delivery.
+
+### Native Databricks delivery
+
+A production Databricks adapter is available when `DATA_PLATFORM_DATABRICKS_NATIVE=true`. It uses the Databricks SQL Statement Execution API and remains opt-in so deployments can retain the deterministic contract adapter by default. The adapter:
+
+- resolves the workspace endpoint from connection `workspace_url` unless an operator endpoint override is configured;
+- authenticates with an operator-injected Databricks bearer token;
+- executes statements against the configured SQL `warehouse_id`, catalog and schema;
+- creates the canonical analytics table as a Delta table when it does not exist;
+- performs batched `MERGE` upserts keyed by organization, workspace and task;
+- submits statements asynchronously with `wait_timeout=0s` and polls statement state until `SUCCEEDED`;
+- surfaces `FAILED`, `CANCELED`, and `CLOSED` terminal states as export failures;
+- retries 408/429/5xx HTTP failures with bounded backoff;
+- advances the export checkpoint only after every Databricks statement succeeds.
+
+Connection configuration requires `workspace_url`, `warehouse_id`, `catalog`, and `schema`; `table` is optional.
+
+Configuration:
+
+```text
+DATA_PLATFORM_DATABRICKS_NATIVE=true
+DATA_PLATFORM_DATABRICKS_TOKEN=<secret-injected-token>
+DATA_PLATFORM_DATABRICKS_TIMEOUT=30s
+DATA_PLATFORM_DATABRICKS_RETRY_ATTEMPTS=3
+DATA_PLATFORM_DATABRICKS_RETRY_BACKOFF=300ms
+DATA_PLATFORM_DATABRICKS_POLL_INTERVAL=300ms
+# Optional test/nonstandard endpoint:
+# DATA_PLATFORM_DATABRICKS_ENDPOINT=https://<workspace-host>
+```
+
+BigQuery, Snowflake, Redshift and Databricks now all have opt-in native delivery implementations. Remaining work is live-provider IAM, outage and deployment-specific contract validation.
 
 ## BI contracts
 
