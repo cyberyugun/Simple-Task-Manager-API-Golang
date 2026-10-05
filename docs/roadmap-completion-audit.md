@@ -80,9 +80,9 @@ Unconfigured external backends are reported as unavailable and new metadata-only
 
 Phase 44 has provider-specific configuration validation, incremental checkpoints, masking, lineage, recovery semantics and BI contracts.
 
-Post-roadmap hardening now adds the first live warehouse adapter for Google BigQuery. When enabled, it uses workload-identity metadata tokens, reconciles/creates the canonical table schema, writes row batches with deterministic BigQuery insert IDs, retries transient provider failures, surfaces row-level insert failures, and advances the export checkpoint only after all remote batches succeed.
+Post-roadmap hardening now includes native BigQuery and Snowflake delivery. BigQuery uses workload-identity metadata tokens, reconciles/creates the canonical table schema, writes row batches with deterministic insert IDs, retries transient provider failures, surfaces row-level insert failures, and advances the export checkpoint only after all remote batches succeed. Snowflake uses the SQL API with canonical table creation, deterministic request IDs, batched MERGE upserts, async statement polling, bounded transient retries, and the same checkpoint-after-confirmed-success rule.
 
-Snowflake, Redshift and Databricks remain deterministic contract adapters. Additional hardening still includes live-provider IAM/outage contract tests and native delivery implementations for those three providers.
+Redshift and Databricks remain deterministic contract adapters. Additional hardening still includes live-provider IAM/outage contract tests and native delivery implementations for those two providers.
 
 ### P2 — Phase 41 external AI provider
 
@@ -100,7 +100,7 @@ Production readiness therefore still requires real cloud-region game days and me
 
 1. **Production Storage & Content Security Hardening** — scanner gateway plus native S3/S3-compatible, Azure Blob, and GCS storage are implemented; remaining work is live-provider contract validation and deployment-specific IAM/policy testing.
 2. **Native Secret Vault & KMS Adapters** — complete at repository level: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager now share the same authoritative runtime credential contract.
-3. **Live Warehouse Delivery** — native BigQuery delivery is implemented; continue with Snowflake, Redshift and Databricks plus live-provider contract validation.
+3. **Live Warehouse Delivery** — native BigQuery and Snowflake delivery are implemented; continue with Redshift and Databricks plus live-provider contract validation.
 4. **External AI Provider Pack** — add one structured-output provider with classification and cost regression tests.
 5. **Multi-Region Automation Integration** — connect approved control-plane actions to cloud deployment automation and record real failover evidence.
 
