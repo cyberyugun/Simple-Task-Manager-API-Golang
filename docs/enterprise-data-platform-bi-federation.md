@@ -47,6 +47,33 @@ The runtime exposes provider adapters for:
 
 Adapters validate provider-specific connection metadata and produce a deterministic delivery receipt. Secrets are referenced by `secret_ref`; credentials are never stored in export payloads.
 
+### Native BigQuery delivery
+
+A production BigQuery adapter is available when `DATA_PLATFORM_BIGQUERY_NATIVE=true`. It uses short-lived Google access tokens from the metadata server by default (GKE Workload Identity / Compute identity) or an explicit access token for controlled local tests. The adapter:
+
+- resolves project and dataset from the connection configuration and table from `config.table` or the connection target;
+- checks the target table schema before delivery and creates the canonical table when it is absent;
+- uses BigQuery `tabledata.insertAll` with deterministic `insertId` values derived from tenant/task/update identity;
+- batches rows, retries 429/408/5xx provider failures with bounded backoff, and treats row-level insert errors as export failures;
+- advances the repository checkpoint only after every provider batch is confirmed successful;
+- returns a provider delivery URI and payload hash for lineage/audit evidence.
+
+Configuration:
+
+```text
+DATA_PLATFORM_BIGQUERY_NATIVE=true
+DATA_PLATFORM_BIGQUERY_USE_METADATA=true
+DATA_PLATFORM_BIGQUERY_TIMEOUT=20s
+DATA_PLATFORM_BIGQUERY_RETRY_ATTEMPTS=3
+DATA_PLATFORM_BIGQUERY_RETRY_BACKOFF=250ms
+# Optional test/nonstandard endpoints:
+# DATA_PLATFORM_BIGQUERY_ACCESS_TOKEN=<short-lived-token>
+# DATA_PLATFORM_BIGQUERY_ENDPOINT=https://bigquery.googleapis.com/bigquery/v2
+# DATA_PLATFORM_BIGQUERY_METADATA_ENDPOINT=http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+```
+
+The existing deterministic contract adapters remain the default so local development and existing deployments are unchanged unless native BigQuery delivery is explicitly enabled.
+
 ## BI contracts
 
 `GET /api/data-platform/bi-contracts` returns Power BI, Tableau and Looker mappings for the canonical dataset.
