@@ -281,6 +281,14 @@ func main() {
 	if bigQueryWarehouse != nil {
 		dataPlatformService.RegisterWarehouseAdapter(bigQueryWarehouse)
 	}
+	snowflakeWarehouse, err := service.NewSnowflakeWarehouseAdapterFromEnv(cfg.WebhookAllowInsecure)
+	if err != nil {
+		logger.Error("snowflake_warehouse_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if snowflakeWarehouse != nil {
+		dataPlatformService.RegisterWarehouseAdapter(snowflakeWarehouse)
+	}
 	extensionService := service.NewExtensionService(extensionRepo, workspaceRepo, organizationRepo, eventRepo, tokenManager, cfg.WebhookAllowInsecure)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {
