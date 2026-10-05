@@ -121,7 +121,7 @@ func TestSnowflakeWarehouseAdapterRetriesTransientMerge(t *testing.T) {
 	now := time.Now().UTC()
 	_, err = adapter.Deliver(model.DataPlatformConnection{
 		Provider: model.DataWarehouseSnowflake, Target: "analytics.task_analytics",
-		Config:      map[string]string{"account": "org-account", "database": "analytics_db", "schema": "analytics"},
+		Config: map[string]string{"account": "org-account", "database": "analytics_db", "schema": "analytics"},
 	}, []model.AnalyticsTaskRecord{{
 		OrganizationID: 1, WorkspaceID: 2, TaskID: 3, Title: "retry",
 		Status: model.TaskStatusTodo, Priority: model.TaskPriorityMedium, CreatedAt: now, UpdatedAt: now,
@@ -157,7 +157,7 @@ func TestNativeSnowflakeFailureDoesNotAdvanceCheckpoint(t *testing.T) {
 	connection, err := svc.CreateConnection(1, orgID, model.CreateDataPlatformConnectionRequest{
 		Name: "Snowflake Warehouse", Provider: model.DataWarehouseSnowflake, Target: "analytics.task_analytics",
 		BIContracts: []string{model.BIContractPowerBI},
-		Config: map[string]string{"account": "org-account", "database": "analytics_db", "schema": "analytics"},
+		Config:      map[string]string{"account": "org-account", "database": "analytics_db", "schema": "analytics"},
 		SecretRef:   "secret://warehouse/snowflake", Masking: model.DataMaskingPolicy{Mode: model.MaskingNone},
 		FreshnessSLOMinutes: 60, MaxMonthlyCostUSD: 10,
 	})
