@@ -19,6 +19,7 @@ type snowflakeTestState struct {
 	failMerge  int
 	statements []string
 	requestIDs []string
+	retryFlags []string
 }
 
 func newSnowflakeTestServer(t *testing.T, token string, failMerge int) (*httptest.Server, *snowflakeTestState) {
@@ -43,6 +44,7 @@ func newSnowflakeTestServer(t *testing.T, token string, failMerge int) (*httptes
 		defer state.mu.Unlock()
 		state.statements = append(state.statements, body.Statement)
 		state.requestIDs = append(state.requestIDs, r.URL.Query().Get("requestId"))
+		state.retryFlags = append(state.retryFlags, r.URL.Query().Get("retry"))
 		w.Header().Set("Content-Type", "application/json")
 		upper := strings.ToUpper(strings.TrimSpace(body.Statement))
 		switch {
@@ -134,6 +136,9 @@ func TestSnowflakeWarehouseAdapterRetriesTransientMerge(t *testing.T) {
 	}
 	if len(state.requestIDs) != 3 || state.requestIDs[1] != state.requestIDs[2] {
 		t.Fatalf("retry request id changed: %v", state.requestIDs)
+	}
+	if len(state.retryFlags) != 3 || state.retryFlags[1] != "" || state.retryFlags[2] != "true" {
+		t.Fatalf("retry flags=%v", state.retryFlags)
 	}
 }
 
