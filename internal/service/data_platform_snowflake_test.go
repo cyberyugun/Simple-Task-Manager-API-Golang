@@ -34,7 +34,7 @@ func newSnowflakeTestServer(t *testing.T, token string, failMerge int) (*httptes
 			return
 		}
 		var body struct {
-			Statement string \`json:"statement"\`
+			Statement string `json:"statement"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
