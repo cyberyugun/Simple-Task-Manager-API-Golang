@@ -231,8 +231,17 @@ func main() {
 	developerPlatformService := service.NewDeveloperPlatformService(
 		developerPlatformRepo, workspaceRepo, enterpriseService, cfg.WebhookAllowInsecure, apidocs.Spec(),
 	)
+	aiProviders := service.NewAIProviderRegistry()
+	remoteAIProvider, err := service.NewRemoteStructuredAIProviderFromEnv(cfg.WebhookAllowInsecure)
+	if err != nil {
+		logger.Error("remote_ai_provider_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if remoteAIProvider != nil {
+		aiProviders.Register(remoteAIProvider)
+	}
 	aiAssistanceService := service.NewAIAssistanceService(
-		aiAssistanceRepo, organizationRepo, operationsRepo, taskRepo, taskService, service.NewAIProviderRegistry(),
+		aiAssistanceRepo, organizationRepo, operationsRepo, taskRepo, taskService, aiProviders,
 	)
 	globalRegionService := service.NewGlobalRegionService(globalRegionRepo, organizationRepo, governanceRepo)
 	zeroTrustService := service.NewZeroTrustService(zeroTrustRepo, organizationRepo, refreshRepo, tokenManager, cfg.JWTSecret)
