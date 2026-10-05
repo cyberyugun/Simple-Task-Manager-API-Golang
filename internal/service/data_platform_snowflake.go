@@ -41,11 +41,11 @@ type SnowflakeWarehouseAdapter struct {
 }
 
 type snowflakeResponse struct {
-	StatementHandle    string \`json:"statementHandle"\`
-	StatementStatusURL string \`json:"statementStatusUrl"\`
-	Message            string \`json:"message"\`
-	Code               string \`json:"code"\`
-	SQLState           string \`json:"sqlState"\`
+	StatementHandle    string `json:"statementHandle"`
+	StatementStatusURL string `json:"statementStatusUrl"`
+	Message            string `json:"message"`
+	Code               string `json:"code"`
+	SQLState           string `json:"sqlState"`
 }
 
 func NewSnowflakeWarehouseAdapter(cfg SnowflakeWarehouseConfig) (*SnowflakeWarehouseAdapter, error) {
