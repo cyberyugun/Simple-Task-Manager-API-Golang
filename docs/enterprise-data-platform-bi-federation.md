@@ -102,7 +102,40 @@ DATA_PLATFORM_SNOWFLAKE_POLL_INTERVAL=250ms
 # DATA_PLATFORM_SNOWFLAKE_ENDPOINT=https://<account>.snowflakecomputing.com
 ```
 
-BigQuery and Snowflake now have opt-in native delivery. Redshift and Databricks retain deterministic contract adapters until their native providers are added.
+BigQuery and Snowflake now have opt-in native delivery.
+
+### Native Amazon Redshift delivery
+
+A production Redshift adapter is available when `DATA_PLATFORM_REDSHIFT_NATIVE=true`. It uses the Redshift Data API and AWS SigV4. The adapter:
+
+- uses AWS static credentials or EKS/IRSA web identity through the existing shared AWS credential provider;
+- derives the Data API endpoint from the configured AWS region unless an operator endpoint override is supplied;
+- creates the canonical analytics table when it does not exist;
+- performs batched `MERGE` upserts keyed by organization, workspace and task;
+- supplies deterministic 64-character `ClientToken` values so transient `ExecuteStatement` retries are idempotent;
+- polls `DescribeStatement` until `FINISHED`, while surfacing `FAILED` and `ABORTED` states;
+- retries 408/429/5xx provider failures with bounded backoff;
+- advances the export checkpoint only after all remote statements finish successfully.
+
+Connection configuration requires `cluster`, `database`, and `schema`. Native delivery additionally requires either `db_user` or `secret_arn`; `table` is optional.
+
+Configuration:
+
+```text
+DATA_PLATFORM_REDSHIFT_NATIVE=true
+DATA_PLATFORM_REDSHIFT_REGION=us-east-1
+DATA_PLATFORM_REDSHIFT_TIMEOUT=30s
+DATA_PLATFORM_REDSHIFT_RETRY_ATTEMPTS=3
+DATA_PLATFORM_REDSHIFT_RETRY_BACKOFF=300ms
+DATA_PLATFORM_REDSHIFT_POLL_INTERVAL=300ms
+# Uses AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE for IRSA,
+# or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN.
+# Optional test/nonstandard endpoints:
+# DATA_PLATFORM_REDSHIFT_ENDPOINT=https://redshift-data.us-east-1.amazonaws.com
+# DATA_PLATFORM_REDSHIFT_STS_ENDPOINT=https://sts.us-east-1.amazonaws.com
+```
+
+BigQuery, Snowflake and Redshift now have opt-in native delivery. Databricks retains the deterministic contract adapter until its native provider is added.
 
 ## BI contracts
 
