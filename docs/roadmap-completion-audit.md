@@ -78,16 +78,11 @@ Unconfigured external backends are reported as unavailable and new metadata-only
 
 ### P1 — Phase 44 live warehouse writes
 
-Phase 44 has provider-specific configuration validation, incremental checkpoints, masking, lineage, recovery semantics and BI contracts. The bundled warehouse adapters currently return deterministic delivery receipts rather than issuing live BigQuery/Snowflake/Redshift/Databricks writes.
+Phase 44 has provider-specific configuration validation, incremental checkpoints, masking, lineage, recovery semantics and BI contracts.
 
-Before claiming production warehouse federation, add at least one live adapter with:
+Post-roadmap hardening now adds the first live warehouse adapter for Google BigQuery. When enabled, it uses workload-identity metadata tokens, reconciles/creates the canonical table schema, writes row batches with deterministic BigQuery insert IDs, retries transient provider failures, surfaces row-level insert failures, and advances the export checkpoint only after all remote batches succeed.
 
-- idempotent batch/merge semantics;
-- provider authentication through secret references/workload identity;
-- schema reconciliation;
-- retry/backoff with provider error classification;
-- live-provider contract tests;
-- checkpoint advancement only after confirmed provider commit.
+Snowflake, Redshift and Databricks remain deterministic contract adapters. Additional hardening still includes live-provider IAM/outage contract tests and native delivery implementations for those three providers.
 
 ### P2 — Phase 41 external AI provider
 
@@ -105,7 +100,7 @@ Production readiness therefore still requires real cloud-region game days and me
 
 1. **Production Storage & Content Security Hardening** — scanner gateway plus native S3/S3-compatible, Azure Blob, and GCS storage are implemented; remaining work is live-provider contract validation and deployment-specific IAM/policy testing.
 2. **Native Secret Vault & KMS Adapters** — complete at repository level: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager now share the same authoritative runtime credential contract.
-3. **Live Warehouse Delivery** — implement at least one real warehouse write adapter before broadening to all four providers.
+3. **Live Warehouse Delivery** — native BigQuery delivery is implemented; continue with Snowflake, Redshift and Databricks plus live-provider contract validation.
 4. **External AI Provider Pack** — add one structured-output provider with classification and cost regression tests.
 5. **Multi-Region Automation Integration** — connect approved control-plane actions to cloud deployment automation and record real failover evidence.
 

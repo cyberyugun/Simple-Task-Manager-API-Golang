@@ -56,6 +56,17 @@ func NewDataPlatformService(
 	return &DataPlatformService{repo: repo, orgs: orgs, analytics: analytics, governance: governance, adapters: adapters}
 }
 
+func (s *DataPlatformService) RegisterWarehouseAdapter(adapter WarehouseAdapter) {
+	if adapter == nil {
+		return
+	}
+	capability := adapter.Capability()
+	if strings.TrimSpace(capability.Key) == "" {
+		return
+	}
+	s.adapters[capability.Key] = adapter
+}
+
 func (s *DataPlatformService) Adapters() []model.WarehouseAdapterCapability {
 	items := make([]model.WarehouseAdapterCapability, 0, len(s.adapters))
 	for _, adapter := range s.adapters {
