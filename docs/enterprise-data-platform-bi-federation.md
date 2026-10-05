@@ -74,6 +74,36 @@ DATA_PLATFORM_BIGQUERY_RETRY_BACKOFF=250ms
 
 The existing deterministic contract adapters remain the default so local development and existing deployments are unchanged unless native BigQuery delivery is explicitly enabled.
 
+### Native Snowflake delivery
+
+A production Snowflake adapter is available when `DATA_PLATFORM_SNOWFLAKE_NATIVE=true`. It uses the Snowflake SQL API and remains opt-in so current contract-adapter deployments are unchanged. The adapter:
+
+- derives the account endpoint from connection `config.account` unless an operator endpoint override is configured;
+- creates the canonical task analytics table when it does not exist;
+- performs batched `MERGE` upserts keyed by organization, workspace and task;
+- uses deterministic SQL API request IDs so transient retries remain idempotent;
+- supports OAuth, programmatic access-token, and pre-issued key-pair JWT bearer token modes;
+- polls asynchronous statements and retries 408/429/5xx responses with bounded backoff;
+- advances the export checkpoint only after every remote batch succeeds.
+
+Connection configuration requires `account`, `database`, and `schema`; `table`, `warehouse`, and `role` are optional.
+
+Configuration:
+
+```text
+DATA_PLATFORM_SNOWFLAKE_NATIVE=true
+DATA_PLATFORM_SNOWFLAKE_TOKEN=<secret-injected-token>
+DATA_PLATFORM_SNOWFLAKE_TOKEN_TYPE=OAUTH
+DATA_PLATFORM_SNOWFLAKE_TIMEOUT=30s
+DATA_PLATFORM_SNOWFLAKE_RETRY_ATTEMPTS=3
+DATA_PLATFORM_SNOWFLAKE_RETRY_BACKOFF=300ms
+DATA_PLATFORM_SNOWFLAKE_POLL_INTERVAL=250ms
+# Optional test/nonstandard endpoint:
+# DATA_PLATFORM_SNOWFLAKE_ENDPOINT=https://<account>.snowflakecomputing.com
+```
+
+BigQuery and Snowflake now have opt-in native delivery. Redshift and Databricks retain deterministic contract adapters until their native providers are added.
+
 ## BI contracts
 
 `GET /api/data-platform/bi-contracts` returns Power BI, Tableau and Looker mappings for the canonical dataset.
