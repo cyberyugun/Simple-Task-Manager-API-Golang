@@ -92,10 +92,10 @@ func TestBigQueryWarehouseAdapterCreatesTableAndDeliversRows(t *testing.T) {
 	defer server.Close()
 
 	adapter, err := NewBigQueryWarehouseAdapter(BigQueryWarehouseConfig{
-		Endpoint: server.URL + "/bigquery/v2",
-		AccessToken: "bq-token",
+		Endpoint:      server.URL + "/bigquery/v2",
+		AccessToken:   "bq-token",
 		RetryAttempts: 2,
-		RetryBackoff: time.Millisecond,
+		RetryBackoff:  time.Millisecond,
 		AllowInsecure: true,
 	})
 	if err != nil {
@@ -140,10 +140,10 @@ func TestBigQueryWarehouseAdapterRetriesTransientInsert(t *testing.T) {
 	defer server.Close()
 
 	adapter, err := NewBigQueryWarehouseAdapter(BigQueryWarehouseConfig{
-		Endpoint: server.URL + "/bigquery/v2",
-		AccessToken: "bq-token",
+		Endpoint:      server.URL + "/bigquery/v2",
+		AccessToken:   "bq-token",
 		RetryAttempts: 3,
-		RetryBackoff: time.Millisecond,
+		RetryBackoff:  time.Millisecond,
 		AllowInsecure: true,
 	})
 	if err != nil {
@@ -173,10 +173,10 @@ func TestNativeBigQueryFailureDoesNotAdvanceCheckpoint(t *testing.T) {
 	defer server.Close()
 
 	adapter, err := NewBigQueryWarehouseAdapter(BigQueryWarehouseConfig{
-		Endpoint: server.URL + "/bigquery/v2",
-		AccessToken: "bq-token",
+		Endpoint:      server.URL + "/bigquery/v2",
+		AccessToken:   "bq-token",
 		RetryAttempts: 2,
-		RetryBackoff: time.Millisecond,
+		RetryBackoff:  time.Millisecond,
 		AllowInsecure: true,
 	})
 	if err != nil {
@@ -205,13 +205,13 @@ func TestNativeBigQueryFailureDoesNotAdvanceCheckpoint(t *testing.T) {
 
 func TestBigQueryWarehouseAdapterRejectsUnsafeConfiguration(t *testing.T) {
 	if _, err := NewBigQueryWarehouseAdapter(BigQueryWarehouseConfig{
-		Endpoint: "http://bigquery.example.test/bigquery/v2",
+		Endpoint:    "http://bigquery.example.test/bigquery/v2",
 		AccessToken: "token",
 	}); err == nil {
 		t.Fatal("expected insecure endpoint rejection")
 	}
 	if _, err := NewBigQueryWarehouseAdapter(BigQueryWarehouseConfig{
-		Endpoint: "https://bigquery.googleapis.com/bigquery/v2",
+		Endpoint:    "https://bigquery.googleapis.com/bigquery/v2",
 		UseMetadata: false,
 	}); err == nil {
 		t.Fatal("expected missing identity rejection")
