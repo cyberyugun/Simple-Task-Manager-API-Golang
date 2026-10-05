@@ -137,21 +137,21 @@ func NewBigQueryWarehouseAdapterFromEnv(allowInsecure bool) (*BigQueryWarehouseA
 		useMetadata = value
 	}
 	return NewBigQueryWarehouseAdapter(BigQueryWarehouseConfig{
-		Endpoint: os.Getenv("DATA_PLATFORM_BIGQUERY_ENDPOINT"),
-		AccessToken: os.Getenv("DATA_PLATFORM_BIGQUERY_ACCESS_TOKEN"),
-		UseMetadata: useMetadata,
+		Endpoint:         os.Getenv("DATA_PLATFORM_BIGQUERY_ENDPOINT"),
+		AccessToken:      os.Getenv("DATA_PLATFORM_BIGQUERY_ACCESS_TOKEN"),
+		UseMetadata:      useMetadata,
 		MetadataEndpoint: os.Getenv("DATA_PLATFORM_BIGQUERY_METADATA_ENDPOINT"),
-		Timeout: timeout, RetryAttempts: attempts, RetryBackoff: backoff,
+		Timeout:          timeout, RetryAttempts: attempts, RetryBackoff: backoff,
 		AllowInsecure: allowInsecure,
 	})
 }
 
 func (a *BigQueryWarehouseAdapter) Capability() model.WarehouseAdapterCapability {
 	return model.WarehouseAdapterCapability{
-		Key: model.DataWarehouseBigQuery,
-		DisplayName: "Google BigQuery (native)",
-		DeliveryMode: "streaming_insert_live",
-		BIContracts: []string{model.BIContractPowerBI, model.BIContractTableau, model.BIContractLooker},
+		Key:              model.DataWarehouseBigQuery,
+		DisplayName:      "Google BigQuery (native)",
+		DeliveryMode:     "streaming_insert_live",
+		BIContracts:      []string{model.BIContractPowerBI, model.BIContractTableau, model.BIContractLooker},
 		SupportsRecovery: true,
 	}
 }
@@ -175,10 +175,10 @@ func (a *BigQueryWarehouseAdapter) Deliver(connection model.DataPlatformConnecti
 	hash := hex.EncodeToString(sum[:])
 	batchID := hash[:16]
 	receipt := model.WarehouseDeliveryReceipt{
-		Provider: model.DataWarehouseBigQuery,
-		Target: connection.Target,
+		Provider:    model.DataWarehouseBigQuery,
+		Target:      connection.Target,
 		DeliveryURI: fmt.Sprintf("bigquery://%s/%s/%s/batches/%s", project, dataset, table, batchID),
-		BatchID: batchID, RowCount: len(rows), Bytes: int64(len(payload)), PayloadHash: hash,
+		BatchID:     batchID, RowCount: len(rows), Bytes: int64(len(payload)), PayloadHash: hash,
 	}
 	if len(rows) == 0 {
 		return receipt, nil
@@ -265,14 +265,14 @@ func (a *BigQueryWarehouseAdapter) insertRows(ctx context.Context, project, data
 		insertHash := sha256.Sum256([]byte(insertSeed))
 		payloadRows = append(payloadRows, map[string]any{
 			"insertId": hex.EncodeToString(insertHash[:]),
-			"json": raw,
+			"json":     raw,
 		})
 	}
 	body := map[string]any{
-		"kind": "bigquery#tableDataInsertAllRequest",
-		"skipInvalidRows": false,
+		"kind":                "bigquery#tableDataInsertAllRequest",
+		"skipInvalidRows":     false,
 		"ignoreUnknownValues": false,
-		"rows": payloadRows,
+		"rows":                payloadRows,
 	}
 	endpoint := a.tableURL(project, dataset, table) + "/insertAll"
 	var lastErr error
