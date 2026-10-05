@@ -289,6 +289,14 @@ func main() {
 	if snowflakeWarehouse != nil {
 		dataPlatformService.RegisterWarehouseAdapter(snowflakeWarehouse)
 	}
+	redshiftWarehouse, err := service.NewRedshiftWarehouseAdapterFromEnv(cfg.WebhookAllowInsecure)
+	if err != nil {
+		logger.Error("redshift_warehouse_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if redshiftWarehouse != nil {
+		dataPlatformService.RegisterWarehouseAdapter(redshiftWarehouse)
+	}
 	extensionService := service.NewExtensionService(extensionRepo, workspaceRepo, organizationRepo, eventRepo, tokenManager, cfg.WebhookAllowInsecure)
 	integrationCipher, err := service.NewIntegrationCredentialCipher(cfg.JWTSecret)
 	if err != nil {

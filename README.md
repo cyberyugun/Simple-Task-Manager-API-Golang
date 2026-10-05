@@ -62,6 +62,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Native Azure Blob attachment storage with service/user-delegation SAS, AKS workload identity or managed identity, upload metadata verification, optional encryption-scope binding, and verified deletion
 - Native BigQuery warehouse delivery with workload identity, schema reconciliation, deterministic insert IDs, transient-error retries, and checkpoint-after-confirmed-commit semantics
 - Native Snowflake warehouse delivery through the Snowflake SQL API with deterministic request IDs, batched MERGE upserts, async polling/retry, and checkpoint-after-confirmed-commit semantics
+- Native Amazon Redshift warehouse delivery through the Redshift Data API with SigV4/IAM identity, idempotent client tokens, batched MERGE upserts, async polling/retry, and checkpoint-after-confirmed-commit semantics
 - Native GCS attachment storage with V4 signed URLs, GKE/Compute workload identity, IAM Credentials signBlob delegation, SHA-256 metadata verification, optional CMEK binding, and verified deletion
 - Native connector secret backends for HashiCorp Vault KV v2, AWS Secrets Manager, Azure Key Vault, and GCP Secret Manager, including workload/managed identity, runtime credential resolution, versioning, cutover scrubbing, backend readiness reporting, AWS/Azure/GCP customer-managed-key support, and provider-specific security controls
 
