@@ -297,11 +297,17 @@ func (s *AIAssistanceService) Assist(ctx context.Context, actorUserID, organizat
 	}
 	redacted := text
 	redactionCount := 0
+	contextRedactionCount := 0
+	providerContext := contextData
 	if policy.RedactionEnabled {
 		redacted, redactionCount = redactAIText(text)
+		if provider.External() {
+			providerContext, contextRedactionCount = redactAIContext(contextData)
+			redactionCount += contextRedactionCount
+		}
 	}
 	providerRequest := AIProviderRequest{
-		Feature: feature, Text: redacted, Classification: classification, Context: contextData,
+		Feature: feature, Text: redacted, Classification: classification, Context: providerContext,
 	}
 	estimated := provider.EstimateCostCents(providerRequest)
 	if err := s.checkBudget(organizationID, policy, estimated, time.Now().UTC()); err != nil {
@@ -338,6 +344,7 @@ func (s *AIAssistanceService) Assist(ctx context.Context, actorUserID, organizat
 		PromptMetadata: map[string]any{
 			"input_chars": len([]rune(text)), "redacted_chars": len([]rune(redacted)),
 			"context_keys": sortedAIMapKeys(contextData), "provider_external": provider.External(),
+			"context_redaction_count": contextRedactionCount,
 		},
 		StructuredResult: output.Result, ProposedAction: proposedAction, RequiresApproval: requiresApproval,
 		DestructiveAction: destructive, InputUnits: output.InputUnits, OutputUnits: output.OutputUnits,
@@ -905,6 +912,58 @@ func redactAIText(input string) (string, int) {
 		output = rule.pattern.ReplaceAllString(output, rule.replacement)
 	}
 	return output, count
+}
+
+func redactAIContext(input map[string]any) (map[string]any, int) {
+	if input == nil {
+		return map[string]any{}, 0
+	}
+	output := make(map[string]any, len(input))
+	count := 0
+	for key, value := range input {
+		redacted, redactions := redactAIContextValue(value)
+		output[key] = redacted
+		count += redactions
+	}
+	return output, count
+}
+
+func redactAIContextValue(value any) (any, int) {
+	switch typed := value.(type) {
+	case string:
+		return redactAIText(typed)
+	case map[string]any:
+		return redactAIContext(typed)
+	case []map[string]any:
+		items := make([]map[string]any, 0, len(typed))
+		count := 0
+		for _, item := range typed {
+			redacted, redactions := redactAIContext(item)
+			items = append(items, redacted)
+			count += redactions
+		}
+		return items, count
+	case []any:
+		items := make([]any, 0, len(typed))
+		count := 0
+		for _, item := range typed {
+			redacted, redactions := redactAIContextValue(item)
+			items = append(items, redacted)
+			count += redactions
+		}
+		return items, count
+	case []string:
+		items := make([]string, 0, len(typed))
+		count := 0
+		for _, item := range typed {
+			redacted, redactions := redactAIText(item)
+			items = append(items, redacted)
+			count += redactions
+		}
+		return items, count
+	default:
+		return value, 0
+	}
 }
 
 func actionFromAIResult(feature string, req model.AIAssistRequest, result map[string]any) map[string]any {
