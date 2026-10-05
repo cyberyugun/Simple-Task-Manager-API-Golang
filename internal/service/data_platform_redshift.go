@@ -188,7 +188,7 @@ func (a *RedshiftWarehouseAdapter) Deliver(connection model.DataPlatformConnecti
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), a.client.Timeout)
 	defer cancel()
-	if err := a.executeAndWait(ctx, connection, redshiftCreateTableSQL(schema, table), redshiftClientToken("create:"+cluster+":"+database+":"+schema+":"+table)); err != nil {
+	if err := a.executeAndWait(ctx, connection, redshiftCreateTableSQL(schema, table), redshiftClientToken("create:"+cluster+":"+database+":"+schema+":"+table+":"+hash)); err != nil {
 		return model.WarehouseDeliveryReceipt{}, err
 	}
 	const batchSize = 100
@@ -211,13 +211,11 @@ func (a *RedshiftWarehouseAdapter) executeAndWait(ctx context.Context, connectio
 		"Database":          connection.Config["database"],
 		"Sql":               sql,
 		"ClientToken":       clientToken,
-		"StatementName":     "simple-task-manager-" + clientToken[:16],
-	}
-	if user := strings.TrimSpace(connection.Config["db_user"]); user != "" {
-		payload["DbUser"] = user
 	}
 	if secretARN := strings.TrimSpace(connection.Config["secret_arn"]); secretARN != "" {
 		payload["SecretArn"] = secretARN
+	} else if user := strings.TrimSpace(connection.Config["db_user"]); user != "" {
+		payload["DbUser"] = user
 	}
 	var response struct {
 		ID string `json:"Id"`
