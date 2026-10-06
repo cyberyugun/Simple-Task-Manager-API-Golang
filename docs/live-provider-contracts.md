@@ -1,6 +1,6 @@
 # Live Provider Contract Harness
 
-The repository includes an opt-in contract harness for validating Phase 36 attachment storage/malware-scanner integrations and Phase 38 external secret backends against real provider environments. Normal unit/CI runs never contact external providers.
+The repository includes an opt-in contract harness for validating Phase 36 attachment storage/malware-scanner integrations, Phase 38 external secret backends, and Phase 44 native warehouse delivery against real provider environments. Normal unit/CI runs never contact external providers.
 
 ## Safety model
 
@@ -33,6 +33,10 @@ Put version 1
 
 The contract payload is synthetic and is never printed to the evidence log. Cleanup is attempted on failure as well as success.
 
+Warehouse contracts use one dedicated contract table (default `stm_provider_contract`) and a synthetic analytics row. The first delivery exercises provider authentication plus table create/reconcile and write/merge. The same payload is then delivered again and must produce the same batch ID, payload hash and delivery URI, which verifies the adapter's deterministic idempotency contract. BigQuery uses deterministic streaming insert IDs; Snowflake, Redshift and Databricks use MERGE semantics.
+
+Warehouse contracts intentionally do not drop the table after each run. Use a dedicated dataset/schema/catalog and lifecycle policy for contract data.
+
 The harness does not use production task/workspace records and does not write to the application database.
 
 ## Targets
@@ -45,6 +49,10 @@ The harness does not use production task/workspace records and does not write to
 - `secret_aws` — AWS Secrets Manager.
 - `secret_azure` — Azure Key Vault.
 - `secret_gcp` — Google Cloud Secret Manager.
+- `warehouse_bigquery` — native BigQuery streaming delivery.
+- `warehouse_snowflake` — Snowflake SQL API table create + MERGE.
+- `warehouse_redshift` — Redshift Data API table create + MERGE.
+- `warehouse_databricks` — Databricks SQL Statement Execution + Delta MERGE.
 
 For `scanner`, set `LIVE_PROVIDER_STORAGE_TARGET` to `storage_s3`, `storage_azure`, or `storage_gcs`.
 
@@ -88,6 +96,21 @@ bash scripts/live-provider-contracts.sh
 
 The runner automatically enables the AWS, Azure or GCP secret adapter when one of those secret targets is selected. Provider credentials and endpoints still come from the same environment variables used by the application.
 
+For a warehouse provider:
+
+```bash
+export LIVE_PROVIDER_CONTRACT_TARGET=warehouse_bigquery
+export DATA_PLATFORM_BIGQUERY_ACCESS_TOKEN=...
+export DATA_PLATFORM_BIGQUERY_USE_METADATA=false
+export LIVE_WAREHOUSE_BIGQUERY_PROJECT_ID=my-project
+export LIVE_WAREHOUSE_BIGQUERY_DATASET=provider_contracts
+export LIVE_WAREHOUSE_TABLE=stm_provider_contract
+
+bash scripts/live-provider-contracts.sh
+```
+
+Use the corresponding `LIVE_WAREHOUSE_SNOWFLAKE_...`, `LIVE_WAREHOUSE_REDSHIFT_...`, or `LIVE_WAREHOUSE_DATABRICKS_...` connection values for the other targets. The runner automatically enables the selected native warehouse adapter.
+
 Plain HTTP remains rejected unless `LIVE_PROVIDER_ALLOW_INSECURE=true` is deliberately set for a local emulator. The GitHub workflow fixes this value to `false`.
 
 ## GitHub Actions
@@ -108,8 +131,10 @@ The scanner gateway should have read-only access to the same contract-test stora
 
 Secret-provider identities should be restricted to a dedicated contract-test prefix/project/vault scope and require only create/write, read/access, version rotation and delete permissions. AWS deletion uses the adapter's configured recovery window, so contract secrets are scheduled for deletion rather than force-deleted. Azure Key Vault may retain soft-deleted entries according to vault policy. Use an isolated prefix and lifecycle policy appropriate for repeated contract runs.
 
+Warehouse identities should be scoped to a dedicated contract dataset/database/schema/catalog and the minimum permissions needed to create or reconcile the contract table and write/merge rows. Redshift additionally needs Data API execution/statement-status permissions. Databricks needs SQL warehouse use plus catalog/schema/table permissions. Snowflake needs the configured warehouse/role privileges. BigQuery needs table metadata/create plus streaming insert permissions.
+
 ## What this proves
 
-A successful storage/scanner run provides environment-specific evidence for authentication, signed upload/download behavior, metadata integrity verification, encryption headers configured by the adapter, provider read/delete permissions, and scanner-to-storage reachability. A successful secret-backend run additionally proves create/read/version-rotation/delete behavior and that the deleted logical secret is no longer readable through the adapter.
+A successful storage/scanner run provides environment-specific evidence for authentication, signed upload/download behavior, metadata integrity verification, encryption headers configured by the adapter, provider read/delete permissions, and scanner-to-storage reachability. A successful secret-backend run additionally proves create/read/version-rotation/delete behavior and that the deleted logical secret is no longer readable through the adapter. A successful warehouse run proves that the configured native adapter can authenticate, create/reconcile its contract table, complete a real provider delivery and repeat the same payload with deterministic batch identity.
 
 It does not by itself prove production retention policy, cross-account policy, outage recovery, replication/failover, or organization-specific compliance. Those still require deployment-specific exercises and review.

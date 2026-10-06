@@ -41,6 +41,22 @@ case "$target" in
     export CONNECTOR_GCP_SECRET_MANAGER_ENABLED=true
     test_name="TestLiveSecretProviderContract"
     ;;
+  warehouse_bigquery)
+    export DATA_PLATFORM_BIGQUERY_NATIVE=true
+    test_name="TestLiveWarehouseProviderContract"
+    ;;
+  warehouse_snowflake)
+    export DATA_PLATFORM_SNOWFLAKE_NATIVE=true
+    test_name="TestLiveWarehouseProviderContract"
+    ;;
+  warehouse_redshift)
+    export DATA_PLATFORM_REDSHIFT_NATIVE=true
+    test_name="TestLiveWarehouseProviderContract"
+    ;;
+  warehouse_databricks)
+    export DATA_PLATFORM_DATABRICKS_NATIVE=true
+    test_name="TestLiveWarehouseProviderContract"
+    ;;
   *)
     echo "unsupported live provider contract target: $target" >&2
     exit 2

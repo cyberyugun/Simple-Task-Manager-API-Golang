@@ -83,7 +83,7 @@ Phase 44 has provider-specific configuration validation, incremental checkpoints
 
 Post-roadmap hardening now includes native BigQuery, Snowflake, Redshift and Databricks delivery. BigQuery uses workload-identity metadata tokens, reconciles/creates the canonical table schema, writes row batches with deterministic insert IDs, retries transient provider failures, surfaces row-level insert failures, and advances the export checkpoint only after all remote batches succeed. Snowflake uses the SQL API with canonical table creation, deterministic request IDs, batched MERGE upserts, async statement polling, bounded transient retries, and the same checkpoint-after-confirmed-success rule. Redshift uses the AWS Data API with SigV4/IAM identity, deterministic client tokens, canonical table creation, batched MERGE upserts, async statement polling, bounded transient retries and checkpoint safety. Databricks uses the SQL Statement Execution API with bearer authentication, Delta table creation, batched MERGE upserts, asynchronous status polling, bounded transient retries and the same checkpoint safety rule.
 
-All four Phase 44 warehouse providers now have native repository adapters. Additional hardening is limited to live-provider IAM, outage, permissions and deployment-specific contract validation.
+All four Phase 44 warehouse providers now have native repository adapters. Post-roadmap hardening also adds opt-in live warehouse contracts that create/reconcile the canonical contract table, deliver a synthetic analytics row, repeat the exact delivery to verify deterministic batch identity/idempotent provider semantics, and retain workflow evidence. Live IAM/outage, organization-specific permission policy and downstream query/readback evidence still require successful runs in each target deployment environment.
 
 ### P2 — Phase 41 external AI provider
 
@@ -105,13 +105,13 @@ Repository-level planning integration is therefore implemented. Production readi
 
 The repository now contains `scripts/live-provider-contracts.sh`, attachment/secret live contract tests, and the manual `Live Provider Contracts` GitHub workflow. Normal CI skips all live-provider calls. A manually selected target fails if required provider configuration is missing and produces a retained log artifact.
 
-Current live targets cover native attachment storage (`storage_s3`, `storage_azure`, `storage_gcs`), the remote scanner gateway (`scanner`), HashiCorp Vault (`secret_vault`), AWS Secrets Manager (`secret_aws`), Azure Key Vault (`secret_azure`) and GCP Secret Manager (`secret_gcp`). Warehouse, external-AI and region-automation live targets remain the next harness extensions.
+Current live targets cover native attachment storage (`storage_s3`, `storage_azure`, `storage_gcs`), the remote scanner gateway (`scanner`), HashiCorp Vault (`secret_vault`), AWS Secrets Manager (`secret_aws`), Azure Key Vault (`secret_azure`), GCP Secret Manager (`secret_gcp`), BigQuery (`warehouse_bigquery`), Snowflake (`warehouse_snowflake`), Redshift (`warehouse_redshift`) and Databricks (`warehouse_databricks`). External-AI and region-automation live targets remain the next harness extensions.
 
 ## Recommended post-Phase-45 execution order
 
 1. **Production Storage & Content Security Hardening** — scanner gateway, native S3/S3-compatible/Azure Blob/GCS storage and an opt-in live contract harness are implemented; remaining work is running the harness in each target environment plus outage and deployment-specific IAM/policy exercises.
 2. **Native Secret Vault & KMS Adapters** — native adapters plus opt-in live create/read/rotate/delete contracts are implemented for HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager; remaining work is running them in each deployment environment plus outage/IAM-policy exercises.
-3. **Live Warehouse Delivery** — native BigQuery, Snowflake, Redshift and Databricks delivery are implemented; remaining work is live-provider IAM/outage and deployment-specific contract validation.
+3. **Live Warehouse Delivery** — native BigQuery, Snowflake, Redshift and Databricks delivery plus opt-in live delivery/idempotency contracts are implemented; remaining work is running them in each environment plus outage, least-privilege IAM and downstream query/readback evidence.
 4. **External AI Provider Pack** — complete at repository level with the opt-in remote structured provider; remaining work is live gateway/provider validation and pricing calibration.
 5. **Multi-Region Automation Integration** — signed plan-only handoff for explicitly approved migrations is implemented; remaining work is external apply-gate integration, live cloud IAM/policy validation and real failover evidence.
 
