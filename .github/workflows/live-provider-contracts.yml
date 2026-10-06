@@ -1,0 +1,101 @@
+name: Live Provider Contracts
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Live provider contract target
+        required: true
+        type: choice
+        options:
+          - storage_s3
+          - storage_azure
+          - storage_gcs
+          - scanner
+      scanner_storage_target:
+        description: Storage provider used by scanner fixture
+        required: false
+        default: storage_s3
+        type: choice
+        options:
+          - storage_s3
+          - storage_azure
+          - storage_gcs
+
+permissions:
+  contents: read
+
+jobs:
+  attachment-provider-contract:
+    name: Attachment Provider Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      LIVE_PROVIDER_CONTRACT_TARGET: ${{ inputs.target }}
+      LIVE_PROVIDER_STORAGE_TARGET: ${{ inputs.scanner_storage_target }}
+      LIVE_PROVIDER_ALLOW_INSECURE: "false"
+
+      ATTACHMENT_STORAGE_PROVIDER: ${{ secrets.CONTRACT_ATTACHMENT_STORAGE_PROVIDER }}
+      ATTACHMENT_STORAGE_BUCKET: ${{ secrets.CONTRACT_ATTACHMENT_STORAGE_BUCKET }}
+      ATTACHMENT_ENCRYPTION: ${{ secrets.CONTRACT_ATTACHMENT_ENCRYPTION }}
+      ATTACHMENT_ENCRYPTION_KEY_ID: ${{ secrets.CONTRACT_ATTACHMENT_ENCRYPTION_KEY_ID }}
+
+      ATTACHMENT_S3_REGION: ${{ secrets.CONTRACT_ATTACHMENT_S3_REGION }}
+      ATTACHMENT_S3_ENDPOINT: ${{ secrets.CONTRACT_ATTACHMENT_S3_ENDPOINT }}
+      ATTACHMENT_S3_STS_ENDPOINT: ${{ secrets.CONTRACT_ATTACHMENT_S3_STS_ENDPOINT }}
+      ATTACHMENT_S3_ROLE_ARN: ${{ secrets.CONTRACT_ATTACHMENT_S3_ROLE_ARN }}
+      ATTACHMENT_S3_WEB_IDENTITY_TOKEN_FILE: ${{ secrets.CONTRACT_ATTACHMENT_S3_WEB_IDENTITY_TOKEN_FILE }}
+      ATTACHMENT_S3_ROLE_SESSION_NAME: ${{ secrets.CONTRACT_ATTACHMENT_S3_ROLE_SESSION_NAME }}
+      ATTACHMENT_S3_FORCE_PATH_STYLE: ${{ secrets.CONTRACT_ATTACHMENT_S3_FORCE_PATH_STYLE }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.CONTRACT_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.CONTRACT_AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.CONTRACT_AWS_SESSION_TOKEN }}
+
+      ATTACHMENT_AZURE_STORAGE_ACCOUNT: ${{ secrets.CONTRACT_ATTACHMENT_AZURE_STORAGE_ACCOUNT }}
+      ATTACHMENT_AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.CONTRACT_ATTACHMENT_AZURE_STORAGE_ACCOUNT_KEY }}
+      ATTACHMENT_AZURE_BLOB_ENDPOINT: ${{ secrets.CONTRACT_ATTACHMENT_AZURE_BLOB_ENDPOINT }}
+      ATTACHMENT_AZURE_ACCESS_TOKEN: ${{ secrets.CONTRACT_ATTACHMENT_AZURE_ACCESS_TOKEN }}
+      ATTACHMENT_AZURE_USE_MANAGED_IDENTITY: ${{ secrets.CONTRACT_ATTACHMENT_AZURE_USE_MANAGED_IDENTITY }}
+      ATTACHMENT_AZURE_MANAGED_IDENTITY_ENDPOINT: ${{ secrets.CONTRACT_ATTACHMENT_AZURE_MANAGED_IDENTITY_ENDPOINT }}
+      AZURE_TENANT_ID: ${{ secrets.CONTRACT_AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.CONTRACT_AZURE_CLIENT_ID }}
+      AZURE_FEDERATED_TOKEN_FILE: ${{ secrets.CONTRACT_AZURE_FEDERATED_TOKEN_FILE }}
+      AZURE_AUTHORITY_HOST: ${{ secrets.CONTRACT_AZURE_AUTHORITY_HOST }}
+
+      ATTACHMENT_GCS_ENDPOINT: ${{ secrets.CONTRACT_ATTACHMENT_GCS_ENDPOINT }}
+      ATTACHMENT_GCS_SERVICE_ACCOUNT_EMAIL: ${{ secrets.CONTRACT_ATTACHMENT_GCS_SERVICE_ACCOUNT_EMAIL }}
+      ATTACHMENT_GCS_IAM_CREDENTIALS_ENDPOINT: ${{ secrets.CONTRACT_ATTACHMENT_GCS_IAM_CREDENTIALS_ENDPOINT }}
+      ATTACHMENT_GCS_ACCESS_TOKEN: ${{ secrets.CONTRACT_ATTACHMENT_GCS_ACCESS_TOKEN }}
+      ATTACHMENT_GCS_USE_METADATA: ${{ secrets.CONTRACT_ATTACHMENT_GCS_USE_METADATA }}
+      ATTACHMENT_GCS_METADATA_ENDPOINT: ${{ secrets.CONTRACT_ATTACHMENT_GCS_METADATA_ENDPOINT }}
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.CONTRACT_GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+
+      ATTACHMENT_SCANNER_URL: ${{ secrets.CONTRACT_ATTACHMENT_SCANNER_URL }}
+      ATTACHMENT_SCANNER_BEARER_TOKEN: ${{ secrets.CONTRACT_ATTACHMENT_SCANNER_BEARER_TOKEN }}
+      ATTACHMENT_SCANNER_SIGNING_SECRET: ${{ secrets.CONTRACT_ATTACHMENT_SCANNER_SIGNING_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.mod
+
+      - name: Run live provider contract
+        run: |
+          set -o pipefail
+          bash scripts/live-provider-contracts.sh 2>&1 | tee live-provider-contract.log
+
+      - name: Upload contract evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: live-provider-contract-${{ inputs.target }}-${{ github.run_id }}
+          path: live-provider-contract.log
+          if-no-files-found: error
+          retention-days: 30
