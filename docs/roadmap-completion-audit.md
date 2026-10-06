@@ -94,9 +94,11 @@ Repository-level provider work is complete. Remaining production work is live ga
 
 ### P2 — Phase 42 cloud multi-region execution
 
-Phase 42 intentionally stores control-plane intent and evidence. It does not directly execute DNS changes, database failovers or customer-data copies. Those destructive infrastructure actions should remain in external deployment automation.
+Post-roadmap hardening now connects explicitly approved region migrations to an opt-in external automation **planning** gateway. The handoff is HTTPS-only by default, HMAC-signed, idempotent, retry-bounded and fail-closed: if planning fails, the migration remains pending approval. Successful plan receipts are persisted in the migration checkpoint for audit/evidence.
 
-Production readiness therefore still requires real cloud-region game days and measured RPO/RTO evidence outside repository-only tests.
+The contract is intentionally `plan_only` and includes `execution_requires_external_gate=true`. The application still does not issue DNS changes, database failovers, infrastructure apply commands or customer-data copies. Promotion of an accepted plan to destructive cloud execution remains in an external deployment system with its own operator gate.
+
+Repository-level planning integration is therefore implemented. Production readiness still requires live deployment-gateway contract tests, cloud-provider IAM/policy validation, real game days and measured RPO/RTO evidence.
 
 ## Recommended post-Phase-45 execution order
 
@@ -104,7 +106,7 @@ Production readiness therefore still requires real cloud-region game days and me
 2. **Native Secret Vault & KMS Adapters** — complete at repository level: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager now share the same authoritative runtime credential contract.
 3. **Live Warehouse Delivery** — native BigQuery, Snowflake, Redshift and Databricks delivery are implemented; remaining work is live-provider IAM/outage and deployment-specific contract validation.
 4. **External AI Provider Pack** — complete at repository level with the opt-in remote structured provider; remaining work is live gateway/provider validation and pricing calibration.
-5. **Multi-Region Automation Integration** — connect approved control-plane actions to cloud deployment automation and record real failover evidence.
+5. **Multi-Region Automation Integration** — signed plan-only handoff for explicitly approved migrations is implemented; remaining work is external apply-gate integration, live cloud IAM/policy validation and real failover evidence.
 
 ## Merge rule
 

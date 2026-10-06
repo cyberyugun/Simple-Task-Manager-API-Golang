@@ -54,6 +54,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Enterprise billing, subscription, entitlement, usage-metering, invoice, and signed provider-webhook foundations
 - Enterprise platform operations, FinOps budgets, SLOs, incidents, maintenance, capacity forecasts, and operational alerts
 - Global multi-region control plane with tenant home regions, data-residency enforcement, governed migrations/transfers, regional placement inventory, routing decisions, and failover RPO/RTO evidence
+- Signed plan-only multi-region automation handoff for explicitly approved migrations with HMAC authentication, deterministic idempotency, bounded retries, guardrail propagation, and checkpointed plan evidence
 - Zero trust security with workload mTLS identities, certificate rotation and token binding, adaptive device/network/session risk, automatic high-risk session revocation, signed audit checkpoints, WORM export manifests, and SIEM federation feeds
 - Enterprise data platform and BI federation with governed BigQuery/Snowflake/Redshift/Databricks adapters, Power BI/Tableau/Looker contracts, incremental checkpoints, masking, schema evolution, lineage, reverse-ETL metadata, export cost controls, and freshness SLOs
 - Platform extensibility and application marketplace with remote-only app manifests, publisher verification/review, organization install/uninstall, scoped extension tokens, governed webhooks, configuration/secret references, quotas, usage analytics, categories, and declarative workflow/compliance/reporting packs

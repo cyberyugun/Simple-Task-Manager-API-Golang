@@ -244,6 +244,14 @@ func main() {
 		aiAssistanceRepo, organizationRepo, operationsRepo, taskRepo, taskService, aiProviders,
 	)
 	globalRegionService := service.NewGlobalRegionService(globalRegionRepo, organizationRepo, governanceRepo)
+	regionAutomationPlanner, err := service.NewRegionAutomationWebhookPlannerFromEnv(cfg.WebhookAllowInsecure)
+	if err != nil {
+		logger.Error("region_automation_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	if regionAutomationPlanner != nil {
+		globalRegionService.SetAutomationPlanner(regionAutomationPlanner)
+	}
 	zeroTrustService := service.NewZeroTrustService(zeroTrustRepo, organizationRepo, refreshRepo, tokenManager, cfg.JWTSecret)
 	governanceService := service.NewGovernanceService(governanceRepo, workspaceRepo)
 	lifecycleService := service.NewLifecycleService(lifecycleRepo, governanceRepo, workspaceRepo, taskRepo)

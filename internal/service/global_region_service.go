@@ -26,13 +26,18 @@ var (
 var regionKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,63}$`)
 
 type GlobalRegionService struct {
-	repo       repository.GlobalRegionRepository
-	orgs       repository.OrganizationRepository
-	governance repository.GovernanceRepository
+	repo              repository.GlobalRegionRepository
+	orgs              repository.OrganizationRepository
+	governance        repository.GovernanceRepository
+	automationPlanner RegionAutomationPlanner
 }
 
 func NewGlobalRegionService(repo repository.GlobalRegionRepository, orgs repository.OrganizationRepository, governance repository.GovernanceRepository) *GlobalRegionService {
 	return &GlobalRegionService{repo: repo, orgs: orgs, governance: governance}
+}
+
+func (s *GlobalRegionService) SetAutomationPlanner(planner RegionAutomationPlanner) {
+	s.automationPlanner = planner
 }
 
 func (s *GlobalRegionService) Regions() []model.GlobalRegion {
@@ -228,18 +233,45 @@ func (s *GlobalRegionService) DecideMigration(actorUserID, organizationID, migra
 		return model.RegionMigration{}, ErrInvalidRegionMigration
 	}
 	now := time.Now().UTC()
-	item.DecidedByUserID = &actorUserID
-	item.DecisionComment = strings.TrimSpace(req.Comment)
-	item.DecidedAt = &now
-	item.UpdatedAt = now
+	candidate := item
+	candidate.DecidedByUserID = &actorUserID
+	candidate.DecisionComment = strings.TrimSpace(req.Comment)
+	candidate.DecidedAt = &now
+	candidate.UpdatedAt = now
 	if decision == "approve" {
-		item.Status = model.RegionMigrationApproved
+		candidate.Status = model.RegionMigrationApproved
+		if s.automationPlanner != nil {
+			policy, policyErr := s.requireConfiguredPolicy(organizationID)
+			if policyErr != nil {
+				return item, policyErr
+			}
+			receipt, planErr := s.automationPlanner.PlanMigration(candidate, policy)
+			if planErr != nil {
+				s.audit(organizationID, actorUserID, "region.migration.automation_plan_failed", "region_migration", fmt.Sprint(item.ID), map[string]any{
+					"source_region": item.SourceRegion, "target_region": item.TargetRegion,
+				})
+				return item, planErr
+			}
+			if candidate.Checkpoint == nil {
+				candidate.Checkpoint = map[string]any{}
+			}
+			candidate.Checkpoint["automation_plan"] = map[string]any{
+				"request_id": receipt.RequestID, "plan_id": receipt.PlanID, "status": receipt.Status,
+				"evidence_url": receipt.EvidenceURL, "planned_at": receipt.PlannedAt.UTC().Format(time.RFC3339Nano),
+				"execution_mode": "plan_only",
+			}
+		}
 	} else {
-		item.Status = model.RegionMigrationRejected
+		candidate.Status = model.RegionMigrationRejected
 	}
-	item, err = s.repo.UpdateMigration(item)
+	item, err = s.repo.UpdateMigration(candidate)
 	if err == nil {
-		s.audit(organizationID, actorUserID, "region.migration."+item.Status, "region_migration", fmt.Sprint(item.ID), nil)
+		metadata := map[string]any{}
+		if plan, ok := item.Checkpoint["automation_plan"].(map[string]any); ok {
+			metadata["automation_plan_id"] = plan["plan_id"]
+			metadata["automation_execution_mode"] = plan["execution_mode"]
+		}
+		s.audit(organizationID, actorUserID, "region.migration."+item.Status, "region_migration", fmt.Sprint(item.ID), metadata)
 	}
 	return item, err
 }
