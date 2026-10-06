@@ -63,9 +63,9 @@ func newRegionAutomationTestServer(t *testing.T, failures int) (*httptest.Server
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"request_id":  body.RequestID,
-			"plan_id":     "plan-123",
-			"status":      "planned",
+			"request_id":   body.RequestID,
+			"plan_id":      "plan-123",
+			"status":       "planned",
 			"evidence_url": "https://evidence.example.com/plans/plan-123",
 		})
 	}))
@@ -87,7 +87,7 @@ func approvedRegionMigration() model.RegionMigration {
 func regionAutomationPolicy() model.OrganizationRegionPolicy {
 	return model.OrganizationRegionPolicy{
 		OrganizationID: 9, HomeRegion: "ap-southeast",
-		AllowedRegions: []string{"ap-southeast", "ap-northeast"},
+		AllowedRegions:  []string{"ap-southeast", "ap-northeast"},
 		FailoverRegions: []string{"ap-northeast"}, DataResidencyEnforced: true,
 		CrossRegionApprovalRequired: true, RPOSeconds: 300, RTOSeconds: 1800,
 	}
@@ -152,7 +152,7 @@ func TestRegionAutomationWebhookPlannerRetriesWithStableIdempotencyAndSignature(
 
 func TestRegionAutomationWebhookPlannerRejectsUnsafeConfigurationAndUnapprovedMigration(t *testing.T) {
 	if _, err := NewRegionAutomationWebhookPlanner(RegionAutomationWebhookConfig{
-		Endpoint: "http://automation.example.com/v1/region-plans",
+		Endpoint:      "http://automation.example.com/v1/region-plans",
 		SigningSecret: strings.Repeat("s", 32),
 	}); err == nil {
 		t.Fatal("expected insecure endpoint rejection")
