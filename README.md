@@ -66,7 +66,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Native Amazon Redshift warehouse delivery through the Redshift Data API with SigV4/IAM identity, idempotent client tokens, batched MERGE upserts, async polling/retry, and checkpoint-after-confirmed-commit semantics
 - Native Databricks warehouse delivery through the SQL Statement Execution API with Delta table creation, batched MERGE upserts, async status polling/retry, and checkpoint-after-confirmed-commit semantics
 - Native GCS attachment storage with V4 signed URLs, GKE/Compute workload identity, IAM Credentials signBlob delegation, SHA-256 metadata verification, optional CMEK binding, and verified deletion
-- Opt-in live provider contract harness for S3/S3-compatible, Azure Blob, GCS, remote malware scanning, HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, and GCP Secret Manager with retained workflow evidence
+- Opt-in live provider contract harness for storage, malware scanning, external secret backends, and native BigQuery/Snowflake/Redshift/Databricks warehouse delivery with deterministic retained workflow evidence
 - Native connector secret backends for HashiCorp Vault KV v2, AWS Secrets Manager, Azure Key Vault, and GCP Secret Manager, including workload/managed identity, runtime credential resolution, versioning, cutover scrubbing, backend readiness reporting, AWS/Azure/GCP customer-managed-key support, and provider-specific security controls
 
 ## Environment
