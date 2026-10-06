@@ -30,6 +30,7 @@ jobs:
           bash -n scripts/release-policy-check.sh
           bash -n scripts/rollback-drill.sh
           bash -n scripts/staging-preflight.sh
+          bash -n scripts/live-provider-contracts.sh
           python3 -m py_compile scripts/check-migration-compatibility.py
           python3 -m py_compile scripts/promotion-evidence.py
           ruby -c scripts/openapi-governance.rb

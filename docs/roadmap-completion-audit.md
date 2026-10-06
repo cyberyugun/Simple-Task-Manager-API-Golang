@@ -16,15 +16,15 @@ The remaining work is not a missing Phase 45 feature. The material gaps are prod
 | Phase 33 Task Management 2.0 | Rich task lifecycle, collaboration, recurrence, dependencies, labels, custom-field foundation, audit/events | Complete at repository level |
 | Phase 34 Workflow Builder | Versioned DAG, approvals, delay/branch/parallel/join, checkpoint/resume, retry/compensation and observability | Complete at repository level |
 | Phase 35 Notifications | In-app/email abstraction, preferences, quiet hours, digest, retries/DLQ and reminders | Complete at repository level |
-| Phase 36 Files & Content Security | Direct upload contract, validation, scan states, quotas, governance and attachment worker exist | **Hardening required** |
+| Phase 36 Files & Content Security | Direct upload contract, validation, scan states, quotas, governance, native scanner/storage adapters and live-provider contract harness | Repository hardening complete; provider-environment evidence remains deployment-specific |
 | Phase 37 Search & Analytics | PostgreSQL FTS, saved views, dashboards, exports and scheduled reports | Complete at repository level |
-| Phase 38 Connector OAuth & Secret Governance | OAuth PKCE, refresh, rotation, envelope encryption, health and audit exist | **Native vault adapters not implemented** |
+| Phase 38 Connector OAuth & Secret Governance | OAuth PKCE, refresh, rotation, envelope encryption, health, audit and native Vault/AWS/Azure/GCP secret backends | Repository hardening complete; live provider validation remains deployment-specific |
 | Phase 39 Event Fabric | Schema registry, compatibility, routing, durable subscriptions, replay/DLQ and outbox adapter | Complete at repository level; external buses are optional |
 | Phase 40 Developer Platform | Apps, credentials, scopes/quotas, sandbox, webhook console, analytics and generated SDKs | Complete at repository level |
 | Phase 41 AI Assistance | Governance, redaction, structured provider boundary, approvals, budgets, evaluations, local provider and opt-in remote structured provider | Complete at repository level; live gateway/provider validation remains environment-level |
 | Phase 42 Multi-Region & Residency | Region policy, placement, migration/transfer approval, route decision, failover evidence and compliance report | Complete control-plane foundation; cloud failover execution remains external |
 | Phase 43 Zero Trust | Workload mTLS, certificate rotation, adaptive risk, revocation, audit checkpoints, WORM/SIEM | Complete at repository level |
-| Phase 44 Data Platform | Incremental checkpoints, masking, lineage, schemas, export jobs, BI contracts and dashboard | **Live warehouse delivery still abstracted** |
+| Phase 44 Data Platform | Incremental checkpoints, masking, lineage, schemas, export jobs, BI contracts, dashboard and native BigQuery/Snowflake/Redshift/Databricks delivery | Repository hardening complete; live provider validation remains deployment-specific |
 | Phase 45 Marketplace | Publisher/app review, install/uninstall, scoped tokens, event subscriptions, quotas, packs and audit | Complete at repository level |
 
 ## Confirmed production-hardening gaps
@@ -61,7 +61,7 @@ Native Azure Blob Storage is implemented with account-key service SAS or Microso
 
 Native GCS is now also implemented with V4 signed URLs, metadata/workload-identity access tokens, IAM Credentials `signBlob` delegation, SHA-256 object metadata verification, optional CMEK request binding, and verified deletion.
 
-All Phase 36 production storage providers now have native repository adapters. Live-provider IAM, outage, deletion-consistency, storage-policy, delegated-SAS and IAM-signing contract tests remain environment-level validation.
+All Phase 36 production storage providers now have native repository adapters. Post-roadmap hardening also adds an opt-in live contract harness that performs a real provider round trip (presigned upload, authoritative metadata verification, presigned download, byte verification, delete verification) for S3/S3-compatible, Azure Blob and GCS, plus a clean-file scanner-to-storage contract. The manual workflow retains contract logs as evidence. Live IAM/policy, delegated-SAS/signBlob, outage and deletion-consistency claims still require successful runs in the target deployment environment; the repository does not claim those results without provider credentials.
 
 ### P1 — Phase 38 native external secret backends
 
@@ -100,9 +100,15 @@ The contract is intentionally `plan_only` and includes `execution_requires_exter
 
 Repository-level planning integration is therefore implemented. Production readiness still requires live deployment-gateway contract tests, cloud-provider IAM/policy validation, real game days and measured RPO/RTO evidence.
 
+## Live provider validation harness
+
+The repository now contains `scripts/live-provider-contracts.sh`, `internal/service/live_attachment_provider_contract_test.go`, and the manual `Live Provider Contracts` GitHub workflow. Normal CI skips all live-provider calls. A manually selected target fails if required provider configuration is missing and produces a retained log artifact.
+
+Current live targets cover native attachment storage (`storage_s3`, `storage_azure`, `storage_gcs`) and the remote scanner gateway (`scanner`) against one selected storage provider. Secret-backend, warehouse, external-AI and region-automation live targets remain the next harness extensions.
+
 ## Recommended post-Phase-45 execution order
 
-1. **Production Storage & Content Security Hardening** — scanner gateway plus native S3/S3-compatible, Azure Blob, and GCS storage are implemented; remaining work is live-provider contract validation and deployment-specific IAM/policy testing.
+1. **Production Storage & Content Security Hardening** — scanner gateway, native S3/S3-compatible/Azure Blob/GCS storage and an opt-in live contract harness are implemented; remaining work is running the harness in each target environment plus outage and deployment-specific IAM/policy exercises.
 2. **Native Secret Vault & KMS Adapters** — complete at repository level: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager now share the same authoritative runtime credential contract.
 3. **Live Warehouse Delivery** — native BigQuery, Snowflake, Redshift and Databricks delivery are implemented; remaining work is live-provider IAM/outage and deployment-specific contract validation.
 4. **External AI Provider Pack** — complete at repository level with the opt-in remote structured provider; remaining work is live gateway/provider validation and pricing calibration.
