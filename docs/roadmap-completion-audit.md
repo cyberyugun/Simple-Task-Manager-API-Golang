@@ -72,9 +72,10 @@ The remaining provider work is narrower:
 - AWS Secrets Manager is now implemented with SigV4, EKS/IRSA web identity and optional customer-managed KMS key support;
 - Azure Key Vault is now implemented with AKS workload identity, managed identity and optional CMK-backed AES-GCM envelope encryption;
 - GCP Secret Manager is now implemented with GKE/Compute metadata workload identity and optional Secret Manager CMEK configuration;
-- live-cloud outage, IAM, rotation and provider contract tests remain environment-level validation.
+- an opt-in live secret-backend contract harness now covers HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager with create/read/version-rotation/delete/inaccessibility verification;
+- live-cloud outage, IAM and organization-specific policy evidence still require successful runs in each target environment.
 
-Unconfigured external backends are reported as unavailable and new metadata-only rotations to them are rejected.
+Unconfigured external backends are reported as unavailable and new metadata-only rotations to them are rejected. The repository does not claim live-cloud success until the manual provider workflow is run with real deployment credentials.
 
 ### P1 — Phase 44 live warehouse writes
 
@@ -102,14 +103,14 @@ Repository-level planning integration is therefore implemented. Production readi
 
 ## Live provider validation harness
 
-The repository now contains `scripts/live-provider-contracts.sh`, `internal/service/live_attachment_provider_contract_test.go`, and the manual `Live Provider Contracts` GitHub workflow. Normal CI skips all live-provider calls. A manually selected target fails if required provider configuration is missing and produces a retained log artifact.
+The repository now contains `scripts/live-provider-contracts.sh`, attachment/secret live contract tests, and the manual `Live Provider Contracts` GitHub workflow. Normal CI skips all live-provider calls. A manually selected target fails if required provider configuration is missing and produces a retained log artifact.
 
-Current live targets cover native attachment storage (`storage_s3`, `storage_azure`, `storage_gcs`) and the remote scanner gateway (`scanner`) against one selected storage provider. Secret-backend, warehouse, external-AI and region-automation live targets remain the next harness extensions.
+Current live targets cover native attachment storage (`storage_s3`, `storage_azure`, `storage_gcs`), the remote scanner gateway (`scanner`), HashiCorp Vault (`secret_vault`), AWS Secrets Manager (`secret_aws`), Azure Key Vault (`secret_azure`) and GCP Secret Manager (`secret_gcp`). Warehouse, external-AI and region-automation live targets remain the next harness extensions.
 
 ## Recommended post-Phase-45 execution order
 
 1. **Production Storage & Content Security Hardening** — scanner gateway, native S3/S3-compatible/Azure Blob/GCS storage and an opt-in live contract harness are implemented; remaining work is running the harness in each target environment plus outage and deployment-specific IAM/policy exercises.
-2. **Native Secret Vault & KMS Adapters** — complete at repository level: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager now share the same authoritative runtime credential contract.
+2. **Native Secret Vault & KMS Adapters** — native adapters plus opt-in live create/read/rotate/delete contracts are implemented for HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager; remaining work is running them in each deployment environment plus outage/IAM-policy exercises.
 3. **Live Warehouse Delivery** — native BigQuery, Snowflake, Redshift and Databricks delivery are implemented; remaining work is live-provider IAM/outage and deployment-specific contract validation.
 4. **External AI Provider Pack** — complete at repository level with the opt-in remote structured provider; remaining work is live gateway/provider validation and pricing calibration.
 5. **Multi-Region Automation Integration** — signed plan-only handoff for explicitly approved migrations is implemented; remaining work is external apply-gate integration, live cloud IAM/policy validation and real failover evidence.
