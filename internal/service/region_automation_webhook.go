@@ -219,7 +219,7 @@ func (p *RegionAutomationWebhookPlanner) PlanMigration(migration model.RegionMig
 			DecidedAt:   migration.DecidedAt.UTC().Format(time.RFC3339Nano),
 		},
 		Guardrails: regionAutomationPlanGuardrails{
-			AllowedRegions: append([]string(nil), policy.AllowedRegions...),
+			AllowedRegions:    append([]string(nil), policy.AllowedRegions...),
 			ResidencyEnforced: policy.DataResidencyEnforced, RPOSeconds: policy.RPOSeconds, RTOSeconds: policy.RTOSeconds,
 			ExecutionRequiresGate: true,
 		},
@@ -329,7 +329,7 @@ func regionAutomationRequestID(migration model.RegionMigration, policy model.Org
 		ResourceType: migration.ResourceType, ResourceID: migration.ResourceID,
 		SourceRegion: migration.SourceRegion, TargetRegion: migration.TargetRegion,
 		AllowedRegions: append([]string(nil), policy.AllowedRegions...),
-		RPOSeconds: policy.RPOSeconds, RTOSeconds: policy.RTOSeconds,
+		RPOSeconds:     policy.RPOSeconds, RTOSeconds: policy.RTOSeconds,
 	})
 	if err != nil {
 		return "", err
