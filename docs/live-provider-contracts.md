@@ -1,6 +1,6 @@
 # Live Provider Contract Harness
 
-The repository includes an opt-in contract harness for validating Phase 36 attachment storage/malware-scanner integrations, Phase 38 external secret backends, and Phase 44 native warehouse delivery against real provider environments. Normal unit/CI runs never contact external providers.
+The repository includes an opt-in contract harness for validating Phase 36 attachment storage/malware-scanner integrations, Phase 38 external secret backends, Phase 44 native warehouse delivery, and the Phase 41 remote structured AI gateway against real provider environments. Normal unit/CI runs never contact external providers.
 
 ## Safety model
 
@@ -37,6 +37,8 @@ Warehouse contracts use one dedicated contract table (default `stm_provider_cont
 
 Warehouse contracts intentionally do not drop the table after each run. Use a dedicated dataset/schema/catalog and lifecycle policy for contract data.
 
+The remote-AI contract sends only a synthetic task-summary request. It accepts only `public` or `internal` classification, derives the same deterministic request ID twice, performs the same request twice through the production adapter, and requires the gateway to return an identical idempotent response (model, structured result, usage and calculated cost). No user task text, organization data or production context is used.
+
 The harness does not use production task/workspace records and does not write to the application database.
 
 ## Targets
@@ -53,6 +55,7 @@ The harness does not use production task/workspace records and does not write to
 - `warehouse_snowflake` — Snowflake SQL API table create + MERGE.
 - `warehouse_redshift` — Redshift Data API table create + MERGE.
 - `warehouse_databricks` — Databricks SQL Statement Execution + Delta MERGE.
+- `ai_remote` — remote structured AI gateway using a synthetic task-summary request.
 
 For `scanner`, set `LIVE_PROVIDER_STORAGE_TARGET` to `storage_s3`, `storage_azure`, or `storage_gcs`.
 
@@ -111,6 +114,21 @@ bash scripts/live-provider-contracts.sh
 
 Use the corresponding `LIVE_WAREHOUSE_SNOWFLAKE_...`, `LIVE_WAREHOUSE_REDSHIFT_...`, or `LIVE_WAREHOUSE_DATABRICKS_...` connection values for the other targets. The runner automatically enables the selected native warehouse adapter.
 
+For the remote AI gateway:
+
+```bash
+export LIVE_PROVIDER_CONTRACT_TARGET=ai_remote
+export AI_REMOTE_PROVIDER_ENDPOINT=https://ai-gateway.example.com/v1/generate
+export AI_REMOTE_PROVIDER_TOKEN=...
+export AI_REMOTE_PROVIDER_MODEL=provider-model-name
+export AI_REMOTE_PROVIDER_SUPPORTED_CLASSIFICATIONS=public,internal
+export LIVE_AI_CLASSIFICATION=public
+
+bash scripts/live-provider-contracts.sh
+```
+
+The AI contract defaults to `public` classification. `LIVE_AI_CLASSIFICATION` may be set to `internal`, but confidential/restricted classifications are rejected by the live harness so synthetic validation cannot accidentally become a path for sensitive data.
+
 Plain HTTP remains rejected unless `LIVE_PROVIDER_ALLOW_INSECURE=true` is deliberately set for a local emulator. The GitHub workflow fixes this value to `false`.
 
 ## GitHub Actions
@@ -133,8 +151,10 @@ Secret-provider identities should be restricted to a dedicated contract-test pre
 
 Warehouse identities should be scoped to a dedicated contract dataset/database/schema/catalog and the minimum permissions needed to create or reconcile the contract table and write/merge rows. Redshift additionally needs Data API execution/statement-status permissions. Databricks needs SQL warehouse use plus catalog/schema/table permissions. Snowflake needs the configured warehouse/role privileges. BigQuery needs table metadata/create plus streaming insert permissions.
 
+The remote AI gateway token should be a dedicated least-privilege contract credential when the gateway supports scoped credentials. The gateway is expected to honor the deterministic `Idempotency-Key`, echo the request ID when supported, return valid structured output and usage, and enforce its own model-access policy. The workflow never prints the bearer token or synthetic request body.
+
 ## What this proves
 
-A successful storage/scanner run provides environment-specific evidence for authentication, signed upload/download behavior, metadata integrity verification, encryption headers configured by the adapter, provider read/delete permissions, and scanner-to-storage reachability. A successful secret-backend run additionally proves create/read/version-rotation/delete behavior and that the deleted logical secret is no longer readable through the adapter. A successful warehouse run proves that the configured native adapter can authenticate, create/reconcile its contract table, complete a real provider delivery and repeat the same payload with deterministic batch identity.
+A successful storage/scanner run provides environment-specific evidence for authentication, signed upload/download behavior, metadata integrity verification, encryption headers configured by the adapter, provider read/delete permissions, and scanner-to-storage reachability. A successful secret-backend run additionally proves create/read/version-rotation/delete behavior and that the deleted logical secret is no longer readable through the adapter. A successful warehouse run proves that the configured native adapter can authenticate, create/reconcile its contract table, complete a real provider delivery and repeat the same payload with deterministic batch identity. A successful remote-AI run proves gateway authentication/connectivity, supported classification handling, structured task-summary output, usage bounds, local cost accounting and idempotent duplicate handling for the synthetic request.
 
 It does not by itself prove production retention policy, cross-account policy, outage recovery, replication/failover, or organization-specific compliance. Those still require deployment-specific exercises and review.
