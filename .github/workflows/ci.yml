@@ -35,6 +35,7 @@ jobs:
           python3 -m py_compile scripts/check-migration-compatibility.py
           python3 -m py_compile scripts/promotion-evidence.py
           python3 -m py_compile scripts/provider-validation-evidence.py
+          python3 -m py_compile scripts/provider-validation-registry.py
           ruby -c scripts/openapi-governance.rb
           ruby -c scripts/openapi-compatibility.rb
           ruby -c scripts/consumer-contract.rb
@@ -51,7 +52,7 @@ jobs:
           python3 scripts/provider-validation-evidence.py create \
             --output "$evidence_dir/evidence.json" \
             --target ai_remote \
-            --environment ci \
+            --environment staging \
             --commit "$GITHUB_SHA" \
             --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
@@ -63,11 +64,36 @@ jobs:
           python3 scripts/provider-validation-evidence.py verify \
             --file "$evidence_dir/evidence.json" \
             --target ai_remote \
-            --environment ci \
+            --environment staging \
             --commit "$GITHUB_SHA" \
             --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --require-passed
+          mkdir -p "$evidence_dir/registry-input/run-1"
+          cp "$evidence_dir/evidence.json" "$evidence_dir/registry-input/run-1/provider-validation-evidence.json"
+          python3 scripts/provider-validation-registry.py build \
+            --input-dir "$evidence_dir/registry-input" \
+            --output-json "$evidence_dir/registry.json" \
+            --output-markdown "$evidence_dir/registry.md" \
+            --max-age-days 30 \
+            --expected-commit "$GITHUB_SHA" \
+            --targets ai_remote \
+            --environments staging
+          python3 scripts/provider-validation-registry.py verify \
+            --file "$evidence_dir/registry.json" \
+            --expected-commit "$GITHUB_SHA" \
+            --require-all-passed \
+            --require-current-commit
+          python3 scripts/provider-validation-registry.py build \
+            --input-dir "$evidence_dir/registry-input" \
+            --output-json "$evidence_dir/registry-expired.json" \
+            --output-markdown "$evidence_dir/registry-expired.md" \
+            --max-age-days 30 \
+            --expected-commit "$GITHUB_SHA" \
+            --targets ai_remote \
+            --environments staging \
+            --now 2100-01-01T00:00:00Z
+          grep -q '"status": "expired"' "$evidence_dir/registry-expired.json"
           rm -rf "$evidence_dir"
 
       - name: Test release safety gates
