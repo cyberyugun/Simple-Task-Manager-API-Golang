@@ -156,9 +156,21 @@ Plain HTTP remains rejected unless `LIVE_PROVIDER_ALLOW_INSECURE=true` is delibe
 
 `.github/workflows/live-provider-contracts.yml` is manual-only. Run **Live Provider Contracts** with the desired target after configuring the matching `CONTRACT_...` repository/environment secrets.
 
-The workflow stores `live-provider-contract.log` as a 30-day artifact even when the contract fails. This provides provider-test evidence without putting credentials, provider tokens, or fixture contents into repository history.
+Before the live call, the workflow runs `scripts/provider-failure-injection.sh` for the same target. These hermetic tests cover target-specific retry/fail-closed/configuration/checkpoint/approval safety without contacting the external provider.
 
-A missing credential or provider setting for the selected target is a failure, not a skip. This makes a manually requested contract run meaningful.
+The workflow then creates and verifies `provider-validation-evidence.json` with `scripts/provider-validation-evidence.py`. The manifest records environment, source commit, workflow run/attempt, live-contract status, failure-injection status, target-specific claims/checks, explicit limitations, and SHA-256 hashes of both logs.
+
+Each 30-day artifact contains:
+
+```text
+live-provider-contract.log
+provider-failure-injection.log
+provider-validation-evidence.json
+```
+
+The job fails unless both the hermetic failure-injection layer and the live contract succeed. A missing credential or provider setting for the selected target remains a failure, not a skip. Failed runs still retain the available logs/evidence so the operator can distinguish repository behavior from provider/environment failure.
+
+See [provider validation evidence](provider-validation-evidence.md) for schema, verification and interpretation.
 
 ## IAM expectations
 
