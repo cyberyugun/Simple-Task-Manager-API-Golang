@@ -89,7 +89,8 @@ jobs:
           mkdir -p provider-evidence
           : > /tmp/provider-artifacts.tsv
 
-          if [[ -n "${EVIDENCE_RUN_IDS//[[:space:],]/}" ]]; then
+          compact_run_ids="$(printf '%s' "$EVIDENCE_RUN_IDS" | tr -d '[:space:],')"
+          if [[ -n "$compact_run_ids" ]]; then
             normalized="$(printf '%s' "$EVIDENCE_RUN_IDS" | tr ',' ' ')"
             for run_id in $normalized; do
               if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
@@ -100,7 +101,8 @@ jobs:
             done
           else
             gh api --paginate               "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100"               --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-validation-"))) | [.workflow_run.id, .name] | @tsv'               > /tmp/provider-artifacts-all.tsv
-            awk '!seen[$0]++' /tmp/provider-artifacts-all.tsv | head -n "$MAX_ARTIFACTS" > /tmp/provider-artifacts.tsv
+            awk '!seen[$0]++' /tmp/provider-artifacts-all.tsv > /tmp/provider-artifacts-unique.tsv
+            head -n "$MAX_ARTIFACTS" /tmp/provider-artifacts-unique.tsv > /tmp/provider-artifacts.tsv
           fi
 
           sort -u /tmp/provider-artifacts.tsv -o /tmp/provider-artifacts.tsv
