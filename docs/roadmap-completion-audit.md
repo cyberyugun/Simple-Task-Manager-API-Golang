@@ -91,7 +91,7 @@ Post-roadmap hardening now adds an opt-in `remote_structured` external provider.
 
 The existing organization policy still controls whether AI is enabled, which classifications may be processed, and the maximum classification that may leave the platform. AI-originated mutations remain human-gated.
 
-Repository-level provider work is complete. Remaining production work is live gateway/model contract validation, credential/IAM deployment policy, outage exercises and pricing calibration for the selected external provider.
+Repository-level provider work is complete. Post-roadmap hardening also adds an opt-in live remote-AI contract using only synthetic task-summary content. It validates gateway authentication/connectivity through the production adapter, public/internal classification handling, deterministic request identity/idempotent duplicate responses, feature-specific structured output, positive usage accounting, configured output limits, and locally calculated actual cost. Bounded retry/error behavior remains covered by hermetic provider tests; real outage exercises and provider-specific pricing calibration still require deployment evidence.
 
 ### P2 — Phase 42 cloud multi-region execution
 
@@ -105,14 +105,14 @@ Repository-level planning integration is therefore implemented. Production readi
 
 The repository now contains `scripts/live-provider-contracts.sh`, attachment/secret live contract tests, and the manual `Live Provider Contracts` GitHub workflow. Normal CI skips all live-provider calls. A manually selected target fails if required provider configuration is missing and produces a retained log artifact.
 
-Current live targets cover native attachment storage (`storage_s3`, `storage_azure`, `storage_gcs`), the remote scanner gateway (`scanner`), HashiCorp Vault (`secret_vault`), AWS Secrets Manager (`secret_aws`), Azure Key Vault (`secret_azure`), GCP Secret Manager (`secret_gcp`), BigQuery (`warehouse_bigquery`), Snowflake (`warehouse_snowflake`), Redshift (`warehouse_redshift`) and Databricks (`warehouse_databricks`). External-AI and region-automation live targets remain the next harness extensions.
+Current live targets cover native attachment storage (`storage_s3`, `storage_azure`, `storage_gcs`), the remote scanner gateway (`scanner`), HashiCorp Vault (`secret_vault`), AWS Secrets Manager (`secret_aws`), Azure Key Vault (`secret_azure`), GCP Secret Manager (`secret_gcp`), BigQuery (`warehouse_bigquery`), Snowflake (`warehouse_snowflake`), Redshift (`warehouse_redshift`), Databricks (`warehouse_databricks`) and the remote structured AI gateway (`ai_remote`). Region-automation planning remains the next harness extension.
 
 ## Recommended post-Phase-45 execution order
 
 1. **Production Storage & Content Security Hardening** — scanner gateway, native S3/S3-compatible/Azure Blob/GCS storage and an opt-in live contract harness are implemented; remaining work is running the harness in each target environment plus outage and deployment-specific IAM/policy exercises.
 2. **Native Secret Vault & KMS Adapters** — native adapters plus opt-in live create/read/rotate/delete contracts are implemented for HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager; remaining work is running them in each deployment environment plus outage/IAM-policy exercises.
 3. **Live Warehouse Delivery** — native BigQuery, Snowflake, Redshift and Databricks delivery plus opt-in live delivery/idempotency contracts are implemented; remaining work is running them in each environment plus outage, least-privilege IAM and downstream query/readback evidence.
-4. **External AI Provider Pack** — complete at repository level with the opt-in remote structured provider; remaining work is live gateway/provider validation and pricing calibration.
+4. **External AI Provider Pack** — remote structured provider plus an opt-in synthetic live gateway/idempotency/usage-cost contract are implemented; remaining work is running it against the selected production gateway, outage exercises and provider-specific pricing calibration.
 5. **Multi-Region Automation Integration** — signed plan-only handoff for explicitly approved migrations is implemented; remaining work is external apply-gate integration, live cloud IAM/policy validation and real failover evidence.
 
 ## Merge rule
