@@ -1,0 +1,170 @@
+name: Provider Validation Registry
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_ids:
+        description: Optional comma/space-separated Live Provider Contracts run IDs; empty scans recent provider-validation artifacts
+        required: false
+        default: ""
+        type: string
+      max_artifacts:
+        description: Maximum recent provider-validation artifacts to scan when run_ids is empty
+        required: true
+        default: "200"
+        type: string
+      max_age_days:
+        description: Passed evidence becomes expired after this many days
+        required: true
+        default: "30"
+        type: string
+      environments:
+        description: Environments included in the registry
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - production
+          - staging
+          - development
+      expected_commit:
+        description: Optional expected tested commit; empty uses this workflow commit
+        required: false
+        default: ""
+        type: string
+      require_all_passed:
+        description: Fail unless every selected target/environment cell is passed
+        required: true
+        default: false
+        type: boolean
+      require_current_commit:
+        description: Fail when passed evidence does not match the expected commit
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  registry:
+    name: Build provider validation registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EVIDENCE_RUN_IDS: ${{ inputs.run_ids }}
+      MAX_ARTIFACTS: ${{ inputs.max_artifacts }}
+      MAX_AGE_DAYS: ${{ inputs.max_age_days }}
+      REGISTRY_ENVIRONMENTS: ${{ inputs.environments }}
+      EXPECTED_COMMIT_INPUT: ${{ inputs.expected_commit }}
+      REQUIRE_ALL_PASSED: ${{ inputs.require_all_passed }}
+      REQUIRE_CURRENT_COMMIT: ${{ inputs.require_current_commit }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate registry inputs
+        run: |
+          set -euo pipefail
+          printf '%s' "$MAX_ARTIFACTS" | grep -Eq '^[1-9][0-9]{0,3}$'
+          printf '%s' "$MAX_AGE_DAYS" | grep -Eq '^[1-9][0-9]{0,3}$'
+          if (( MAX_ARTIFACTS > 1000 )); then
+            echo "::error::max_artifacts must be <= 1000"
+            exit 1
+          fi
+          if (( MAX_AGE_DAYS > 3650 )); then
+            echo "::error::max_age_days must be <= 3650"
+            exit 1
+          fi
+
+      - name: Discover and download provider evidence artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p provider-evidence
+          : > /tmp/provider-artifacts.tsv
+
+          compact_run_ids="$(printf '%s' "$EVIDENCE_RUN_IDS" | tr -d '[:space:],')"
+          if [[ -n "$compact_run_ids" ]]; then
+            normalized="$(printf '%s' "$EVIDENCE_RUN_IDS" | tr ',' ' ')"
+            for run_id in $normalized; do
+              if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
+                echo "::error::invalid workflow run id: $run_id"
+                exit 1
+              fi
+              gh api --paginate                 "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100"                 --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-validation-")) and ((.name | startswith("provider-validation-registry-")) | not)) | [.workflow_run.id, .name] | @tsv'                 >> /tmp/provider-artifacts.tsv
+            done
+          else
+            gh api --paginate               "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100"               --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-validation-")) and ((.name | startswith("provider-validation-registry-")) | not)) | [.workflow_run.id, .name] | @tsv'               > /tmp/provider-artifacts-all.tsv
+            awk '!seen[$0]++' /tmp/provider-artifacts-all.tsv > /tmp/provider-artifacts-unique.tsv
+            head -n "$MAX_ARTIFACTS" /tmp/provider-artifacts-unique.tsv > /tmp/provider-artifacts.tsv
+          fi
+
+          sort -u /tmp/provider-artifacts.tsv -o /tmp/provider-artifacts.tsv
+          artifact_count="$(wc -l < /tmp/provider-artifacts.tsv | tr -d ' ')"
+          echo "Discovered provider evidence artifacts: $artifact_count"
+
+          while IFS=$'	' read -r run_id artifact_name; do
+            [[ -n "$run_id" && -n "$artifact_name" ]] || continue
+            safe_name="$(printf '%s' "$artifact_name" | tr -c 'A-Za-z0-9._-' '_')"
+            destination="provider-evidence/${run_id}-${safe_name}"
+            mkdir -p "$destination"
+            gh run download "$run_id"               --repo "$GITHUB_REPOSITORY"               --name "$artifact_name"               --dir "$destination"
+          done < /tmp/provider-artifacts.tsv
+
+      - name: Build validation registry
+        run: |
+          set -euo pipefail
+          expected_commit="$EXPECTED_COMMIT_INPUT"
+          if [[ -z "$expected_commit" ]]; then
+            expected_commit="$GITHUB_SHA"
+          fi
+          case "$REGISTRY_ENVIRONMENTS" in
+            all) environments="development,staging,production" ;;
+            development|staging|production) environments="$REGISTRY_ENVIRONMENTS" ;;
+            *)
+              echo "::error::unsupported environments selection: $REGISTRY_ENVIRONMENTS"
+              exit 1
+              ;;
+          esac
+
+          python3 scripts/provider-validation-registry.py build             --input-dir provider-evidence             --output-json provider-validation-registry.json             --output-markdown provider-validation-registry.md             --max-age-days "$MAX_AGE_DAYS"             --expected-commit "$expected_commit"             --environments "$environments"
+
+          {
+            echo "EXPECTED_COMMIT_RESOLVED=$expected_commit"
+            echo "REGISTRY_ENVIRONMENTS_RESOLVED=$environments"
+          } >> "$GITHUB_ENV"
+
+          cat provider-validation-registry.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify validation registry
+        run: |
+          set -euo pipefail
+          args=(
+            verify
+            --file provider-validation-registry.json
+            --expected-commit "$EXPECTED_COMMIT_RESOLVED"
+          )
+          if [[ "$REQUIRE_ALL_PASSED" == "true" ]]; then
+            args+=(--require-all-passed)
+          fi
+          if [[ "$REQUIRE_CURRENT_COMMIT" == "true" ]]; then
+            args+=(--require-current-commit)
+          fi
+          python3 scripts/provider-validation-registry.py "${args[@]}"
+
+      - name: Upload registry evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-validation-registry-${{ github.run_id }}
+          path: |
+            provider-validation-registry.json
+            provider-validation-registry.md
+          if-no-files-found: warn
+          retention-days: 30

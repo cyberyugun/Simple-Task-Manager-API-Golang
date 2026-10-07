@@ -246,14 +246,16 @@ Before declaring provider integrations production-ready:
 
 - run **Live Provider Contracts** for every enabled production provider/gateway with environment set to `production`
 - retain `provider-validation-evidence.json`, `live-provider-contract.log`, and `provider-failure-injection.log`
-- verify the manifest with `scripts/provider-validation-evidence.py verify --require-passed`
-- record the workflow run ID in the production-readiness/change record
+- verify each manifest with `scripts/provider-validation-evidence.py verify --require-passed`
+- run **Provider Validation Registry** for `production` and review `provider-validation-registry.md`
+- for a strict exact-release gate, enable both `require_all_passed` and `require_current_commit`
+- record provider validation and registry workflow run IDs in the production-readiness/change record
 - separately review least-privilege IAM and organization-specific policy
-- complete target-specific external evidence that the manifest intentionally does not claim, such as warehouse readback, AI pricing calibration, real provider outage exercises, or regional game-day RPO/RTO
+- complete target-specific external evidence that the manifests intentionally do not claim, such as warehouse readback, AI pricing calibration, real provider outage exercises, or regional game-day RPO/RTO
 
-The evidence manifest binds repository failure-injection results and live-contract results to the same commit/run, but it is not a substitute for cloud-account IAM review or real disaster/failover exercises.
+The evidence manifests bind repository failure-injection results and live-contract results to their exact commits/runs. The registry aggregates those manifests and exposes `not_run`, `failed`, `expired`, and commit-drift gaps instead of assuming missing evidence is healthy. Neither layer is a substitute for cloud-account IAM review or real disaster/failover exercises.
 
-See `docs/live-provider-contracts.md` and `docs/provider-validation-evidence.md`.
+See `docs/live-provider-contracts.md`, `docs/provider-validation-evidence.md`, and `docs/provider-validation-registry.md`.
 
 ## Progressive release readiness
 

@@ -114,3 +114,9 @@ Depending on target, additional evidence still includes:
 - multi-region external apply-gate review, real failover game days, and measured RPO/RTO.
 
 Those external exercises should reference the provider-validation manifest/run ID rather than replacing it, so the final production-readiness record preserves both repository contract evidence and environment-specific operational evidence.
+
+## Registry aggregation
+
+Individual evidence manifests can be aggregated with `scripts/provider-validation-registry.py` or the manual **Provider Validation Registry** workflow. The registry selects the newest evidence per target/environment, reports `not_run`, `passed`, `failed`, or `expired`, preserves manifest limitations, records evidence age and tested commit, and flags `commit_drift` when the evidence commit differs from the expected release commit.
+
+See [Provider Validation Registry](provider-validation-registry.md).
