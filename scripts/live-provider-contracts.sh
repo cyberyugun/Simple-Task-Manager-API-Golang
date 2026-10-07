@@ -57,6 +57,10 @@ case "$target" in
     export DATA_PLATFORM_DATABRICKS_NATIVE=true
     test_name="TestLiveWarehouseProviderContract"
     ;;
+  ai_remote)
+    export AI_REMOTE_PROVIDER_ENABLED=true
+    test_name="TestLiveRemoteAIProviderContract"
+    ;;
   *)
     echo "unsupported live provider contract target: $target" >&2
     exit 2
