@@ -22,6 +22,15 @@ on:
           - warehouse_databricks
           - ai_remote
           - region_automation
+      environment:
+        description: Provider environment label recorded in evidence
+        required: true
+        default: staging
+        type: choice
+        options:
+          - development
+          - staging
+          - production
       scanner_storage_target:
         description: Storage provider used by scanner fixture
         required: false
@@ -39,12 +48,13 @@ jobs:
   provider-contract:
     name: Live Provider Contract
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     env:
       LIVE_PROVIDER_CONTRACT_TARGET: ${{ inputs.target }}
       LIVE_PROVIDER_STORAGE_TARGET: ${{ inputs.scanner_storage_target }}
       LIVE_PROVIDER_ALLOW_INSECURE: "false"
+      LIVE_PROVIDER_ENVIRONMENT: ${{ inputs.environment }}
 
       ATTACHMENT_STORAGE_PROVIDER: ${{ secrets.CONTRACT_ATTACHMENT_STORAGE_PROVIDER }}
       ATTACHMENT_STORAGE_BUCKET: ${{ secrets.CONTRACT_ATTACHMENT_STORAGE_BUCKET }}
@@ -196,16 +206,61 @@ jobs:
           cache: true
           cache-dependency-path: go.mod
 
-      - name: Run live provider contract
+      - name: Run hermetic provider failure injection
+        id: failure_injection
+        continue-on-error: true
         run: |
+          : > provider-failure-injection.log
+          set -o pipefail
+          bash scripts/provider-failure-injection.sh 2>&1 | tee provider-failure-injection.log
+
+      - name: Run live provider contract
+        id: live_contract
+        continue-on-error: true
+        run: |
+          : > live-provider-contract.log
           set -o pipefail
           bash scripts/live-provider-contracts.sh 2>&1 | tee live-provider-contract.log
 
-      - name: Upload contract evidence
+      - name: Create provider validation evidence
+        if: always()
+        env:
+          LIVE_CONTRACT_STATUS: ${{ steps.live_contract.outcome }}
+          FAILURE_INJECTION_STATUS: ${{ steps.failure_injection.outcome }}
+        run: |
+          python3 scripts/provider-validation-evidence.py create \
+            --output provider-validation-evidence.json \
+            --target "$LIVE_PROVIDER_CONTRACT_TARGET" \
+            --environment "$LIVE_PROVIDER_ENVIRONMENT" \
+            --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --source-ref "$GITHUB_REF" \
+            --live-status "$LIVE_CONTRACT_STATUS" \
+            --failure-status "$FAILURE_INJECTION_STATUS" \
+            --live-log live-provider-contract.log \
+            --failure-log provider-failure-injection.log
+
+      - name: Verify provider validation evidence
+        if: always()
+        run: |
+          python3 scripts/provider-validation-evidence.py verify \
+            --file provider-validation-evidence.json \
+            --target "$LIVE_PROVIDER_CONTRACT_TARGET" \
+            --environment "$LIVE_PROVIDER_ENVIRONMENT" \
+            --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --require-passed
+
+      - name: Upload provider validation evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: live-provider-contract-${{ inputs.target }}-${{ github.run_id }}
-          path: live-provider-contract.log
-          if-no-files-found: error
+          name: provider-validation-${{ inputs.environment }}-${{ inputs.target }}-${{ github.run_id }}
+          path: |
+            live-provider-contract.log
+            provider-failure-injection.log
+            provider-validation-evidence.json
+          if-no-files-found: warn
           retention-days: 30

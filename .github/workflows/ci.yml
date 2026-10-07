@@ -31,8 +31,10 @@ jobs:
           bash -n scripts/rollback-drill.sh
           bash -n scripts/staging-preflight.sh
           bash -n scripts/live-provider-contracts.sh
+          bash -n scripts/provider-failure-injection.sh
           python3 -m py_compile scripts/check-migration-compatibility.py
           python3 -m py_compile scripts/promotion-evidence.py
+          python3 -m py_compile scripts/provider-validation-evidence.py
           ruby -c scripts/openapi-governance.rb
           ruby -c scripts/openapi-compatibility.rb
           ruby -c scripts/consumer-contract.rb
@@ -43,6 +45,30 @@ jobs:
           bash scripts/dr-readiness-check.sh
           bash scripts/performance-policy-check.sh
           bash scripts/release-policy-check.sh
+          evidence_dir="$(mktemp -d)"
+          printf '%s\n' 'live contract ok' > "$evidence_dir/live.log"
+          printf '%s\n' 'failure injection ok' > "$evidence_dir/failure.log"
+          python3 scripts/provider-validation-evidence.py create \
+            --output "$evidence_dir/evidence.json" \
+            --target ai_remote \
+            --environment ci \
+            --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --source-ref "$GITHUB_REF" \
+            --live-status success \
+            --failure-status success \
+            --live-log "$evidence_dir/live.log" \
+            --failure-log "$evidence_dir/failure.log"
+          python3 scripts/provider-validation-evidence.py verify \
+            --file "$evidence_dir/evidence.json" \
+            --target ai_remote \
+            --environment ci \
+            --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --require-passed
+          rm -rf "$evidence_dir"
 
       - name: Test release safety gates
         run: |

@@ -240,6 +240,21 @@ Before declaring production business-continuity ready:
 
 Repository-level HA does not by itself prove regional DR. Regional recovery must be exercised in the actual selected cloud account.
 
+## External provider validation evidence
+
+Before declaring provider integrations production-ready:
+
+- run **Live Provider Contracts** for every enabled production provider/gateway with environment set to `production`
+- retain `provider-validation-evidence.json`, `live-provider-contract.log`, and `provider-failure-injection.log`
+- verify the manifest with `scripts/provider-validation-evidence.py verify --require-passed`
+- record the workflow run ID in the production-readiness/change record
+- separately review least-privilege IAM and organization-specific policy
+- complete target-specific external evidence that the manifest intentionally does not claim, such as warehouse readback, AI pricing calibration, real provider outage exercises, or regional game-day RPO/RTO
+
+The evidence manifest binds repository failure-injection results and live-contract results to the same commit/run, but it is not a substitute for cloud-account IAM review or real disaster/failover exercises.
+
+See `docs/live-provider-contracts.md` and `docs/provider-validation-evidence.md`.
+
 ## Progressive release readiness
 
 Before enabling production progressive delivery:
