@@ -97,10 +97,10 @@ jobs:
                 echo "::error::invalid workflow run id: $run_id"
                 exit 1
               fi
-              gh api --paginate                 "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100"                 --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-validation-"))) | [.workflow_run.id, .name] | @tsv'                 >> /tmp/provider-artifacts.tsv
+              gh api --paginate                 "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100"                 --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-validation-")) and ((.name | startswith("provider-validation-registry-")) | not)) | [.workflow_run.id, .name] | @tsv'                 >> /tmp/provider-artifacts.tsv
             done
           else
-            gh api --paginate               "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100"               --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-validation-"))) | [.workflow_run.id, .name] | @tsv'               > /tmp/provider-artifacts-all.tsv
+            gh api --paginate               "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100"               --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-validation-")) and ((.name | startswith("provider-validation-registry-")) | not)) | [.workflow_run.id, .name] | @tsv'               > /tmp/provider-artifacts-all.tsv
             awk '!seen[$0]++' /tmp/provider-artifacts-all.tsv > /tmp/provider-artifacts-unique.tsv
             head -n "$MAX_ARTIFACTS" /tmp/provider-artifacts-unique.tsv > /tmp/provider-artifacts.tsv
           fi
