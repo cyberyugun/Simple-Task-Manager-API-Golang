@@ -99,13 +99,13 @@ Post-roadmap hardening now connects explicitly approved region migrations to an 
 
 The contract is intentionally `plan_only` and includes `execution_requires_external_gate=true`. The application still does not issue DNS changes, database failovers, infrastructure apply commands or customer-data copies. Promotion of an accepted plan to destructive cloud execution remains in an external deployment system with its own operator gate.
 
-Repository-level planning integration is therefore implemented. Production readiness still requires live deployment-gateway contract tests, cloud-provider IAM/policy validation, real game days and measured RPO/RTO evidence.
+Repository-level planning integration is therefore implemented. Post-roadmap hardening also adds an opt-in live planning contract that submits only a synthetic, explicitly approved migration through the production planner. It verifies deterministic request identity, requires the external gateway to preserve the same plan ID across duplicate submissions, and accepts only `planned`/`accepted` receipts. The production planner still signs every call with HMAC-SHA256, sends `X-Region-Automation-Mode: plan_only`, and requires `execution_requires_external_gate=true`; the live harness never invokes apply/failover execution. Production readiness still requires running this contract against the chosen gateway, cloud-provider IAM/policy validation, real game days and measured RPO/RTO evidence.
 
 ## Live provider validation harness
 
-The repository now contains `scripts/live-provider-contracts.sh`, attachment/secret live contract tests, and the manual `Live Provider Contracts` GitHub workflow. Normal CI skips all live-provider calls. A manually selected target fails if required provider configuration is missing and produces a retained log artifact.
+The repository now contains `scripts/live-provider-contracts.sh`, provider-specific live contract tests, and the manual `Live Provider Contracts` GitHub workflow. Normal CI skips all live-provider calls. A manually selected target fails if required provider configuration is missing and produces a retained log artifact.
 
-Current live targets cover native attachment storage (`storage_s3`, `storage_azure`, `storage_gcs`), the remote scanner gateway (`scanner`), HashiCorp Vault (`secret_vault`), AWS Secrets Manager (`secret_aws`), Azure Key Vault (`secret_azure`), GCP Secret Manager (`secret_gcp`), BigQuery (`warehouse_bigquery`), Snowflake (`warehouse_snowflake`), Redshift (`warehouse_redshift`), Databricks (`warehouse_databricks`) and the remote structured AI gateway (`ai_remote`). Region-automation planning remains the next harness extension.
+Current live targets cover native attachment storage (`storage_s3`, `storage_azure`, `storage_gcs`), the remote scanner gateway (`scanner`), HashiCorp Vault (`secret_vault`), AWS Secrets Manager (`secret_aws`), Azure Key Vault (`secret_azure`), GCP Secret Manager (`secret_gcp`), BigQuery (`warehouse_bigquery`), Snowflake (`warehouse_snowflake`), Redshift (`warehouse_redshift`), Databricks (`warehouse_databricks`), the remote structured AI gateway (`ai_remote`) and signed plan-only region automation (`region_automation`).
 
 ## Recommended post-Phase-45 execution order
 
@@ -113,7 +113,7 @@ Current live targets cover native attachment storage (`storage_s3`, `storage_azu
 2. **Native Secret Vault & KMS Adapters** — native adapters plus opt-in live create/read/rotate/delete contracts are implemented for HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager; remaining work is running them in each deployment environment plus outage/IAM-policy exercises.
 3. **Live Warehouse Delivery** — native BigQuery, Snowflake, Redshift and Databricks delivery plus opt-in live delivery/idempotency contracts are implemented; remaining work is running them in each environment plus outage, least-privilege IAM and downstream query/readback evidence.
 4. **External AI Provider Pack** — remote structured provider plus an opt-in synthetic live gateway/idempotency/usage-cost contract are implemented; remaining work is running it against the selected production gateway, outage exercises and provider-specific pricing calibration.
-5. **Multi-Region Automation Integration** — signed plan-only handoff for explicitly approved migrations is implemented; remaining work is external apply-gate integration, live cloud IAM/policy validation and real failover evidence.
+5. **Multi-Region Automation Integration** — signed plan-only handoff plus an opt-in synthetic live planning/idempotency contract are implemented; remaining work is running it against the chosen deployment gateway, external apply-gate integration, live cloud IAM/policy validation and real failover evidence.
 
 ## Merge rule
 

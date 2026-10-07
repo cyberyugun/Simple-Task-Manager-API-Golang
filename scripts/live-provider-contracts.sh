@@ -61,6 +61,10 @@ case "$target" in
     export AI_REMOTE_PROVIDER_ENABLED=true
     test_name="TestLiveRemoteAIProviderContract"
     ;;
+  region_automation)
+    export REGION_AUTOMATION_ENABLED=true
+    test_name="TestLiveRegionAutomationProviderContract"
+    ;;
   *)
     echo "unsupported live provider contract target: $target" >&2
     exit 2

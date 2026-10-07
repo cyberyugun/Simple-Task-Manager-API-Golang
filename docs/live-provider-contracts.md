@@ -1,6 +1,6 @@
 # Live Provider Contract Harness
 
-The repository includes an opt-in contract harness for validating Phase 36 attachment storage/malware-scanner integrations, Phase 38 external secret backends, Phase 44 native warehouse delivery, and the Phase 41 remote structured AI gateway against real provider environments. Normal unit/CI runs never contact external providers.
+The repository includes an opt-in contract harness for validating Phase 36 attachment storage/malware-scanner integrations, Phase 38 external secret backends, Phase 44 native warehouse delivery, the Phase 41 remote structured AI gateway, and the Phase 42 plan-only region-automation gateway against real provider environments. Normal unit/CI runs never contact external providers.
 
 ## Safety model
 
@@ -39,6 +39,8 @@ Warehouse contracts intentionally do not drop the table after each run. Use a de
 
 The remote-AI contract sends only a synthetic task-summary request. It accepts only `public` or `internal` classification, derives the same deterministic request ID twice, performs the same request twice through the production adapter, and requires the gateway to return an identical idempotent response (model, structured result, usage and calculated cost). No user task text, organization data or production context is used.
 
+The region-automation contract creates only an in-memory synthetic migration marked `approved` for contract validation. It sends that migration twice through the production planner and requires a stable request ID and plan ID. The request remains `mode=plan_only`, carries `execution_requires_external_gate=true`, and contains no command that applies infrastructure, changes DNS, fails over a database, or copies customer data.
+
 The harness does not use production task/workspace records and does not write to the application database.
 
 ## Targets
@@ -56,6 +58,7 @@ The harness does not use production task/workspace records and does not write to
 - `warehouse_redshift` — Redshift Data API table create + MERGE.
 - `warehouse_databricks` — Databricks SQL Statement Execution + Delta MERGE.
 - `ai_remote` — remote structured AI gateway using a synthetic task-summary request.
+- `region_automation` — signed external region-migration planning gateway; plan-only, never apply/failover.
 
 For `scanner`, set `LIVE_PROVIDER_STORAGE_TARGET` to `storage_s3`, `storage_azure`, or `storage_gcs`.
 
@@ -129,6 +132,24 @@ bash scripts/live-provider-contracts.sh
 
 The AI contract defaults to `public` classification. `LIVE_AI_CLASSIFICATION` may be set to `internal`, but confidential/restricted classifications are rejected by the live harness so synthetic validation cannot accidentally become a path for sensitive data.
 
+For the region-automation planning gateway:
+
+```bash
+export LIVE_PROVIDER_CONTRACT_TARGET=region_automation
+export REGION_AUTOMATION_ENDPOINT=https://deployment-gateway.example.com/v1/region-plans
+# Load REGION_AUTOMATION_SIGNING_SECRET from your secret store (minimum 32 characters)
+export REGION_AUTOMATION_BEARER_TOKEN=...
+export LIVE_REGION_SOURCE_REGION=ap-southeast
+export LIVE_REGION_TARGET_REGION=ap-northeast
+export LIVE_REGION_ALLOWED_REGIONS=ap-southeast,ap-northeast
+export LIVE_REGION_RPO_SECONDS=300
+export LIVE_REGION_RTO_SECONDS=1800
+
+bash scripts/live-provider-contracts.sh
+```
+
+The source and target must differ, and the allowed-region list must include both the source and target. The contract constructs its own synthetic organization/migration identifiers and never persists them to the application database.
+
 Plain HTTP remains rejected unless `LIVE_PROVIDER_ALLOW_INSECURE=true` is deliberately set for a local emulator. The GitHub workflow fixes this value to `false`.
 
 ## GitHub Actions
@@ -153,8 +174,10 @@ Warehouse identities should be scoped to a dedicated contract dataset/database/s
 
 The remote AI gateway token should be a dedicated least-privilege contract credential when the gateway supports scoped credentials. The gateway is expected to honor the deterministic `Idempotency-Key`, echo the request ID when supported, return valid structured output and usage, and enforce its own model-access policy. The workflow never prints the bearer token or synthetic request body.
 
+The region-automation gateway credential must be planning-only. Its policy should permit validation or creation of migration plans but deny infrastructure apply, DNS mutation, database failover, data-copy execution, or equivalent destructive actions. The gateway should verify the HMAC signature/timestamp, honor the deterministic idempotency key, and return a stable `plan_id` for duplicate requests. Any promotion from a plan to execution must remain behind a separate external authorization gate.
+
 ## What this proves
 
-A successful storage/scanner run provides environment-specific evidence for authentication, signed upload/download behavior, metadata integrity verification, encryption headers configured by the adapter, provider read/delete permissions, and scanner-to-storage reachability. A successful secret-backend run additionally proves create/read/version-rotation/delete behavior and that the deleted logical secret is no longer readable through the adapter. A successful warehouse run proves that the configured native adapter can authenticate, create/reconcile its contract table, complete a real provider delivery and repeat the same payload with deterministic batch identity. A successful remote-AI run proves gateway authentication/connectivity, supported classification handling, structured task-summary output, usage bounds, local cost accounting and idempotent duplicate handling for the synthetic request.
+A successful storage/scanner run provides environment-specific evidence for authentication, signed upload/download behavior, metadata integrity verification, encryption headers configured by the adapter, provider read/delete permissions, and scanner-to-storage reachability. A successful secret-backend run additionally proves create/read/version-rotation/delete behavior and that the deleted logical secret is no longer readable through the adapter. A successful warehouse run proves that the configured native adapter can authenticate, create/reconcile its contract table, complete a real provider delivery and repeat the same payload with deterministic batch identity. A successful remote-AI run proves gateway authentication/connectivity, supported classification handling, structured task-summary output, usage bounds, local cost accounting and idempotent duplicate handling for the synthetic request. A successful region-automation run proves that the configured planning gateway accepts the production signed plan-only contract for a synthetic approved migration and preserves plan identity across duplicate submissions; it does not prove or execute cloud failover.
 
 It does not by itself prove production retention policy, cross-account policy, outage recovery, replication/failover, or organization-specific compliance. Those still require deployment-specific exercises and review.
