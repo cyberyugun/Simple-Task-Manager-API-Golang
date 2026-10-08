@@ -43,6 +43,34 @@ on:
         required: true
         default: false
         type: boolean
+      required_targets:
+        description: Optional comma/space-separated provider targets evaluated by the policy gate
+        required: false
+        default: ""
+        type: string
+      policy_environment:
+        description: Environment evaluated by the policy gate
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+      policy_mode:
+        description: Policy behavior for required targets
+        required: true
+        default: off
+        type: choice
+        options:
+          - off
+          - warn
+          - enforce
+      policy_require_current_commit:
+        description: Require policy targets to match the expected commit
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -62,6 +90,10 @@ jobs:
       EXPECTED_COMMIT_INPUT: ${{ inputs.expected_commit }}
       REQUIRE_ALL_PASSED: ${{ inputs.require_all_passed }}
       REQUIRE_CURRENT_COMMIT: ${{ inputs.require_current_commit }}
+      POLICY_REQUIRED_TARGETS: ${{ inputs.required_targets }}
+      POLICY_ENVIRONMENT: ${{ inputs.policy_environment }}
+      POLICY_MODE: ${{ inputs.policy_mode }}
+      POLICY_REQUIRE_CURRENT_COMMIT: ${{ inputs.policy_require_current_commit }}
 
     steps:
       - name: Checkout
@@ -158,6 +190,43 @@ jobs:
           fi
           python3 scripts/provider-validation-registry.py "${args[@]}"
 
+      - name: Evaluate required-provider policy
+        if: env.POLICY_MODE != 'off'
+        run: |
+          set -euo pipefail
+          if [[ -z "${POLICY_REQUIRED_TARGETS//[[:space:],]/}" ]]; then
+            echo "::error::required_targets must contain at least one target when policy_mode is warn or enforce."
+            exit 1
+          fi
+
+          policy_args=(
+            evaluate
+            --registry provider-validation-registry.json
+            --environment "$POLICY_ENVIRONMENT"
+            --required-targets "$POLICY_REQUIRED_TARGETS"
+            --expected-commit "$EXPECTED_COMMIT_RESOLVED"
+            --mode "$POLICY_MODE"
+            --output-json provider-validation-policy.json
+            --output-markdown provider-validation-policy.md
+          )
+          if [[ "$POLICY_REQUIRE_CURRENT_COMMIT" == "true" ]]; then
+            policy_args+=(--require-current-commit)
+          fi
+          python3 scripts/provider-validation-policy.py "${policy_args[@]}"
+
+          verify_args=(
+            verify
+            --file provider-validation-policy.json
+            --environment "$POLICY_ENVIRONMENT"
+            --required-targets "$POLICY_REQUIRED_TARGETS"
+            --expected-commit "$EXPECTED_COMMIT_RESOLVED"
+          )
+          if [[ "$POLICY_MODE" == "enforce" ]]; then
+            verify_args+=(--require-passed)
+          fi
+          python3 scripts/provider-validation-policy.py "${verify_args[@]}"
+          cat provider-validation-policy.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload registry evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -166,5 +235,7 @@ jobs:
           path: |
             provider-validation-registry.json
             provider-validation-registry.md
+            provider-validation-policy.json
+            provider-validation-policy.md
           if-no-files-found: warn
           retention-days: 30
