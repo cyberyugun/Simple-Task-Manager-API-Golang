@@ -47,6 +47,11 @@ grep -q 'needs: \[build, staging\]' .github/workflows/deploy.yml
 grep -q 'name: Verify staging promotion gate' .github/workflows/deploy.yml
 grep -q 'environment: staging' .github/workflows/deploy.yml
 grep -q 'staging-promotion-evidence' .github/workflows/deploy.yml
+grep -q 'name: Enforce production provider validation policy' .github/workflows/deploy.yml
+grep -q 'PROVIDER_VALIDATION_GATE_MODE' .github/workflows/deploy.yml
+grep -q 'PROVIDER_VALIDATION_REQUIRED_TARGETS' .github/workflows/deploy.yml
+grep -q 'provider-validation-release-policy.json' .github/workflows/deploy.yml
+grep -q 'actions: read' .github/workflows/deploy.yml
 
 python3 scripts/check-migration-compatibility.py migrations
 
