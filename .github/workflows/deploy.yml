@@ -32,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   packages: write
   id-token: write
   attestations: write
@@ -370,6 +371,12 @@ jobs:
       IMAGE_DIGEST: ${{ needs.build.outputs.image-digest }}
       CANARY_WEIGHT: ${{ inputs.canary_weight || vars.CANARY_WEIGHT || '10' }}
       CANARY_OBSERVATION_SECONDS: ${{ inputs.canary_observation_seconds || vars.CANARY_OBSERVATION_SECONDS || '60' }}
+      GH_TOKEN: ${{ github.token }}
+      PROVIDER_VALIDATION_GATE_MODE: ${{ vars.PROVIDER_VALIDATION_GATE_MODE || 'off' }}
+      PROVIDER_VALIDATION_REQUIRED_TARGETS: ${{ vars.PROVIDER_VALIDATION_REQUIRED_TARGETS }}
+      PROVIDER_VALIDATION_MAX_AGE_DAYS: ${{ vars.PROVIDER_VALIDATION_MAX_AGE_DAYS || '30' }}
+      PROVIDER_VALIDATION_MAX_ARTIFACTS: ${{ vars.PROVIDER_VALIDATION_MAX_ARTIFACTS || '200' }}
+      PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT: ${{ vars.PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT || 'false' }}
 
     steps:
       - name: Checkout
@@ -433,6 +440,599 @@ jobs:
             --commit "$GITHUB_SHA" \
             --image-digest "$IMAGE_DIGEST" \
             --run-id "$GITHUB_RUN_ID"
+
+      - name: Enforce production provider validation policy
+        if: env.PROVIDER_VALIDATION_GATE_MODE != 'off'
+        run: |
+          set -euo pipefail
+
+          case "$PROVIDER_VALIDATION_GATE_MODE" in
+            warn|enforce) ;;
+            *)
+              echo "::error::PROVIDER_VALIDATION_GATE_MODE must be off, warn, or enforce."
+              exit 1
+              ;;
+          esac
+
+          if [[ -z "${PROVIDER_VALIDATION_REQUIRED_TARGETS//[[:space:],]/}" ]]; then
+            echo "::error::PROVIDER_VALIDATION_REQUIRED_TARGETS must list at least one enabled provider when the gate is active."
+            exit 1
+          fi
+          printf '%s' "$PROVIDER_VALIDATION_MAX_AGE_DAYS" | grep -Eq '^[1-9][0-9]{0,3}      - name: Log in to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify signed release before deployment
+        run: |
+          test -n "$IMAGE_DIGEST"
+          cosign verify "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/deploy.yml@refs/(heads/main|tags/v.*)$"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+      - name: Validate cluster authentication mode
+        env:
+          KUBE_AUTH_MODE: ${{ vars.KUBE_AUTH_MODE }}
+        run: |
+          case "${KUBE_AUTH_MODE:-kubeconfig}" in
+            aws-eks|azure-aks|gke|kubeconfig) ;;
+            *)
+              echo "::error::KUBE_AUTH_MODE must be one of: aws-eks, azure-aks, gke, kubeconfig."
+              exit 1
+              ;;
+          esac
+
+      - name: Authenticate to AWS with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+
+      - name: Configure EKS cluster
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+        run: |
+          test -n "$AWS_REGION" || { echo "::error::AWS_REGION is required."; exit 1; }
+          test -n "$EKS_CLUSTER_NAME" || { echo "::error::EKS_CLUSTER_NAME is required."; exit 1; }
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Authenticate to Azure with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure AKS cluster
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/aks-set-context@c7eb093e5a5d47caa333f64974d5fd1cd4bf069d # v4.0.3
+        with:
+          resource-group: ${{ vars.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
+          admin: false
+
+      - name: Authenticate to Google Cloud with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure GKE cluster
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
+          location: ${{ vars.GKE_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure cluster access from kubeconfig fallback
+        if: vars.KUBE_AUTH_MODE == '' || vars.KUBE_AUTH_MODE == 'kubeconfig'
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG_B64 }}
+        run: |
+          if [ -z "$KUBE_CONFIG_B64" ]; then
+            echo "::error::KUBE_CONFIG_B64 is required when KUBE_AUTH_MODE is kubeconfig."
+            exit 1
+          fi
+          echo "::warning::Using long-lived kubeconfig fallback. Prefer aws-eks, azure-aks, or gke OIDC mode for production."
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG_B64" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Verify cluster access
+        run: kubectl cluster-info
+
+      - name: Prepare namespace
+        run: kubectl apply -f deploy/k8s/base/namespace.yaml
+
+      - name: Production readiness preflight
+        env:
+          REQUIRE_GHCR_PULL_SECRET: ${{ vars.REQUIRE_GHCR_PULL_SECRET }}
+          REQUIRE_METRICS_SERVER: ${{ vars.REQUIRE_METRICS_SERVER }}
+          REQUIRE_OBSERVABILITY: ${{ vars.REQUIRE_OBSERVABILITY }}
+        run: bash scripts/production-preflight.sh
+
+      - name: Progressive canary release
+        env:
+          INGRESS_HOST: ${{ vars.KUBE_INGRESS_HOST }}
+          CERT_MANAGER_EMAIL: ${{ vars.CERT_MANAGER_EMAIL }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EVIDENCE_PATH: release-evidence.json
+        run: bash scripts/progressive-deploy.sh
+
+      - name: Set up Docker Buildx for stable tag
+        if: success()
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Move latest tag only after successful promotion
+        if: success()
+        run: |
+          docker buildx imagetools create             --tag "$IMAGE_REPOSITORY:latest"             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+
+      - name: Verify stable telemetry
+        if: success()
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" port-forward service/task-api 18080:80 >/tmp/task-api-port-forward.log 2>&1 &
+          port_forward_pid=$!
+          trap 'kill "$port_forward_pid" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:18080/metrics >/tmp/metrics.txt; then
+              break
+            fi
+            sleep 1
+          done
+
+          grep -q 'task_api_http_request_duration_seconds_bucket' /tmp/metrics.txt
+          grep -q 'task_api_trace_export_errors_total' /tmp/metrics.txt
+          grep -q 'task_api_db_max_open_connections' /tmp/metrics.txt
+
+          kubectl -n "$KUBE_NAMESPACE" get servicemonitor task-api
+          kubectl -n "$KUBE_NAMESPACE" get prometheusrule task-api-slo
+          kubectl -n monitoring get configmap task-api-grafana-dashboard
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: release-evidence.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Show rollout
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" get deployment,service,ingress,hpa,pdb
+          kubectl -n "$KUBE_NAMESPACE" get pods -l app.kubernetes.io/name=task-api -o wide
+
+          printf '%s' "$PROVIDER_VALIDATION_MAX_ARTIFACTS" | grep -Eq '^[1-9][0-9]{0,3}      - name: Log in to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify signed release before deployment
+        run: |
+          test -n "$IMAGE_DIGEST"
+          cosign verify "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/deploy.yml@refs/(heads/main|tags/v.*)$"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+      - name: Validate cluster authentication mode
+        env:
+          KUBE_AUTH_MODE: ${{ vars.KUBE_AUTH_MODE }}
+        run: |
+          case "${KUBE_AUTH_MODE:-kubeconfig}" in
+            aws-eks|azure-aks|gke|kubeconfig) ;;
+            *)
+              echo "::error::KUBE_AUTH_MODE must be one of: aws-eks, azure-aks, gke, kubeconfig."
+              exit 1
+              ;;
+          esac
+
+      - name: Authenticate to AWS with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+
+      - name: Configure EKS cluster
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+        run: |
+          test -n "$AWS_REGION" || { echo "::error::AWS_REGION is required."; exit 1; }
+          test -n "$EKS_CLUSTER_NAME" || { echo "::error::EKS_CLUSTER_NAME is required."; exit 1; }
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Authenticate to Azure with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure AKS cluster
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/aks-set-context@c7eb093e5a5d47caa333f64974d5fd1cd4bf069d # v4.0.3
+        with:
+          resource-group: ${{ vars.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
+          admin: false
+
+      - name: Authenticate to Google Cloud with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure GKE cluster
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
+          location: ${{ vars.GKE_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure cluster access from kubeconfig fallback
+        if: vars.KUBE_AUTH_MODE == '' || vars.KUBE_AUTH_MODE == 'kubeconfig'
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG_B64 }}
+        run: |
+          if [ -z "$KUBE_CONFIG_B64" ]; then
+            echo "::error::KUBE_CONFIG_B64 is required when KUBE_AUTH_MODE is kubeconfig."
+            exit 1
+          fi
+          echo "::warning::Using long-lived kubeconfig fallback. Prefer aws-eks, azure-aks, or gke OIDC mode for production."
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG_B64" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Verify cluster access
+        run: kubectl cluster-info
+
+      - name: Prepare namespace
+        run: kubectl apply -f deploy/k8s/base/namespace.yaml
+
+      - name: Production readiness preflight
+        env:
+          REQUIRE_GHCR_PULL_SECRET: ${{ vars.REQUIRE_GHCR_PULL_SECRET }}
+          REQUIRE_METRICS_SERVER: ${{ vars.REQUIRE_METRICS_SERVER }}
+          REQUIRE_OBSERVABILITY: ${{ vars.REQUIRE_OBSERVABILITY }}
+        run: bash scripts/production-preflight.sh
+
+      - name: Progressive canary release
+        env:
+          INGRESS_HOST: ${{ vars.KUBE_INGRESS_HOST }}
+          CERT_MANAGER_EMAIL: ${{ vars.CERT_MANAGER_EMAIL }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EVIDENCE_PATH: release-evidence.json
+        run: bash scripts/progressive-deploy.sh
+
+      - name: Set up Docker Buildx for stable tag
+        if: success()
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Move latest tag only after successful promotion
+        if: success()
+        run: |
+          docker buildx imagetools create             --tag "$IMAGE_REPOSITORY:latest"             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+
+      - name: Verify stable telemetry
+        if: success()
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" port-forward service/task-api 18080:80 >/tmp/task-api-port-forward.log 2>&1 &
+          port_forward_pid=$!
+          trap 'kill "$port_forward_pid" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:18080/metrics >/tmp/metrics.txt; then
+              break
+            fi
+            sleep 1
+          done
+
+          grep -q 'task_api_http_request_duration_seconds_bucket' /tmp/metrics.txt
+          grep -q 'task_api_trace_export_errors_total' /tmp/metrics.txt
+          grep -q 'task_api_db_max_open_connections' /tmp/metrics.txt
+
+          kubectl -n "$KUBE_NAMESPACE" get servicemonitor task-api
+          kubectl -n "$KUBE_NAMESPACE" get prometheusrule task-api-slo
+          kubectl -n monitoring get configmap task-api-grafana-dashboard
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: release-evidence.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Show rollout
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" get deployment,service,ingress,hpa,pdb
+          kubectl -n "$KUBE_NAMESPACE" get pods -l app.kubernetes.io/name=task-api -o wide
+
+          if (( PROVIDER_VALIDATION_MAX_AGE_DAYS > 3650 )); then
+            echo "::error::PROVIDER_VALIDATION_MAX_AGE_DAYS must be <= 3650."
+            exit 1
+          fi
+          if (( PROVIDER_VALIDATION_MAX_ARTIFACTS > 1000 )); then
+            echo "::error::PROVIDER_VALIDATION_MAX_ARTIFACTS must be <= 1000."
+            exit 1
+          fi
+          case "$PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT" in
+            true|false) ;;
+            *)
+              echo "::error::PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT must be true or false."
+              exit 1
+              ;;
+          esac
+
+          python3 -m py_compile \
+            scripts/provider-validation-registry.py \
+            scripts/provider-validation-policy.py
+
+          mkdir -p provider-release-evidence
+          gh api --paginate \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-validation-")) and ((.name | startswith("provider-validation-registry-")) | not) and ((.name | startswith("provider-validation-policy-")) | not)) | [.workflow_run.id, .name] | @tsv' \
+            > /tmp/provider-release-artifacts-all.tsv
+          awk '!seen[$0]++' /tmp/provider-release-artifacts-all.tsv > /tmp/provider-release-artifacts-unique.tsv
+          head -n "$PROVIDER_VALIDATION_MAX_ARTIFACTS" /tmp/provider-release-artifacts-unique.tsv > /tmp/provider-release-artifacts.tsv
+
+          while IFS=      - name: Log in to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify signed release before deployment
+        run: |
+          test -n "$IMAGE_DIGEST"
+          cosign verify "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp "^https://github.com/$GITHUB_REPOSITORY/.github/workflows/deploy.yml@refs/(heads/main|tags/v.*)$"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+      - name: Validate cluster authentication mode
+        env:
+          KUBE_AUTH_MODE: ${{ vars.KUBE_AUTH_MODE }}
+        run: |
+          case "${KUBE_AUTH_MODE:-kubeconfig}" in
+            aws-eks|azure-aks|gke|kubeconfig) ;;
+            *)
+              echo "::error::KUBE_AUTH_MODE must be one of: aws-eks, azure-aks, gke, kubeconfig."
+              exit 1
+              ;;
+          esac
+
+      - name: Authenticate to AWS with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+
+      - name: Configure EKS cluster
+        if: vars.KUBE_AUTH_MODE == 'aws-eks'
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+        run: |
+          test -n "$AWS_REGION" || { echo "::error::AWS_REGION is required."; exit 1; }
+          test -n "$EKS_CLUSTER_NAME" || { echo "::error::EKS_CLUSTER_NAME is required."; exit 1; }
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Authenticate to Azure with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure AKS cluster
+        if: vars.KUBE_AUTH_MODE == 'azure-aks'
+        uses: azure/aks-set-context@c7eb093e5a5d47caa333f64974d5fd1cd4bf069d # v4.0.3
+        with:
+          resource-group: ${{ vars.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
+          admin: false
+
+      - name: Authenticate to Google Cloud with GitHub OIDC
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure GKE cluster
+        if: vars.KUBE_AUTH_MODE == 'gke'
+        uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
+          location: ${{ vars.GKE_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Configure cluster access from kubeconfig fallback
+        if: vars.KUBE_AUTH_MODE == '' || vars.KUBE_AUTH_MODE == 'kubeconfig'
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG_B64 }}
+        run: |
+          if [ -z "$KUBE_CONFIG_B64" ]; then
+            echo "::error::KUBE_CONFIG_B64 is required when KUBE_AUTH_MODE is kubeconfig."
+            exit 1
+          fi
+          echo "::warning::Using long-lived kubeconfig fallback. Prefer aws-eks, azure-aks, or gke OIDC mode for production."
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBE_CONFIG_B64" | base64 --decode > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Verify cluster access
+        run: kubectl cluster-info
+
+      - name: Prepare namespace
+        run: kubectl apply -f deploy/k8s/base/namespace.yaml
+
+      - name: Production readiness preflight
+        env:
+          REQUIRE_GHCR_PULL_SECRET: ${{ vars.REQUIRE_GHCR_PULL_SECRET }}
+          REQUIRE_METRICS_SERVER: ${{ vars.REQUIRE_METRICS_SERVER }}
+          REQUIRE_OBSERVABILITY: ${{ vars.REQUIRE_OBSERVABILITY }}
+        run: bash scripts/production-preflight.sh
+
+      - name: Progressive canary release
+        env:
+          INGRESS_HOST: ${{ vars.KUBE_INGRESS_HOST }}
+          CERT_MANAGER_EMAIL: ${{ vars.CERT_MANAGER_EMAIL }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EVIDENCE_PATH: release-evidence.json
+        run: bash scripts/progressive-deploy.sh
+
+      - name: Set up Docker Buildx for stable tag
+        if: success()
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Move latest tag only after successful promotion
+        if: success()
+        run: |
+          docker buildx imagetools create             --tag "$IMAGE_REPOSITORY:latest"             "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+
+      - name: Verify stable telemetry
+        if: success()
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" port-forward service/task-api 18080:80 >/tmp/task-api-port-forward.log 2>&1 &
+          port_forward_pid=$!
+          trap 'kill "$port_forward_pid" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:18080/metrics >/tmp/metrics.txt; then
+              break
+            fi
+            sleep 1
+          done
+
+          grep -q 'task_api_http_request_duration_seconds_bucket' /tmp/metrics.txt
+          grep -q 'task_api_trace_export_errors_total' /tmp/metrics.txt
+          grep -q 'task_api_db_max_open_connections' /tmp/metrics.txt
+
+          kubectl -n "$KUBE_NAMESPACE" get servicemonitor task-api
+          kubectl -n "$KUBE_NAMESPACE" get prometheusrule task-api-slo
+          kubectl -n monitoring get configmap task-api-grafana-dashboard
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: release-evidence.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Show rollout
+        run: |
+          kubectl -n "$KUBE_NAMESPACE" get deployment,service,ingress,hpa,pdb
+          kubectl -n "$KUBE_NAMESPACE" get pods -l app.kubernetes.io/name=task-api -o wide
+\t' read -r run_id artifact_name; do
+            [[ -n "$run_id" && -n "$artifact_name" ]] || continue
+            safe_name="$(printf '%s' "$artifact_name" | tr -c 'A-Za-z0-9._-' '_')"
+            destination="provider-release-evidence/${run_id}-${safe_name}"
+            mkdir -p "$destination"
+            gh run download "$run_id" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$artifact_name" \
+              --dir "$destination"
+          done < /tmp/provider-release-artifacts.tsv
+
+          required_targets="$(printf '%s' "$PROVIDER_VALIDATION_REQUIRED_TARGETS" | tr ' ' ',')"
+          python3 scripts/provider-validation-registry.py build \
+            --input-dir provider-release-evidence \
+            --output-json provider-validation-release-registry.json \
+            --output-markdown provider-validation-release-registry.md \
+            --max-age-days "$PROVIDER_VALIDATION_MAX_AGE_DAYS" \
+            --expected-commit "$GITHUB_SHA" \
+            --targets "$required_targets" \
+            --environments production
+
+          policy_args=(
+            evaluate
+            --registry provider-validation-release-registry.json
+            --environment production
+            --required-targets "$required_targets"
+            --expected-commit "$GITHUB_SHA"
+            --mode "$PROVIDER_VALIDATION_GATE_MODE"
+            --output-json provider-validation-release-policy.json
+            --output-markdown provider-validation-release-policy.md
+          )
+          if [[ "$PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT" == "true" ]]; then
+            policy_args+=(--require-current-commit)
+          fi
+          python3 scripts/provider-validation-policy.py "${policy_args[@]}"
+
+          verify_args=(
+            verify
+            --file provider-validation-release-policy.json
+            --environment production
+            --required-targets "$required_targets"
+            --expected-commit "$GITHUB_SHA"
+          )
+          if [[ "$PROVIDER_VALIDATION_GATE_MODE" == "enforce" ]]; then
+            verify_args+=(--require-passed)
+          fi
+          python3 scripts/provider-validation-policy.py "${verify_args[@]}"
+
+          cat provider-validation-release-policy.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload production provider validation policy evidence
+        if: always() && env.PROVIDER_VALIDATION_GATE_MODE != 'off'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-validation-policy-production-${{ github.sha }}
+          path: |
+            provider-validation-release-registry.json
+            provider-validation-release-registry.md
+            provider-validation-release-policy.json
+            provider-validation-release-policy.md
+          if-no-files-found: warn
+          retention-days: 90
 
       - name: Log in to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
