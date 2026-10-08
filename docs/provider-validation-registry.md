@@ -105,6 +105,10 @@ provider-validation-registry.md
 
 The Markdown matrix is also appended to the GitHub Actions job summary.
 
+The workflow can additionally preview an environment-specific required-provider policy. Set `required_targets`, `policy_environment`, `policy_mode`, and `policy_require_current_commit`. Policy mode `off` preserves the registry-only behavior; `warn` records policy failure without failing the workflow; `enforce` makes required-provider failure workflow-blocking.
+
+See [Provider Validation Policy](provider-validation-policy.md).
+
 ## Gaps and limitations
 
 The `gaps` field is intentionally conservative. It contains limitations copied from the underlying evidence plus registry-derived conditions such as:

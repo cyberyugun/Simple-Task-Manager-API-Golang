@@ -25,6 +25,9 @@ Deployment freeze gate
 Migration compatibility gate
         |
         v
+Required-provider validation policy gate
+        |
+        v
 Production readiness preflight
         |
         v
@@ -288,6 +291,11 @@ Existing variables remain required, plus these optional controls:
 DEPLOYMENT_FREEZE=false
 CANARY_WEIGHT=10
 CANARY_OBSERVATION_SECONDS=60
+PROVIDER_VALIDATION_GATE_MODE=off
+PROVIDER_VALIDATION_REQUIRED_TARGETS=
+PROVIDER_VALIDATION_MAX_AGE_DAYS=30
+PROVIDER_VALIDATION_MAX_ARTIFACTS=200
+PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT=false
 ```
 
 Manual dispatch values override the canary weight/observation variables.
@@ -308,9 +316,20 @@ Normal CI now validates:
 - stable Deployment keeps `maxUnavailable: 0`
 - build step does not publish `:latest`
 - freeze and progressive release workflow steps remain present
+- production provider validation gate remains present and read-only evidence access is explicit
 - `:latest` promotion remains after successful release
 
 These controls make accidental removal of the release safety model a merge-blocking change.
+
+## Provider validation release policy
+
+Production can make external-provider evidence part of the release critical path without requiring every supported integration.
+
+The `production` GitHub Environment defines `PROVIDER_VALIDATION_REQUIRED_TARGETS`. Only those targets are evaluated. The gate supports `off`, `warn` and `enforce` modes, configurable evidence expiry, and optional exact-commit enforcement.
+
+When active, the production deploy job discovers retained provider-validation artifacts with read-only Actions permission, builds a production-only registry for the required targets, evaluates `scripts/provider-validation-policy.py`, and stores the release registry/policy evidence for 90 days before any Kubernetes authentication or mutation.
+
+Use `warn` during rollout. Use `enforce` after the enabled production providers have passing evidence. See [provider validation policy](provider-validation-policy.md).
 
 ## Staging and production promotion
 

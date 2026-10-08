@@ -32,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   packages: write
   id-token: write
   attestations: write
@@ -370,6 +371,12 @@ jobs:
       IMAGE_DIGEST: ${{ needs.build.outputs.image-digest }}
       CANARY_WEIGHT: ${{ inputs.canary_weight || vars.CANARY_WEIGHT || '10' }}
       CANARY_OBSERVATION_SECONDS: ${{ inputs.canary_observation_seconds || vars.CANARY_OBSERVATION_SECONDS || '60' }}
+      GH_TOKEN: ${{ github.token }}
+      PROVIDER_VALIDATION_GATE_MODE: ${{ vars.PROVIDER_VALIDATION_GATE_MODE || 'off' }}
+      PROVIDER_VALIDATION_REQUIRED_TARGETS: ${{ vars.PROVIDER_VALIDATION_REQUIRED_TARGETS }}
+      PROVIDER_VALIDATION_MAX_AGE_DAYS: ${{ vars.PROVIDER_VALIDATION_MAX_AGE_DAYS || '30' }}
+      PROVIDER_VALIDATION_MAX_ARTIFACTS: ${{ vars.PROVIDER_VALIDATION_MAX_ARTIFACTS || '200' }}
+      PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT: ${{ vars.PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT || 'false' }}
 
     steps:
       - name: Checkout
@@ -433,6 +440,117 @@ jobs:
             --commit "$GITHUB_SHA" \
             --image-digest "$IMAGE_DIGEST" \
             --run-id "$GITHUB_RUN_ID"
+
+      - name: Enforce production provider validation policy
+        if: env.PROVIDER_VALIDATION_GATE_MODE != 'off'
+        run: |
+          set -euo pipefail
+
+          case "$PROVIDER_VALIDATION_GATE_MODE" in
+            warn|enforce) ;;
+            *)
+              echo "::error::PROVIDER_VALIDATION_GATE_MODE must be off, warn, or enforce."
+              exit 1
+              ;;
+          esac
+
+          compact_targets="$(printf '%s' "$PROVIDER_VALIDATION_REQUIRED_TARGETS" | tr -d '[:space:],')"
+          if [[ -z "$compact_targets" ]]; then
+            echo "::error::PROVIDER_VALIDATION_REQUIRED_TARGETS must list at least one enabled provider when the gate is active."
+            exit 1
+          fi
+          printf '%s' "$PROVIDER_VALIDATION_MAX_AGE_DAYS" | grep -Eq '^[1-9][0-9]{0,3}$'
+          printf '%s' "$PROVIDER_VALIDATION_MAX_ARTIFACTS" | grep -Eq '^[1-9][0-9]{0,3}$'
+          if (( PROVIDER_VALIDATION_MAX_AGE_DAYS > 3650 )); then
+            echo "::error::PROVIDER_VALIDATION_MAX_AGE_DAYS must be <= 3650."
+            exit 1
+          fi
+          if (( PROVIDER_VALIDATION_MAX_ARTIFACTS > 1000 )); then
+            echo "::error::PROVIDER_VALIDATION_MAX_ARTIFACTS must be <= 1000."
+            exit 1
+          fi
+          case "$PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT" in
+            true|false) ;;
+            *)
+              echo "::error::PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT must be true or false."
+              exit 1
+              ;;
+          esac
+
+          python3 -m py_compile \
+            scripts/provider-validation-registry.py \
+            scripts/provider-validation-policy.py
+
+          mkdir -p provider-release-evidence
+          gh api --paginate \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-validation-")) and ((.name | startswith("provider-validation-registry-")) | not) and ((.name | startswith("provider-validation-policy-")) | not)) | [.workflow_run.id, .name] | @tsv' \
+            > /tmp/provider-release-artifacts-all.tsv
+          awk '!seen[$0]++' /tmp/provider-release-artifacts-all.tsv > /tmp/provider-release-artifacts-unique.tsv
+          head -n "$PROVIDER_VALIDATION_MAX_ARTIFACTS" /tmp/provider-release-artifacts-unique.tsv > /tmp/provider-release-artifacts.tsv
+
+          while IFS=$'\t' read -r run_id artifact_name; do
+            [[ -n "$run_id" && -n "$artifact_name" ]] || continue
+            safe_name="$(printf '%s' "$artifact_name" | tr -c 'A-Za-z0-9._-' '_')"
+            destination="provider-release-evidence/${run_id}-${safe_name}"
+            mkdir -p "$destination"
+            gh run download "$run_id" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$artifact_name" \
+              --dir "$destination"
+          done < /tmp/provider-release-artifacts.tsv
+
+          required_targets="$(printf '%s' "$PROVIDER_VALIDATION_REQUIRED_TARGETS" | tr '[:space:]' ',')"
+          python3 scripts/provider-validation-registry.py build \
+            --input-dir provider-release-evidence \
+            --output-json provider-validation-release-registry.json \
+            --output-markdown provider-validation-release-registry.md \
+            --max-age-days "$PROVIDER_VALIDATION_MAX_AGE_DAYS" \
+            --expected-commit "$GITHUB_SHA" \
+            --targets "$required_targets" \
+            --environments production
+
+          policy_args=(
+            evaluate
+            --registry provider-validation-release-registry.json
+            --environment production
+            --required-targets "$required_targets"
+            --expected-commit "$GITHUB_SHA"
+            --mode "$PROVIDER_VALIDATION_GATE_MODE"
+            --output-json provider-validation-release-policy.json
+            --output-markdown provider-validation-release-policy.md
+          )
+          if [[ "$PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT" == "true" ]]; then
+            policy_args+=(--require-current-commit)
+          fi
+          python3 scripts/provider-validation-policy.py "${policy_args[@]}"
+
+          verify_args=(
+            verify
+            --file provider-validation-release-policy.json
+            --environment production
+            --required-targets "$required_targets"
+            --expected-commit "$GITHUB_SHA"
+          )
+          if [[ "$PROVIDER_VALIDATION_GATE_MODE" == "enforce" ]]; then
+            verify_args+=(--require-passed)
+          fi
+          python3 scripts/provider-validation-policy.py "${verify_args[@]}"
+
+          cat provider-validation-release-policy.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload production provider validation policy evidence
+        if: always() && env.PROVIDER_VALIDATION_GATE_MODE != 'off'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-validation-policy-production-${{ github.sha }}
+          path: |
+            provider-validation-release-registry.json
+            provider-validation-release-registry.md
+            provider-validation-release-policy.json
+            provider-validation-release-policy.md
+          if-no-files-found: warn
+          retention-days: 90
 
       - name: Log in to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0

@@ -36,6 +36,7 @@ jobs:
           python3 -m py_compile scripts/promotion-evidence.py
           python3 -m py_compile scripts/provider-validation-evidence.py
           python3 -m py_compile scripts/provider-validation-registry.py
+          python3 -m py_compile scripts/provider-validation-policy.py
           ruby -c scripts/openapi-governance.rb
           ruby -c scripts/openapi-compatibility.rb
           ruby -c scripts/consumer-contract.rb
@@ -84,6 +85,32 @@ jobs:
             --expected-commit "$GITHUB_SHA" \
             --require-all-passed \
             --require-current-commit
+          python3 scripts/provider-validation-policy.py evaluate \
+            --registry "$evidence_dir/registry.json" \
+            --environment staging \
+            --required-targets ai_remote \
+            --expected-commit "$GITHUB_SHA" \
+            --require-current-commit \
+            --mode enforce \
+            --output-json "$evidence_dir/policy.json" \
+            --output-markdown "$evidence_dir/policy.md"
+          python3 scripts/provider-validation-policy.py verify \
+            --file "$evidence_dir/policy.json" \
+            --environment staging \
+            --required-targets ai_remote \
+            --expected-commit "$GITHUB_SHA" \
+            --require-passed
+          if python3 scripts/provider-validation-policy.py evaluate \
+            --registry "$evidence_dir/registry.json" \
+            --environment staging \
+            --required-targets secret_aws \
+            --expected-commit "$GITHUB_SHA" \
+            --mode enforce \
+            --output-json "$evidence_dir/policy-missing.json" \
+            --output-markdown "$evidence_dir/policy-missing.md"; then
+            echo "missing required provider unexpectedly passed policy gate"
+            exit 1
+          fi
           python3 scripts/provider-validation-registry.py build \
             --input-dir "$evidence_dir/registry-input" \
             --output-json "$evidence_dir/registry-expired.json" \
