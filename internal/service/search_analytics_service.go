@@ -106,14 +106,17 @@ func (s *SearchAnalyticsService) DeleteSavedView(actorUserID, workspaceID, viewI
 	return s.audit(workspaceID, actorUserID, "search.saved_view.deleted", "saved_search_view", strconv.FormatInt(viewID, 10), nil)
 }
 
-func (s *SearchAnalyticsService) Dashboard(workspaceID int64, days int) (model.AnalyticsDashboard, error) {
+func (s *SearchAnalyticsService) Dashboard(workspaceID int64, projectID *int64, days int) (model.AnalyticsDashboard, error) {
+	if projectID != nil && *projectID <= 0 {
+		return model.AnalyticsDashboard{}, ErrInvalidAnalyticsRequest
+	}
 	if days == 0 {
 		days = 30
 	}
 	if days < 7 || days > 365 {
 		return model.AnalyticsDashboard{}, ErrInvalidAnalyticsRequest
 	}
-	return s.repo.Analytics(workspaceID, days, time.Now().UTC())
+	return s.repo.Analytics(workspaceID, projectID, days, time.Now().UTC())
 }
 
 func (s *SearchAnalyticsService) Export(workspaceID int64, format string, filters map[string]any) (ReportExportResult, error) {

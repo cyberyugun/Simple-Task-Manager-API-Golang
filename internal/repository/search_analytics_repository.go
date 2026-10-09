@@ -19,7 +19,7 @@ var (
 
 type SearchAnalyticsRepository interface {
 	SearchTasks(workspaceID int64, query model.SearchQuery) (model.SearchPage, error)
-	Analytics(workspaceID int64, days int, now time.Time) (model.AnalyticsDashboard, error)
+	Analytics(workspaceID int64, projectID *int64, days int, now time.Time) (model.AnalyticsDashboard, error)
 	ExportRows(workspaceID int64, filters map[string]any, limit int) ([]model.ReportTaskRow, error)
 
 	CreateSavedView(item model.SavedSearchView) (model.SavedSearchView, error)
@@ -102,8 +102,8 @@ func (r *InMemorySearchAnalyticsRepository) SearchTasks(workspaceID int64, query
 	return model.SearchPage{Items: hits, Pagination: page.Pagination}, nil
 }
 
-func (r *InMemorySearchAnalyticsRepository) Analytics(workspaceID int64, days int, now time.Time) (model.AnalyticsDashboard, error) {
-	page, err := r.tasks.FindAll(workspaceID, model.TaskQuery{Page: 1, Limit: 100000, Sort: "created_at", Order: "asc"})
+func (r *InMemorySearchAnalyticsRepository) Analytics(workspaceID int64, projectID *int64, days int, now time.Time) (model.AnalyticsDashboard, error) {
+	page, err := r.tasks.FindAll(workspaceID, model.TaskQuery{Page: 1, Limit: 100000, ProjectID: projectID, Sort: "created_at", Order: "asc"})
 	if err != nil {
 		return model.AnalyticsDashboard{}, err
 	}

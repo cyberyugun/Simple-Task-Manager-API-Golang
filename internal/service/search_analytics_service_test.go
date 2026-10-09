@@ -18,12 +18,13 @@ func TestSearchAnalyticsSavedViewsDashboardExportAndSchedule(t *testing.T) {
 	}
 
 	now := time.Now().UTC()
+	projectID := int64(77)
 	due := now.Add(-time.Hour)
 	completedAt := now.Add(-2 * time.Hour)
 	if _, err := tasks.Create(model.Task{
 		WorkspaceID: access.ID, UserID: 7, Title: "Ship search analytics",
 		Description: "full text dashboard", Status: model.TaskStatusInProgress,
-		Priority: model.TaskPriorityHigh, DueAt: &due,
+		Priority: model.TaskPriorityHigh, ProjectID: &projectID, DueAt: &due,
 		CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now,
 	}); err != nil {
 		t.Fatal(err)
@@ -59,7 +60,7 @@ func TestSearchAnalyticsSavedViewsDashboardExportAndSchedule(t *testing.T) {
 		t.Fatalf("views=%+v err=%v", views, err)
 	}
 
-	dashboard, err := svc.Dashboard(access.ID, 30)
+	dashboard, err := svc.Dashboard(access.ID, nil, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +69,10 @@ func TestSearchAnalyticsSavedViewsDashboardExportAndSchedule(t *testing.T) {
 	}
 	if len(dashboard.Trend) != 30 {
 		t.Fatalf("trend points=%d", len(dashboard.Trend))
+	}
+	projectDashboard, err := svc.Dashboard(access.ID, &projectID, 30)
+	if err != nil || projectDashboard.Summary.TotalTasks != 1 || projectDashboard.ByStatus[model.TaskStatusInProgress] != 1 {
+		t.Fatalf("project dashboard=%+v err=%v", projectDashboard, err)
 	}
 
 	jsonExport, err := svc.Export(access.ID, model.ReportFormatJSON, map[string]any{"priority": "HIGH"})
@@ -105,7 +110,7 @@ func TestSearchAnalyticsValidation(t *testing.T) {
 	if _, err := svc.Search(access.ID, model.SearchQuery{Status: "NOT_A_STATUS", Page: 1, Limit: 20}); err != ErrInvalidSearchQuery {
 		t.Fatalf("invalid search error=%v", err)
 	}
-	if _, err := svc.Dashboard(access.ID, 2); err != ErrInvalidAnalyticsRequest {
+	if _, err := svc.Dashboard(access.ID, nil, 2); err != ErrInvalidAnalyticsRequest {
 		t.Fatalf("invalid dashboard error=%v", err)
 	}
 	if _, err := svc.Export(access.ID, "xml", nil); err != ErrInvalidReportRequest {
