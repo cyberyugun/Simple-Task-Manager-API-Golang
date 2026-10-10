@@ -324,6 +324,13 @@ def verify(args: argparse.Namespace) -> None:
             continue
         counts[status] += 1
 
+        if status != "not_run":
+            evidence_sha256 = str(cell.get("evidence_sha256", "")).strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", evidence_sha256):
+                failures.append(
+                    f"{cell.get('target')}/{cell.get('environment')}: evidence_sha256 is missing or invalid"
+                )
+
         if args.require_current_commit and status == "passed" and cell.get("commit_matches_expected") is not True:
             failures.append(
                 f"{cell.get('target')}/{cell.get('environment')}: passed evidence does not match expected commit"
