@@ -231,7 +231,12 @@ def normalize_checks(
 
         status = str(item.get("status", "")).strip().lower()
         reference = str(item.get("reference", "")).strip()
-        reference_sha256 = str(item.get("reference_sha256", "")).strip().lower()
+        raw_reference_sha256 = item.get("reference_sha256")
+        reference_sha256 = (
+            str(raw_reference_sha256).strip().lower()
+            if raw_reference_sha256 not in (None, "")
+            else ""
+        )
         notes = str(item.get("notes", "")).strip()
 
         if status not in CHECK_STATUSES:
