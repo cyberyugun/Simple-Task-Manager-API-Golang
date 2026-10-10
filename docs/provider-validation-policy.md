@@ -16,6 +16,7 @@ PROVIDER_VALIDATION_REQUIRED_TARGETS=storage_s3,secret_aws,warehouse_bigquery,ai
 PROVIDER_VALIDATION_MAX_AGE_DAYS=30
 PROVIDER_VALIDATION_MAX_ARTIFACTS=200
 PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT=false
+PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=false
 ```
 
 `PROVIDER_VALIDATION_GATE_MODE` defaults to `off` for backward compatibility.
@@ -98,9 +99,11 @@ For each required target, `scripts/provider-validation-policy.py` selects the co
 - evidence is not expired according to the registry maximum age;
 - when exact-commit enforcement is enabled, `commit_matches_expected=true`.
 
-Provider-specific limitations remain visible in the policy decision but do not automatically fail the generic gate. Examples include IAM review, warehouse downstream readback, AI pricing calibration, real provider outage exercises and regional game-day/RPO-RTO evidence.
+Provider-specific limitations remain visible in the policy decision. When `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=false`, those items remain separate production-readiness requirements.
 
-Those operational controls remain separate production-readiness requirements because repository evidence cannot prove them automatically.
+When `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=true`, each required target must also have a passed, non-expired `provider-operational-evidence.json` artifact for the same environment. The external evidence pack covers target-specific IAM/access review, real outage exercises, warehouse downstream readback, AI pricing calibration, and regional apply-gate/game-day/RPO-RTO evidence. It is operator-attested and references the external records; the repository does not independently inspect those systems.
+
+See [External Provider Operational Evidence](provider-operational-evidence.md).
 
 ## Release evidence
 
@@ -111,6 +114,8 @@ provider-validation-release-registry.json
 provider-validation-release-registry.md
 provider-validation-release-policy.json
 provider-validation-release-policy.md
+
+Operational evidence itself is retained separately by the **Provider Operational Evidence** workflow for 180 days. The release policy records the selected operational evidence status, reviewer, expiry and source workflow run for each required target.
 ```
 
 The policy artifact is tied to the release `GITHUB_SHA`.

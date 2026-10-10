@@ -377,6 +377,7 @@ jobs:
       PROVIDER_VALIDATION_MAX_AGE_DAYS: ${{ vars.PROVIDER_VALIDATION_MAX_AGE_DAYS || '30' }}
       PROVIDER_VALIDATION_MAX_ARTIFACTS: ${{ vars.PROVIDER_VALIDATION_MAX_ARTIFACTS || '200' }}
       PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT: ${{ vars.PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT || 'false' }}
+      PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED: ${{ vars.PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED || 'false' }}
 
     steps:
       - name: Checkout
@@ -477,9 +478,18 @@ jobs:
               ;;
           esac
 
+          case "$PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED" in
+            true|false) ;;
+            *)
+              echo "::error::PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED must be true or false."
+              exit 1
+              ;;
+          esac
+
           python3 -m py_compile \
             scripts/provider-validation-registry.py \
-            scripts/provider-validation-policy.py
+            scripts/provider-validation-policy.py \
+            scripts/provider-operational-evidence.py
 
           mkdir -p provider-release-evidence
           gh api --paginate \
@@ -499,6 +509,27 @@ jobs:
               --name "$artifact_name" \
               --dir "$destination"
           done < /tmp/provider-release-artifacts.tsv
+
+          if [[ "$PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED" == "true" ]]; then
+            mkdir -p provider-operational-evidence
+            gh api --paginate \
+              "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-operational-evidence-"))) | [.workflow_run.id, .name] | @tsv' \
+              > /tmp/provider-operational-artifacts-all.tsv
+            awk '!seen[$0]++' /tmp/provider-operational-artifacts-all.tsv > /tmp/provider-operational-artifacts-unique.tsv
+            head -n "$PROVIDER_VALIDATION_MAX_ARTIFACTS" /tmp/provider-operational-artifacts-unique.tsv > /tmp/provider-operational-artifacts.tsv
+
+            while IFS=$'\t' read -r run_id artifact_name; do
+              [[ -n "$run_id" && -n "$artifact_name" ]] || continue
+              safe_name="$(printf '%s' "$artifact_name" | tr -c 'A-Za-z0-9._-' '_')"
+              destination="provider-operational-evidence/${run_id}-${safe_name}"
+              mkdir -p "$destination"
+              gh run download "$run_id" \
+                --repo "$GITHUB_REPOSITORY" \
+                --name "$artifact_name" \
+                --dir "$destination"
+            done < /tmp/provider-operational-artifacts.tsv
+          fi
 
           required_targets="$(printf '%s' "$PROVIDER_VALIDATION_REQUIRED_TARGETS" | tr '[:space:]' ',')"
           python3 scripts/provider-validation-registry.py build \
@@ -523,6 +554,12 @@ jobs:
           if [[ "$PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT" == "true" ]]; then
             policy_args+=(--require-current-commit)
           fi
+          if [[ "$PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED" == "true" ]]; then
+            policy_args+=(
+              --operational-evidence-dir provider-operational-evidence
+              --require-operational-evidence
+            )
+          fi
           python3 scripts/provider-validation-policy.py "${policy_args[@]}"
 
           verify_args=(
@@ -534,6 +571,9 @@ jobs:
           )
           if [[ "$PROVIDER_VALIDATION_GATE_MODE" == "enforce" ]]; then
             verify_args+=(--require-passed)
+          fi
+          if [[ "$PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED" == "true" ]]; then
+            verify_args+=(--require-operational-evidence)
           fi
           python3 scripts/provider-validation-policy.py "${verify_args[@]}"
 

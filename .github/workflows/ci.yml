@@ -37,6 +37,7 @@ jobs:
           python3 -m py_compile scripts/provider-validation-evidence.py
           python3 -m py_compile scripts/provider-validation-registry.py
           python3 -m py_compile scripts/provider-validation-policy.py
+          python3 -m py_compile scripts/provider-operational-evidence.py
           ruby -c scripts/openapi-governance.rb
           ruby -c scripts/openapi-compatibility.rb
           ruby -c scripts/consumer-contract.rb
@@ -100,6 +101,55 @@ jobs:
             --required-targets ai_remote \
             --expected-commit "$GITHUB_SHA" \
             --require-passed
+          mkdir -p "$evidence_dir/operational-input/run-1"
+          python3 scripts/provider-operational-evidence.py create \
+            --output "$evidence_dir/operational-input/run-1/provider-operational-evidence.json" \
+            --target ai_remote \
+            --environment staging \
+            --reviewer "CI reviewer" \
+            --checks-json '{"gateway_access_policy_review":{"status":"passed","reference":"https://example.com/access-review"},"real_outage_recovery_exercise":{"status":"passed","reference":"https://example.com/outage-exercise"},"pricing_calibration":{"status":"passed","reference":"https://example.com/pricing-calibration"}}' \
+            --measurements-json '{"pricing_estimated_cost_cents":10,"pricing_observed_cost_cents":10,"pricing_tolerance_percent":5}' \
+            --valid-days 30 \
+            --related-commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+          python3 scripts/provider-operational-evidence.py verify \
+            --file "$evidence_dir/operational-input/run-1/provider-operational-evidence.json" \
+            --target ai_remote \
+            --environment staging \
+            --related-commit "$GITHUB_SHA" \
+            --require-passed
+          python3 scripts/provider-validation-policy.py evaluate \
+            --registry "$evidence_dir/registry.json" \
+            --environment staging \
+            --required-targets ai_remote \
+            --expected-commit "$GITHUB_SHA" \
+            --require-current-commit \
+            --operational-evidence-dir "$evidence_dir/operational-input" \
+            --require-operational-evidence \
+            --mode enforce \
+            --output-json "$evidence_dir/policy-operational.json" \
+            --output-markdown "$evidence_dir/policy-operational.md"
+          python3 scripts/provider-validation-policy.py verify \
+            --file "$evidence_dir/policy-operational.json" \
+            --environment staging \
+            --required-targets ai_remote \
+            --expected-commit "$GITHUB_SHA" \
+            --require-operational-evidence \
+            --require-passed
+          if python3 scripts/provider-validation-policy.py evaluate \
+            --registry "$evidence_dir/registry.json" \
+            --environment staging \
+            --required-targets ai_remote \
+            --expected-commit "$GITHUB_SHA" \
+            --operational-evidence-dir "$evidence_dir/empty-operational" \
+            --require-operational-evidence \
+            --mode enforce \
+            --output-json "$evidence_dir/policy-operational-missing.json" \
+            --output-markdown "$evidence_dir/policy-operational-missing.md"; then
+            echo "missing operational evidence unexpectedly passed provider policy"
+            exit 1
+          fi
           if python3 scripts/provider-validation-policy.py evaluate \
             --registry "$evidence_dir/registry.json" \
             --environment staging \

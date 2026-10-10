@@ -252,12 +252,13 @@ Before declaring provider integrations production-ready:
 - start with `PROVIDER_VALIDATION_GATE_MODE=warn`, then move to `enforce` after required production evidence exists
 - use `PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT=true` only when policy requires provider validation on every release commit
 - record provider validation, registry and production policy evidence/run IDs in the production-readiness/change record
-- separately review least-privilege IAM and organization-specific policy
-- complete target-specific external evidence that the manifests intentionally do not claim, such as warehouse readback, AI pricing calibration, real provider outage exercises, or regional game-day RPO/RTO
+- record external operational evidence with **Provider Operational Evidence** for IAM/policy review, real outage exercises, warehouse readback, AI pricing calibration, or regional game-day/RPO-RTO as required by the target
+- after the operational-evidence rollout is established, set `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=true` so required providers need both live validation and non-expired external evidence
+- preserve the external HTTPS references behind each operational evidence manifest according to organization retention policy
 
-The evidence manifests bind repository failure-injection results and live-contract results to their exact commits/runs. The registry aggregates those manifests and exposes `not_run`, `failed`, `expired`, and commit-drift gaps instead of assuming missing evidence is healthy. Neither layer is a substitute for cloud-account IAM review or real disaster/failover exercises.
+The evidence manifests bind repository failure-injection results and live-contract results to their exact commits/runs. Operational evidence separately records operator-attested external exercises with explicit expiry; the repository validates its schema/measurements but does not independently inspect the referenced cloud account or external system. The registry aggregates those manifests and exposes `not_run`, `failed`, `expired`, and commit-drift gaps instead of assuming missing evidence is healthy. Neither layer is a substitute for cloud-account IAM review or real disaster/failover exercises.
 
-See `docs/live-provider-contracts.md`, `docs/provider-validation-evidence.md`, `docs/provider-validation-registry.md`, and `docs/provider-validation-policy.md`.
+See `docs/live-provider-contracts.md`, `docs/provider-validation-evidence.md`, `docs/provider-validation-registry.md`, `docs/provider-validation-policy.md`, and `docs/provider-operational-evidence.md`.
 
 ## Progressive release readiness
 

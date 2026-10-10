@@ -1,0 +1,146 @@
+name: Provider Operational Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Provider target
+        required: true
+        type: choice
+        options:
+          - storage_s3
+          - storage_azure
+          - storage_gcs
+          - scanner
+          - secret_vault
+          - secret_aws
+          - secret_azure
+          - secret_gcp
+          - warehouse_bigquery
+          - warehouse_snowflake
+          - warehouse_redshift
+          - warehouse_databricks
+          - ai_remote
+          - region_automation
+      environment:
+        description: Environment covered by this operational review
+        required: true
+        default: production
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      reviewer:
+        description: Reviewer or change-approval identity
+        required: true
+        type: string
+      valid_days:
+        description: Evidence validity period
+        required: true
+        default: "90"
+        type: string
+      related_commit:
+        description: Optional source commit related to the reviewed deployment
+        required: false
+        default: ""
+        type: string
+      checks_json:
+        description: Required check statuses and HTTPS evidence references as JSON
+        required: true
+        type: string
+      measurements_json:
+        description: Target-specific measurements as JSON; use {} when none are required
+        required: true
+        default: "{}"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  evidence:
+    name: Record provider operational evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate inputs
+        env:
+          VALID_DAYS: ${{ inputs.valid_days }}
+          RELATED_COMMIT: ${{ inputs.related_commit }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$VALID_DAYS" | grep -Eq '^[1-9][0-9]{0,3}$'
+          if (( VALID_DAYS > 3650 )); then
+            echo "::error::valid_days must be <= 3650"
+            exit 1
+          fi
+          if [[ -n "$RELATED_COMMIT" ]] && [[ ! "$RELATED_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error::related_commit must be a full 40-character Git commit SHA when supplied"
+            exit 1
+          fi
+
+      - name: Create operational evidence
+        id: create
+        continue-on-error: true
+        env:
+          TARGET: ${{ inputs.target }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          REVIEWER: ${{ inputs.reviewer }}
+          VALID_DAYS: ${{ inputs.valid_days }}
+          RELATED_COMMIT: ${{ inputs.related_commit }}
+          CHECKS_JSON: ${{ inputs.checks_json }}
+          MEASUREMENTS_JSON: ${{ inputs.measurements_json }}
+        run: |
+          set -euo pipefail
+          args=(
+            create
+            --output provider-operational-evidence.json
+            --target "$TARGET"
+            --environment "$ENVIRONMENT"
+            --reviewer "$REVIEWER"
+            --checks-json "$CHECKS_JSON"
+            --measurements-json "$MEASUREMENTS_JSON"
+            --valid-days "$VALID_DAYS"
+            --run-id "$GITHUB_RUN_ID"
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+          )
+          if [[ -n "$RELATED_COMMIT" ]]; then
+            args+=(--related-commit "$RELATED_COMMIT")
+          fi
+          python3 scripts/provider-operational-evidence.py "${args[@]}"
+
+      - name: Verify operational evidence
+        if: always()
+        env:
+          TARGET: ${{ inputs.target }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          RELATED_COMMIT: ${{ inputs.related_commit }}
+        run: |
+          set -euo pipefail
+          args=(
+            verify
+            --file provider-operational-evidence.json
+            --target "$TARGET"
+            --environment "$ENVIRONMENT"
+            --require-passed
+          )
+          if [[ -n "$RELATED_COMMIT" ]]; then
+            args+=(--related-commit "$RELATED_COMMIT")
+          fi
+          python3 scripts/provider-operational-evidence.py "${args[@]}"
+
+      - name: Upload operational evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-operational-evidence-${{ inputs.environment }}-${{ inputs.target }}-${{ github.run_id }}
+          path: provider-operational-evidence.json
+          if-no-files-found: warn
+          retention-days: 180

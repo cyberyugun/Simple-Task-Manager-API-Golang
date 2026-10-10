@@ -65,12 +65,86 @@ def find_cell(registry: dict[str, Any], target: str, environment: str) -> dict[s
     return None
 
 
+def parse_time(raw: str) -> datetime:
+    value = raw.strip()
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        raise ValueError("timestamp must include timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def find_operational_evidence(
+    directory: pathlib.Path, target: str, environment: str, now: datetime
+) -> dict[str, Any]:
+    latest: dict[str, Any] | None = None
+    latest_completed: datetime | None = None
+
+    if not directory.exists():
+        return {"status": "not_run"}
+
+    for path in directory.rglob("provider-operational-evidence.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("schema_version") != 1:
+                continue
+            if payload.get("target") != target or payload.get("environment") != environment:
+                continue
+            completed = parse_time(str(payload.get("completed_at", "")))
+            expires = parse_time(str(payload.get("expires_at", "")))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+
+        if latest_completed is None or completed > latest_completed:
+            latest_completed = completed
+            latest = {
+                "payload": payload,
+                "path": str(path),
+                "completed": completed,
+                "expires": expires,
+            }
+
+    if latest is None:
+        return {"status": "not_run"}
+
+    payload = latest["payload"]
+    status = "passed"
+    if payload.get("status") != "passed":
+        status = "failed"
+    elif latest["expires"] <= now:
+        status = "expired"
+
+    return {
+        "status": status,
+        "completed_at": payload.get("completed_at"),
+        "expires_at": payload.get("expires_at"),
+        "reviewer": payload.get("reviewer"),
+        "workflow_run_id": payload.get("workflow_run_id"),
+        "workflow_run_attempt": payload.get("workflow_run_attempt"),
+        "related_commit": payload.get("related_commit"),
+        "path": latest["path"],
+        "failure_reasons": list(payload.get("failure_reasons") or []),
+        "limitations": list(payload.get("limitations") or []),
+    }
+
+
 def evaluate(args: argparse.Namespace) -> None:
     if args.mode not in MODES:
         raise ValueError(f"mode must be one of: {', '.join(sorted(MODES))}")
 
     required_targets = parse_targets(args.required_targets)
     registry = load_registry(pathlib.Path(args.registry))
+    operational_dir = (
+        pathlib.Path(args.operational_evidence_dir)
+        if args.operational_evidence_dir
+        else None
+    )
+    if args.require_operational_evidence and operational_dir is None:
+        raise ValueError(
+            "--operational-evidence-dir is required when operational evidence is enforced"
+        )
+    now = datetime.now(timezone.utc)
 
     if args.expected_commit and registry.get("expected_commit") != args.expected_commit:
         raise ValueError(
@@ -110,6 +184,15 @@ def evaluate(args: argparse.Namespace) -> None:
             if args.require_current_commit and commit_matches is not True:
                 reasons.append("commit_drift")
 
+        operational = {"status": "not_required"}
+        if args.require_operational_evidence:
+            operational = find_operational_evidence(
+                operational_dir, target, args.environment, now
+            )
+            operational_status = operational.get("status")
+            if operational_status != "passed":
+                reasons.append(f"operational_evidence_{operational_status}")
+
         target_passed = not reasons
         if not target_passed:
             passed = False
@@ -128,6 +211,7 @@ def evaluate(args: argparse.Namespace) -> None:
                 "workflow_run_id": workflow_run_id,
                 "workflow_run_attempt": workflow_run_attempt,
                 "gaps": gaps,
+                "operational_evidence": operational,
             }
         )
 
@@ -140,6 +224,7 @@ def evaluate(args: argparse.Namespace) -> None:
         "required_targets": required_targets,
         "expected_commit": args.expected_commit or registry.get("expected_commit"),
         "require_current_commit": args.require_current_commit,
+        "require_operational_evidence": args.require_operational_evidence,
         "registry_generated_at": registry.get("generated_at"),
         "registry_max_age_days": registry.get("max_age_days"),
         "decisions": decisions,
@@ -155,9 +240,10 @@ def evaluate(args: argparse.Namespace) -> None:
         f"Status: {payload['status']}",
         f"Expected commit: {payload['expected_commit'] or 'not enforced'}",
         f"Require current commit: {'yes' if args.require_current_commit else 'no'}",
+        f"Require operational evidence: {'yes' if args.require_operational_evidence else 'no'}",
         "",
-        "| Target | Registry status | Policy | Age | Commit | Run | Reasons |",
-        "| --- | --- | --- | ---: | --- | --- | --- |",
+        "| Target | Registry | Operational | Policy | Age | Commit | Run | Reasons |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for decision in decisions:
         age = "-"
@@ -174,8 +260,9 @@ def evaluate(args: argparse.Namespace) -> None:
         if decision["workflow_run_id"]:
             run = f"{decision['workflow_run_id']}/{decision['workflow_run_attempt']}"
         reasons = ", ".join(decision["reasons"]) if decision["reasons"] else "-"
+        operational_status = decision.get("operational_evidence", {}).get("status", "not_required")
         markdown.append(
-            f"| {decision['target']} | {decision['status']} | "
+            f"| {decision['target']} | {decision['status']} | {operational_status} | "
             f"{'passed' if decision['policy_passed'] else 'failed'} | {age} | "
             f"{commit} | {run} | {reasons} |"
         )
@@ -215,6 +302,9 @@ def verify(args: argparse.Namespace) -> None:
         failures.append(
             f"environment: expected {args.environment!r}, got {payload.get('environment')!r}"
         )
+
+    if args.require_operational_evidence and payload.get("require_operational_evidence") is not True:
+        failures.append("require_operational_evidence: expected true")
 
     if args.expected_commit is not None and payload.get("expected_commit") != args.expected_commit:
         failures.append(
@@ -275,6 +365,8 @@ eval_parser.add_argument("--environment", required=True)
 eval_parser.add_argument("--required-targets", required=True)
 eval_parser.add_argument("--expected-commit")
 eval_parser.add_argument("--require-current-commit", action="store_true")
+eval_parser.add_argument("--operational-evidence-dir")
+eval_parser.add_argument("--require-operational-evidence", action="store_true")
 eval_parser.add_argument("--mode", choices=sorted(MODES), default="enforce")
 eval_parser.add_argument("--output-json", required=True)
 eval_parser.add_argument("--output-markdown", required=True)
@@ -286,6 +378,7 @@ verify_parser.add_argument("--environment", required=True)
 verify_parser.add_argument("--required-targets", required=True)
 verify_parser.add_argument("--expected-commit")
 verify_parser.add_argument("--require-passed", action="store_true")
+verify_parser.add_argument("--require-operational-evidence", action="store_true")
 verify_parser.set_defaults(func=verify)
 
 args = parser.parse_args()
