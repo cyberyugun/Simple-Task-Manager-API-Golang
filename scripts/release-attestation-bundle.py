@@ -200,6 +200,8 @@ def validate_policy_component(
         failures.append(
             f"provider policy mode {payload.get('mode')!r} does not match gate mode {gate_mode!r}"
         )
+    if payload.get("status") not in {"passed", "failed"}:
+        failures.append(f"provider policy status is invalid: {payload.get('status')!r}")
     if gate_mode == "enforce" and payload.get("status") != "passed":
         failures.append("enforced provider policy must be passed")
     return failures
