@@ -45,6 +45,8 @@ python3 scripts/provider-validation-registry.py build \
 
 If multiple manifests exist for one target/environment pair, the newest `completed_at` wins. `workflow_run_attempt` is used as a tie-breaker.
 
+For every discovered evidence manifest, the selected cell records `evidence_sha256`, the SHA-256 of the exact `provider-validation-evidence.json` bytes. This lets a production release attestation bind the registry to the live-provider evidence it selected without duplicating every raw provider log into the release artifact.
+
 The JSON output contains the full machine-readable state. The Markdown output is intended for release/change review and GitHub Actions job summaries.
 
 ## Verification

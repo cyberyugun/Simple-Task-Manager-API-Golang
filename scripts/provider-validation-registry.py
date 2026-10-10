@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import re
@@ -58,6 +59,14 @@ def parse_time(raw: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def now_utc(raw: str | None) -> datetime:
     if raw:
         return parse_time(raw)
@@ -109,6 +118,7 @@ def load_evidence(path: pathlib.Path) -> dict[str, Any]:
         "commit": commit,
         "run_id": run_id,
         "run_attempt": run_attempt,
+        "evidence_sha256": sha256_file(path),
         "limitations": list(limitations),
     }
 
@@ -219,6 +229,7 @@ def build(args: argparse.Namespace) -> None:
                     "workflow_run_id": item["run_id"],
                     "workflow_run_attempt": item["run_attempt"],
                     "evidence_path": item["path"],
+                    "evidence_sha256": item["evidence_sha256"],
                     "gaps": list(dict.fromkeys(gaps)),
                 }
 
@@ -312,6 +323,13 @@ def verify(args: argparse.Namespace) -> None:
             failures.append(f"invalid cell status {status!r}")
             continue
         counts[status] += 1
+
+        if status != "not_run":
+            evidence_sha256 = str(cell.get("evidence_sha256", "")).strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", evidence_sha256):
+                failures.append(
+                    f"{cell.get('target')}/{cell.get('environment')}: evidence_sha256 is missing or invalid"
+                )
 
         if args.require_current_commit and status == "passed" and cell.get("commit_matches_expected") is not True:
             failures.append(

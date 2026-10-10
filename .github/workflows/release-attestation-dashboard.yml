@@ -1,0 +1,94 @@
+name: Release Attestation Dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_artifacts:
+        description: Maximum recent release-attestation artifacts to scan
+        required: true
+        default: "100"
+        type: string
+      require_valid:
+        description: Fail if any downloaded release attestation bundle has invalid integrity
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  dashboard:
+    name: Build release attestation dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MAX_ARTIFACTS: ${{ inputs.max_artifacts }}
+      REQUIRE_VALID: ${{ inputs.require_valid }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate dashboard inputs
+        run: |
+          set -euo pipefail
+          printf '%s' "$MAX_ARTIFACTS" | grep -Eq '^[1-9][0-9]{0,2}$'
+          (( MAX_ARTIFACTS <= 500 )) || {
+            echo "::error::max_artifacts must be <= 500"
+            exit 1
+          }
+
+      - name: Discover release attestation artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p release-attestations
+          gh api --paginate \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false and (.name | startswith("release-attestation-")) and ((.name | startswith("release-attestation-dashboard-")) | not)) | [.workflow_run.id, .name] | @tsv' \
+            > /tmp/release-attestations-all.tsv
+          awk '!seen[$0]++' /tmp/release-attestations-all.tsv \
+            | head -n "$MAX_ARTIFACTS" \
+            > /tmp/release-attestations.tsv
+
+          while IFS=$'\t' read -r run_id artifact_name; do
+            [[ -n "$run_id" && -n "$artifact_name" ]] || continue
+            safe_name="$(printf '%s' "$artifact_name" | tr -c 'A-Za-z0-9._-' '_')"
+            destination="release-attestations/${run_id}-${safe_name}"
+            mkdir -p "$destination"
+            gh run download "$run_id" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$artifact_name" \
+              --dir "$destination"
+          done < /tmp/release-attestations.tsv
+
+      - name: Build dashboard
+        run: |
+          set -euo pipefail
+          args=(
+            dashboard
+            --input-dir release-attestations
+            --output-json release-attestation-dashboard.json
+            --output-markdown release-attestation-dashboard.md
+            --max-releases "$MAX_ARTIFACTS"
+          )
+          if [[ "$REQUIRE_VALID" == "true" ]]; then
+            args+=(--require-valid)
+          fi
+          python3 scripts/release-attestation-bundle.py "${args[@]}"
+          cat release-attestation-dashboard.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release attestation dashboard
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-attestation-dashboard-${{ github.run_id }}
+          path: |
+            release-attestation-dashboard.json
+            release-attestation-dashboard.md
+          if-no-files-found: warn
+          retention-days: 90

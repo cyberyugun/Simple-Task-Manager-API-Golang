@@ -66,7 +66,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Native Amazon Redshift warehouse delivery through the Redshift Data API with SigV4/IAM identity, idempotent client tokens, batched MERGE upserts, async polling/retry, and checkpoint-after-confirmed-commit semantics
 - Native Databricks warehouse delivery through the SQL Statement Execution API with Delta table creation, batched MERGE upserts, async status polling/retry, and checkpoint-after-confirmed-commit semantics
 - Native GCS attachment storage with V4 signed URLs, GKE/Compute workload identity, IAM Credentials signBlob delegation, SHA-256 metadata verification, optional CMEK binding, and verified deletion
-- Opt-in provider assurance stack covering live provider contracts, curated failure injection, SHA-256-bound validation evidence, cross-environment registry, environment-specific release policy, and governed external IAM/outage/readback/pricing/game-day evidence with authenticated submitters, dual approval, revocation/supersede history, and expiry monitoring
+- Opt-in provider assurance stack covering live provider contracts, curated failure injection, SHA-256-bound validation evidence, cross-environment registry, environment-specific release policy, governed external IAM/outage/readback/pricing/game-day evidence, dual approval/revocation/expiry controls, and a SHA-256-rooted production release attestation dashboard
 - Native connector secret backends for HashiCorp Vault KV v2, AWS Secrets Manager, Azure Key Vault, and GCP Secret Manager, including workload/managed identity, runtime credential resolution, versioning, cutover scrubbing, backend readiness reporting, AWS/Azure/GCP customer-managed-key support, and provider-specific security controls
 
 ## Environment
@@ -504,7 +504,7 @@ High availability, RPO/RTO targets, regional rebuild/restore procedures, automat
 
 Load/spike/soak testing, connection-pool tuning, query-plan validation, HPA capacity guidance, and performance regression policy are documented in [`docs/performance-scalability.md`](docs/performance-scalability.md).
 
-Progressive canary delivery, deployment freezes, expand/contract migration safety, automatic image rollback, immutable release evidence, and release/rollback procedures are documented in [`docs/release-engineering.md`](docs/release-engineering.md) and [`docs/production-release-checklist.md`](docs/production-release-checklist.md).
+Progressive canary delivery, deployment freezes, expand/contract migration safety, automatic image rollback, immutable release evidence, and release/rollback procedures are documented in [`docs/release-engineering.md`](docs/release-engineering.md) and [`docs/production-release-checklist.md`](docs/production-release-checklist.md). The SHA-256-rooted production evidence bundle and historical integrity dashboard are documented in [`docs/release-attestation-bundle.md`](docs/release-attestation-bundle.md).
 
 Mandatory staging validation, isolated staging PostgreSQL/Redis guidance, exact-digest promotion evidence, and the staging→production gate are documented in [`docs/staging-promotion.md`](docs/staging-promotion.md).
 

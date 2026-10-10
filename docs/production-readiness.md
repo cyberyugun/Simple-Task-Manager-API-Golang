@@ -276,6 +276,8 @@ Before enabling production progressive delivery:
 - confirm all SQL migrations pass `scripts/check-migration-compatibility.py`
 - use expand/contract database changes so the old stable version and new canary can run simultaneously
 - retain the release evidence artifact for audit and incident review
+- verify the successful deployment produced a `release-attestation-<commit>` bundle and preserve its root digest in the release/change record
+- periodically run **Release Attestation Dashboard** to re-verify retained bundle integrity
 - exercise `scripts/rollback-drill.sh` in staging before relying on emergency rollback procedures
 
 See `docs/release-engineering.md` and `docs/production-release-checklist.md`.
