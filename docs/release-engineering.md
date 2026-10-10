@@ -296,6 +296,7 @@ PROVIDER_VALIDATION_REQUIRED_TARGETS=
 PROVIDER_VALIDATION_MAX_AGE_DAYS=30
 PROVIDER_VALIDATION_MAX_ARTIFACTS=200
 PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT=false
+PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=false
 ```
 
 Manual dispatch values override the canary weight/observation variables.
@@ -329,7 +330,9 @@ The `production` GitHub Environment defines `PROVIDER_VALIDATION_REQUIRED_TARGET
 
 When active, the production deploy job discovers retained provider-validation artifacts with read-only Actions permission, builds a production-only registry for the required targets, evaluates `scripts/provider-validation-policy.py`, and stores the release registry/policy evidence for 90 days before any Kubernetes authentication or mutation.
 
-Use `warn` during rollout. Use `enforce` after the enabled production providers have passing evidence. See [provider validation policy](provider-validation-policy.md).
+Use `warn` during rollout. Use `enforce` after the enabled production providers have passing evidence. When external operational exercises are also mandatory, set `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=true`; required providers must then have non-expired operational evidence before production cluster mutation begins.
+
+See [provider validation policy](provider-validation-policy.md) and [external provider operational evidence](provider-operational-evidence.md).
 
 ## Staging and production promotion
 
