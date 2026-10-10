@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import pathlib
@@ -120,6 +121,20 @@ def validate_reference(reference: str, check: str) -> None:
         raise ValueError(f"{check}.reference exceeds 2048 characters")
 
 
+def validate_sha256(value: str, label: str) -> None:
+    if not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise ValueError(f"{label} must be a lowercase 64-character SHA-256 digest")
+
+
+def canonical_digest(payload: dict[str, Any], digest_field: str) -> str:
+    material = dict(payload)
+    material.pop(digest_field, None)
+    encoded = json.dumps(
+        material, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def parse_json_object(raw: str, label: str) -> dict[str, Any]:
     try:
         value = json.loads(raw)
@@ -201,7 +216,9 @@ def validate_measurements(target: str, checks: dict[str, Any], measurements: dic
     return failures
 
 
-def normalize_checks(target: str, checks: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+def normalize_checks(
+    target: str, checks: dict[str, Any], require_reference_digests: bool = False
+) -> tuple[dict[str, Any], list[str]]:
     normalized: dict[str, Any] = {}
     failures: list[str] = []
     required = TARGET_REQUIREMENTS[target]
@@ -214,6 +231,7 @@ def normalize_checks(target: str, checks: dict[str, Any]) -> tuple[dict[str, Any
 
         status = str(item.get("status", "")).strip().lower()
         reference = str(item.get("reference", "")).strip()
+        reference_sha256 = str(item.get("reference_sha256", "")).strip().lower()
         notes = str(item.get("notes", "")).strip()
 
         if status not in CHECK_STATUSES:
@@ -222,12 +240,20 @@ def normalize_checks(target: str, checks: dict[str, Any]) -> tuple[dict[str, Any
             validate_reference(reference, name)
         except ValueError as exc:
             failures.append(str(exc))
+        if reference_sha256:
+            try:
+                validate_sha256(reference_sha256, f"{name}.reference_sha256")
+            except ValueError as exc:
+                failures.append(str(exc))
+        elif require_reference_digests:
+            failures.append(f"{name}.reference_sha256 is required")
         if len(notes) > 1000:
             failures.append(f"{name}.notes exceeds 1000 characters")
 
         normalized[name] = {
             "status": status,
             "reference": reference,
+            "reference_sha256": reference_sha256 or None,
             "notes": notes,
         }
 
@@ -243,12 +269,16 @@ def create(args: argparse.Namespace) -> None:
         raise ValueError(f"unsupported target {args.target!r}")
     validate_environment(args.environment)
     validate_reviewer(args.reviewer)
+    if args.submitted_by:
+        validate_reviewer(args.submitted_by)
     if args.valid_days <= 0 or args.valid_days > 3650:
         raise ValueError("valid-days must be between 1 and 3650")
 
     checks_raw = parse_json_object(args.checks_json, "checks-json")
     measurements = parse_json_object(args.measurements_json, "measurements-json")
-    checks, failures = normalize_checks(args.target, checks_raw)
+    checks, failures = normalize_checks(
+        args.target, checks_raw, args.require_reference_digests
+    )
     failures.extend(validate_measurements(args.target, checks, measurements))
 
     for name in TARGET_REQUIREMENTS[args.target]:
@@ -265,9 +295,11 @@ def create(args: argparse.Namespace) -> None:
         "target": args.target,
         "environment": args.environment,
         "reviewer": args.reviewer,
+        "submitted_by": args.submitted_by or None,
         "completed_at": completed_at.isoformat().replace("+00:00", "Z"),
         "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
         "valid_days": args.valid_days,
+        "reference_digests_required": args.require_reference_digests,
         "related_commit": args.related_commit or None,
         "workflow_run_id": args.run_id or None,
         "workflow_run_attempt": args.run_attempt or None,
@@ -279,6 +311,7 @@ def create(args: argparse.Namespace) -> None:
             "repository_does_not_independently_verify_external_reference_content",
         ],
     }
+    payload["evidence_digest"] = canonical_digest(payload, "evidence_digest")
 
     pathlib.Path(args.output).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(
@@ -314,7 +347,9 @@ def verify_payload(payload: dict[str, Any], now: datetime) -> list[str]:
     if not isinstance(checks, dict):
         failures.append("checks must be an object")
         checks = {}
-    normalized, check_failures = normalize_checks(target, checks)
+    normalized, check_failures = normalize_checks(
+        target, checks, bool(payload.get("reference_digests_required", False))
+    )
     failures.extend(check_failures)
 
     measurements = payload.get("measurements")
@@ -353,6 +388,15 @@ def verify_payload(payload: dict[str, Any], now: datetime) -> list[str]:
     if not isinstance(limitations, list) or not limitations:
         failures.append("limitations must be a non-empty list")
 
+    evidence_digest = str(payload.get("evidence_digest", "")).strip().lower()
+    if evidence_digest:
+        try:
+            validate_sha256(evidence_digest, "evidence_digest")
+            if evidence_digest != canonical_digest(payload, "evidence_digest"):
+                failures.append("evidence_digest does not match manifest content")
+        except ValueError as exc:
+            failures.append(str(exc))
+
     return list(dict.fromkeys(failures))
 
 
@@ -374,6 +418,34 @@ def verify(args: argparse.Namespace) -> None:
         failures.append(
             f"related_commit: expected {args.related_commit!r}, got {payload.get('related_commit')!r}"
         )
+    if args.require_integrity:
+        evidence_digest = str(payload.get("evidence_digest", "")).strip().lower()
+        if not evidence_digest:
+            failures.append("evidence_digest is required")
+    if args.require_submitter:
+        submitter = str(payload.get("submitted_by", "")).strip()
+        if not submitter:
+            failures.append("submitted_by is required")
+        else:
+            try:
+                validate_reviewer(submitter)
+            except ValueError as exc:
+                failures.append(str(exc))
+    if args.require_reference_digests and payload.get("reference_digests_required") is not True:
+        failures.append("reference_digests_required must be true")
+    if args.require_reference_digests:
+        checks_payload = payload.get("checks")
+        if isinstance(checks_payload, dict):
+            for name in TARGET_REQUIREMENTS.get(str(payload.get("target", "")), []):
+                item = checks_payload.get(name)
+                digest = str(item.get("reference_sha256", "")).strip().lower() if isinstance(item, dict) else ""
+                if not digest:
+                    failures.append(f"{name}.reference_sha256 is required")
+                else:
+                    try:
+                        validate_sha256(digest, f"{name}.reference_sha256")
+                    except ValueError as exc:
+                        failures.append(str(exc))
     if args.require_passed and payload.get("status") != "passed":
         failures.append("provider operational evidence is not passed")
 
@@ -397,12 +469,14 @@ create_parser.add_argument("--output", required=True)
 create_parser.add_argument("--target", required=True)
 create_parser.add_argument("--environment", required=True)
 create_parser.add_argument("--reviewer", required=True)
+create_parser.add_argument("--submitted-by")
 create_parser.add_argument("--checks-json", required=True)
 create_parser.add_argument("--measurements-json", default="{}")
 create_parser.add_argument("--valid-days", type=int, default=90)
 create_parser.add_argument("--related-commit")
 create_parser.add_argument("--run-id")
 create_parser.add_argument("--run-attempt")
+create_parser.add_argument("--require-reference-digests", action="store_true")
 create_parser.set_defaults(func=create)
 
 verify_parser = sub.add_parser("verify")
@@ -412,6 +486,9 @@ verify_parser.add_argument("--environment")
 verify_parser.add_argument("--related-commit")
 verify_parser.add_argument("--now")
 verify_parser.add_argument("--require-passed", action="store_true")
+verify_parser.add_argument("--require-integrity", action="store_true")
+verify_parser.add_argument("--require-submitter", action="store_true")
+verify_parser.add_argument("--require-reference-digests", action="store_true")
 verify_parser.set_defaults(func=verify)
 
 args = parser.parse_args()
