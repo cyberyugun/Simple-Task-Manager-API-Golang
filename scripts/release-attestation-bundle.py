@@ -163,6 +163,31 @@ def validate_staging_component(
     return failures
 
 
+def validate_registry_component(
+    payload: dict[str, Any], commit: str
+) -> list[str]:
+    failures: list[str] = []
+    if str(payload.get("expected_commit", "")).lower() != commit:
+        failures.append("provider registry expected_commit does not match release commit")
+    cells = payload.get("cells")
+    if not isinstance(cells, list):
+        failures.append("provider registry cells must be a list")
+        return failures
+    for item in cells:
+        if not isinstance(item, dict):
+            failures.append("provider registry cell must be an object")
+            continue
+        status = item.get("status")
+        if status == "not_run":
+            continue
+        digest = str(item.get("evidence_sha256", "")).strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            failures.append(
+                f"provider registry target {item.get('target')!r} is missing a valid evidence_sha256"
+            )
+    return failures
+
+
 def validate_policy_component(
     payload: dict[str, Any], commit: str, gate_mode: str
 ) -> list[str]:
@@ -232,10 +257,7 @@ def create(args: argparse.Namespace) -> None:
                     provider_policy, commit, args.provider_gate_mode
                 )
             )
-            if str(provider_registry.get("expected_commit", "")).lower() != commit:
-                failures.append(
-                    "provider registry expected_commit does not match release commit"
-                )
+            failures.extend(validate_registry_component(provider_registry, commit))
             provider_summary = summarize_provider_policy(provider_policy)
             components.append(
                 component("provider_validation_registry", registry_path, provider_registry)
@@ -534,10 +556,7 @@ def verify_manifest(
             )
         else:
             failures.extend(validate_policy_component(policy, commit, gate_mode))
-            if str(registry.get("expected_commit", "")).lower() != commit:
-                failures.append(
-                    "provider registry expected_commit does not match release commit"
-                )
+            failures.extend(validate_registry_component(registry, commit))
 
     operational_required = payload.get("operational_evidence_required") is True
     approval_required = payload.get("operational_approval_required") is True
