@@ -58,6 +58,11 @@ grep -q 'name: Provider Operational Evidence Governance' .github/workflows/provi
 grep -q 'name: Provider Operational Evidence Expiry' .github/workflows/provider-operational-evidence-expiry.yml
 grep -q 'provider-operational-evidence' .github/workflows/deploy.yml
 grep -q 'provider-validation-release-policy.json' .github/workflows/deploy.yml
+grep -q 'name: Create production release attestation bundle' .github/workflows/deploy.yml
+grep -q 'name: Upload production release attestation bundle' .github/workflows/deploy.yml
+grep -q 'release-attestation-bundle.py' .github/workflows/deploy.yml
+grep -q 'name: Release Attestation Dashboard' .github/workflows/release-attestation-dashboard.yml
+grep -q 'release-attestation-dashboard.json' .github/workflows/release-attestation-dashboard.yml
 grep -q 'actions: read' .github/workflows/deploy.yml
 
 python3 scripts/check-migration-compatibility.py migrations
