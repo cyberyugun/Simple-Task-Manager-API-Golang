@@ -380,7 +380,8 @@ jobs:
                   "submitted_by": "ci-submitter",
                   "evidence_digest": operational_hash
               }]
-          }, indent=2) + "\n", encoding="utf-8")          PY
+          }, indent=2) + "\n", encoding="utf-8")
+          PY
 
           python3 scripts/release-attestation-bundle.py create \
             --output-json "$attestation_dir/release-attestation.json" \
