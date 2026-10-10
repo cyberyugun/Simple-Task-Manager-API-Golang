@@ -107,7 +107,9 @@ The Markdown matrix is also appended to the GitHub Actions job summary.
 
 The workflow can additionally preview an environment-specific required-provider policy. Set `required_targets`, `policy_environment`, `policy_mode`, and `policy_require_current_commit`. Policy mode `off` preserves the registry-only behavior; `warn` records policy failure without failing the workflow; `enforce` makes required-provider failure workflow-blocking.
 
-Set `policy_require_operational_evidence=true` to include the newest non-expired **Provider Operational Evidence** artifact for every required target in the policy decision. Missing, failed, or expired external evidence then appears as a policy failure.
+Set `policy_require_operational_evidence=true` to include the newest non-expired **Provider Operational Evidence** artifact for every required target in the policy decision. Missing, failed, expired, or revoked external evidence then appears as a policy failure.
+
+Set `policy_require_operational_approval=true` to require a matching integrity-checked approval from a different GitHub submitter/approver identity. This option requires operational evidence to be enabled.
 
 See [Provider Validation Policy](provider-validation-policy.md) and [External Provider Operational Evidence](provider-operational-evidence.md).
 
