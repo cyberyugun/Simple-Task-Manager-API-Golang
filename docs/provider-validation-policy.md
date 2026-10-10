@@ -123,7 +123,11 @@ Operational evidence itself is retained separately by the **Provider Operational
 
 The policy artifact is tied to the release `GITHUB_SHA`.
 
+Each selected registry cell also records `evidence_sha256`, binding the registry to the exact `provider-validation-evidence.json` manifest chosen for that target/environment. A successful production release then includes the registry and policy in the SHA-256-rooted release attestation bundle.
+
 A policy decision includes the required targets, environment, gate mode, expected commit, commit-enforcement setting, evidence age, source validation workflow run/attempt, operational evidence digest, submitter, approval state/approver, revocation state, and failure reasons.
+
+See [Production Release Attestation Bundle](release-attestation-bundle.md).
 
 ## Manual preview
 
