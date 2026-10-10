@@ -379,6 +379,7 @@ jobs:
       PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT: ${{ vars.PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT || 'false' }}
       PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED: ${{ vars.PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED || 'false' }}
       PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL: ${{ vars.PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL || 'false' }}
+      PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_WARNING_DAYS: ${{ vars.PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_WARNING_DAYS || '14' }}
 
     steps:
       - name: Checkout
@@ -443,6 +444,16 @@ jobs:
             --image-digest "$IMAGE_DIGEST" \
             --run-id "$GITHUB_RUN_ID"
 
+      - name: Download staging promotion evidence for release attestation
+        run: |
+          set -euo pipefail
+          mkdir -p release-attestation-input/staging
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "staging-promotion-evidence-$GITHUB_SHA" \
+            --dir release-attestation-input/staging
+          test -f release-attestation-input/staging/staging-promotion-evidence.json
+
       - name: Enforce production provider validation policy
         if: env.PROVIDER_VALIDATION_GATE_MODE != 'off'
         run: |
@@ -503,7 +514,8 @@ jobs:
             scripts/provider-validation-registry.py \
             scripts/provider-validation-policy.py \
             scripts/provider-operational-evidence.py \
-            scripts/provider-operational-approval.py
+            scripts/provider-operational-approval.py \
+            scripts/release-attestation-bundle.py
 
           mkdir -p provider-release-evidence
           gh api --paginate \
@@ -597,7 +609,26 @@ jobs:
           fi
           python3 scripts/provider-validation-policy.py "${verify_args[@]}"
 
+          if [[ "$PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED" == "true" ]]; then
+            expiry_args=(
+              report
+              --input-dir provider-operational-evidence
+              --environment production
+              --required-targets "$required_targets"
+              --warning-days "$PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_WARNING_DAYS"
+              --output-json provider-operational-release-expiry.json
+              --output-markdown provider-operational-release-expiry.md
+            )
+            if [[ "$PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL" == "true" ]]; then
+              expiry_args+=(--require-approval)
+            fi
+            python3 scripts/provider-operational-approval.py "${expiry_args[@]}"
+          fi
+
           cat provider-validation-release-policy.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f provider-operational-release-expiry.md ]]; then
+            cat provider-operational-release-expiry.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload production provider validation policy evidence
         if: always() && env.PROVIDER_VALIDATION_GATE_MODE != 'off'
@@ -759,6 +790,72 @@ jobs:
           kubectl -n "$KUBE_NAMESPACE" get servicemonitor task-api
           kubectl -n "$KUBE_NAMESPACE" get prometheusrule task-api-slo
           kubectl -n monitoring get configmap task-api-grafana-dashboard
+
+      - name: Create production release attestation bundle
+        if: success()
+        run: |
+          set -euo pipefail
+          mkdir -p release-attestation-bundle
+          cp release-evidence.json release-attestation-bundle/release-evidence.json
+          cp release-attestation-input/staging/staging-promotion-evidence.json \
+            release-attestation-bundle/staging-promotion-evidence.json
+
+          args=(
+            create
+            --output-json release-attestation-bundle/release-attestation.json
+            --output-markdown release-attestation-bundle/release-attestation.md
+            --commit "$GITHUB_SHA"
+            --image-digest "$IMAGE_DIGEST"
+            --run-id "$GITHUB_RUN_ID"
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+            --source-ref "$GITHUB_REF"
+            --release-evidence release-attestation-bundle/release-evidence.json
+            --staging-evidence release-attestation-bundle/staging-promotion-evidence.json
+            --provider-gate-mode "$PROVIDER_VALIDATION_GATE_MODE"
+          )
+
+          if [[ "$PROVIDER_VALIDATION_GATE_MODE" != "off" ]]; then
+            cp provider-validation-release-registry.json \
+              release-attestation-bundle/provider-validation-release-registry.json
+            cp provider-validation-release-policy.json \
+              release-attestation-bundle/provider-validation-release-policy.json
+            args+=(
+              --provider-registry release-attestation-bundle/provider-validation-release-registry.json
+              --provider-policy release-attestation-bundle/provider-validation-release-policy.json
+            )
+          fi
+
+          if [[ "$PROVIDER_VALIDATION_GATE_MODE" != "off" && "$PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED" == "true" ]]; then
+            cp provider-operational-release-expiry.json \
+              release-attestation-bundle/provider-operational-release-expiry.json
+            args+=(
+              --operational-expiry release-attestation-bundle/provider-operational-release-expiry.json
+              --operational-evidence-required
+            )
+          fi
+
+          if [[ "$PROVIDER_VALIDATION_GATE_MODE" != "off" && "$PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL" == "true" ]]; then
+            args+=(--operational-approval-required)
+          fi
+
+          python3 scripts/release-attestation-bundle.py "${args[@]}"
+          python3 scripts/release-attestation-bundle.py verify \
+            --file release-attestation-bundle/release-attestation.json \
+            --component-dir release-attestation-bundle \
+            --commit "$GITHUB_SHA" \
+            --image-digest "$IMAGE_DIGEST" \
+            --run-id "$GITHUB_RUN_ID"
+
+          cat release-attestation-bundle/release-attestation.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload production release attestation bundle
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-attestation-${{ github.sha }}
+          path: release-attestation-bundle/
+          if-no-files-found: error
+          retention-days: 180
 
       - name: Upload release evidence
         if: always()
