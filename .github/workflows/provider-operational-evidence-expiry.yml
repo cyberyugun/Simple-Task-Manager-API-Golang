@@ -1,0 +1,146 @@
+name: Provider Operational Evidence Expiry
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      warning_days:
+        description: Warn when evidence expires within this many days
+        required: true
+        default: "14"
+        type: string
+      required_targets:
+        description: Optional comma/space-separated targets; empty scans discovered production evidence
+        required: false
+        default: ""
+        type: string
+      require_approval:
+        description: Treat missing approval as invalid
+        required: true
+        default: false
+        type: boolean
+      fail_on_invalid:
+        description: Fail when a required target is missing, failed, expired, revoked, or unapproved
+        required: true
+        default: false
+        type: boolean
+      max_artifacts:
+        description: Maximum recent operational artifacts to scan
+        required: true
+        default: "300"
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  expiry:
+    name: Check provider operational evidence expiry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      INPUT_WARNING_DAYS: ${{ inputs.warning_days }}
+      INPUT_REQUIRED_TARGETS: ${{ inputs.required_targets }}
+      INPUT_REQUIRE_APPROVAL: ${{ inputs.require_approval }}
+      INPUT_FAIL_ON_INVALID: ${{ inputs.fail_on_invalid }}
+      INPUT_MAX_ARTIFACTS: ${{ inputs.max_artifacts }}
+      DEFAULT_WARNING_DAYS: ${{ vars.PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_WARNING_DAYS || '14' }}
+      DEFAULT_REQUIRED_TARGETS: ${{ vars.PROVIDER_VALIDATION_REQUIRED_TARGETS }}
+      DEFAULT_REQUIRE_APPROVAL: ${{ vars.PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL || 'false' }}
+      DEFAULT_FAIL_ON_INVALID: ${{ vars.PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_FAIL || 'false' }}
+      DEFAULT_MAX_ARTIFACTS: ${{ vars.PROVIDER_OPERATIONAL_EVIDENCE_MAX_ARTIFACTS || '300' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve expiry policy
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            warning_days="$INPUT_WARNING_DAYS"
+            required_targets="$INPUT_REQUIRED_TARGETS"
+            require_approval="$INPUT_REQUIRE_APPROVAL"
+            fail_on_invalid="$INPUT_FAIL_ON_INVALID"
+            max_artifacts="$INPUT_MAX_ARTIFACTS"
+          else
+            warning_days="$DEFAULT_WARNING_DAYS"
+            required_targets="$DEFAULT_REQUIRED_TARGETS"
+            require_approval="$DEFAULT_REQUIRE_APPROVAL"
+            fail_on_invalid="$DEFAULT_FAIL_ON_INVALID"
+            max_artifacts="$DEFAULT_MAX_ARTIFACTS"
+          fi
+
+          printf '%s' "$warning_days" | grep -Eq '^[0-9]{1,4}$'
+          printf '%s' "$max_artifacts" | grep -Eq '^[1-9][0-9]{0,3}$'
+          (( warning_days <= 3650 )) || { echo "::error::warning_days must be <= 3650"; exit 1; }
+          (( max_artifacts <= 1000 )) || { echo "::error::max_artifacts must be <= 1000"; exit 1; }
+          case "$require_approval" in true|false) ;; *) echo "::error::require_approval must be true or false"; exit 1 ;; esac
+          case "$fail_on_invalid" in true|false) ;; *) echo "::error::fail_on_invalid must be true or false"; exit 1 ;; esac
+
+          {
+            echo "WARNING_DAYS_RESOLVED=$warning_days"
+            echo "REQUIRED_TARGETS_RESOLVED=$required_targets"
+            echo "REQUIRE_APPROVAL_RESOLVED=$require_approval"
+            echo "FAIL_ON_INVALID_RESOLVED=$fail_on_invalid"
+            echo "MAX_ARTIFACTS_RESOLVED=$max_artifacts"
+          } >> "$GITHUB_ENV"
+
+      - name: Download operational evidence
+        run: |
+          set -euo pipefail
+          mkdir -p provider-operational-evidence
+          gh api --paginate \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false and (((.name | startswith("provider-operational-evidence-"))) or ((.name | startswith("provider-operational-approved-"))) or ((.name | startswith("provider-operational-revocation-"))))) | [.workflow_run.id, .name] | @tsv' \
+            > /tmp/provider-operational-artifacts-all.tsv
+          awk '!seen[$0]++' /tmp/provider-operational-artifacts-all.tsv > /tmp/provider-operational-artifacts-unique.tsv
+          head -n "$MAX_ARTIFACTS_RESOLVED" /tmp/provider-operational-artifacts-unique.tsv > /tmp/provider-operational-artifacts.tsv
+
+          while IFS=$'\t' read -r run_id artifact_name; do
+            [[ -n "$run_id" && -n "$artifact_name" ]] || continue
+            safe_name="$(printf '%s' "$artifact_name" | tr -c 'A-Za-z0-9._-' '_')"
+            destination="provider-operational-evidence/${run_id}-${safe_name}"
+            mkdir -p "$destination"
+            gh run download "$run_id" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$artifact_name" \
+              --dir "$destination"
+          done < /tmp/provider-operational-artifacts.tsv
+
+      - name: Build expiry report
+        run: |
+          set -euo pipefail
+          args=(
+            report
+            --input-dir provider-operational-evidence
+            --environment production
+            --warning-days "$WARNING_DAYS_RESOLVED"
+            --required-targets "$REQUIRED_TARGETS_RESOLVED"
+            --output-json provider-operational-expiry.json
+            --output-markdown provider-operational-expiry.md
+          )
+          if [[ "$REQUIRE_APPROVAL_RESOLVED" == "true" ]]; then
+            args+=(--require-approval)
+          fi
+          if [[ "$FAIL_ON_INVALID_RESOLVED" == "true" ]]; then
+            args+=(--fail-on-invalid)
+          fi
+          python3 scripts/provider-operational-approval.py "${args[@]}"
+          cat provider-operational-expiry.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload expiry report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-operational-expiry-${{ github.run_id }}
+          path: |
+            provider-operational-expiry.json
+            provider-operational-expiry.md
+          if-no-files-found: warn
+          retention-days: 30
