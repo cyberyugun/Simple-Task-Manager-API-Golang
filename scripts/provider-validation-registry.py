@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import re
@@ -58,6 +59,14 @@ def parse_time(raw: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def now_utc(raw: str | None) -> datetime:
     if raw:
         return parse_time(raw)
@@ -109,6 +118,7 @@ def load_evidence(path: pathlib.Path) -> dict[str, Any]:
         "commit": commit,
         "run_id": run_id,
         "run_attempt": run_attempt,
+        "evidence_sha256": sha256_file(path),
         "limitations": list(limitations),
     }
 
@@ -219,6 +229,7 @@ def build(args: argparse.Namespace) -> None:
                     "workflow_run_id": item["run_id"],
                     "workflow_run_attempt": item["run_attempt"],
                     "evidence_path": item["path"],
+                    "evidence_sha256": item["evidence_sha256"],
                     "gaps": list(dict.fromkeys(gaps)),
                 }
 
