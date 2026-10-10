@@ -254,9 +254,13 @@ Before declaring provider integrations production-ready:
 - record provider validation, registry and production policy evidence/run IDs in the production-readiness/change record
 - record external operational evidence with **Provider Operational Evidence** for IAM/policy review, real outage exercises, warehouse readback, AI pricing calibration, or regional game-day/RPO-RTO as required by the target
 - after the operational-evidence rollout is established, set `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=true` so required providers need both live validation and non-expired external evidence
-- preserve the external HTTPS references behind each operational evidence manifest according to organization retention policy
+- configure `PROVIDER_OPERATIONAL_EVIDENCE_ALLOWED_APPROVERS` with authorized GitHub identities and use **Provider Operational Evidence Governance** to approve production submissions
+- set `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL=true` only after approved evidence exists for every required production provider
+- use the governance workflow to revoke compromised/stale attestations instead of deleting historical artifacts
+- preserve the external HTTPS references and their production `reference_sha256` values according to organization retention policy
+- review the daily **Provider Operational Evidence Expiry** report; optionally set `PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_FAIL=true` so invalid required evidence makes the scheduled workflow fail
 
-The evidence manifests bind repository failure-injection results and live-contract results to their exact commits/runs. Operational evidence separately records operator-attested external exercises with explicit expiry; the repository validates its schema/measurements but does not independently inspect the referenced cloud account or external system. The registry aggregates those manifests and exposes `not_run`, `failed`, `expired`, and commit-drift gaps instead of assuming missing evidence is healthy. Neither layer is a substitute for cloud-account IAM review or real disaster/failover exercises.
+The evidence manifests bind repository failure-injection results and live-contract results to their exact commits/runs. Operational evidence separately records operator-attested external exercises with explicit expiry and SHA-256 integrity metadata. Optional production dual-control binds the evidence to distinct authenticated submitter/approver identities, while revocation makes a previously approved digest unusable. The repository validates these manifests but does not independently inspect the referenced cloud account or external system. The registry exposes `not_run`, `failed`, `expired`, `revoked`, `unapproved`, and commit-drift gaps instead of assuming missing evidence is healthy.
 
 See `docs/live-provider-contracts.md`, `docs/provider-validation-evidence.md`, `docs/provider-validation-registry.md`, `docs/provider-validation-policy.md`, and `docs/provider-operational-evidence.md`.
 
