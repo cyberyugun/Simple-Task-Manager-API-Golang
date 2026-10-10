@@ -55,7 +55,10 @@ Telemetry verification
 Move :latest tag to promoted digest
         |
         v
-Upload release evidence
+Create SHA-256 release attestation bundle
+        |
+        v
+Upload release evidence + attestation
 ```
 
 A failure before stable promotion removes the canary without changing the stable image.
@@ -149,7 +152,11 @@ The release evidence artifact records:
 - observation duration
 - migration policy
 
-Artifacts are retained for 90 days by the deployment workflow.
+The legacy release evidence artifact is retained for 90 days. After a successful release, the workflow also creates a 180-day `release-attestation-<commit>` bundle that binds the production release evidence, exact staging promotion evidence, provider registry/policy when enabled, and the operational-evidence expiry snapshot when required.
+
+The bundle stores SHA-256 hashes for every bound component and a canonical root digest. A read-only **Release Attestation Dashboard** workflow can later re-download retained bundles, recompute component/root hashes, and report invalid integrity without requiring cluster or provider credentials.
+
+See [Production Release Attestation Bundle](release-attestation-bundle.md).
 
 ## Stable image tagging
 
@@ -324,6 +331,7 @@ Normal CI now validates:
 - production provider validation gate remains present and read-only evidence access is explicit
 - operational evidence approval/revocation and expiry workflows remain present
 - production approval enforcement remains opt-in and fail-closed when enabled
+- final release attestation bundle creation and dashboard workflow remain present
 - `:latest` promotion remains after successful release
 
 These controls make accidental removal of the release safety model a merge-blocking change.
