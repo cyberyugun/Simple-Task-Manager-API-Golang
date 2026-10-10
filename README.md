@@ -66,7 +66,7 @@ A REST API built with Go using a Handler -> Service -> Repository architecture.
 - Native Amazon Redshift warehouse delivery through the Redshift Data API with SigV4/IAM identity, idempotent client tokens, batched MERGE upserts, async polling/retry, and checkpoint-after-confirmed-commit semantics
 - Native Databricks warehouse delivery through the SQL Statement Execution API with Delta table creation, batched MERGE upserts, async status polling/retry, and checkpoint-after-confirmed-commit semantics
 - Native GCS attachment storage with V4 signed URLs, GKE/Compute workload identity, IAM Credentials signBlob delegation, SHA-256 metadata verification, optional CMEK binding, and verified deletion
-- Opt-in provider assurance stack covering live provider contracts, curated failure injection, SHA-256-bound validation evidence, cross-environment registry, environment-specific release policy, and operator-attested external IAM/outage/readback/pricing/game-day evidence
+- Opt-in provider assurance stack covering live provider contracts, curated failure injection, SHA-256-bound validation evidence, cross-environment registry, environment-specific release policy, and governed external IAM/outage/readback/pricing/game-day evidence with authenticated submitters, dual approval, revocation/supersede history, and expiry monitoring
 - Native connector secret backends for HashiCorp Vault KV v2, AWS Secrets Manager, Azure Key Vault, and GCP Secret Manager, including workload/managed identity, runtime credential resolution, versioning, cutover scrubbing, backend readiness reporting, AWS/Azure/GCP customer-managed-key support, and provider-specific security controls
 
 ## Environment
@@ -194,7 +194,7 @@ docker build \
   -t simple-task-manager-api .
 ```
 
-The Dockerfile uses Go 1.26.8 in a multi-stage build, produces stripped API, migration, event-worker, and event-replay binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs migrations, then starts both the API and background worker.
+The Dockerfile uses Go 1.26.9 in a multi-stage build, produces stripped API, migration, event-worker, and event-replay binaries, includes SQL migrations, and runs the final container as a non-root user. Docker Compose starts PostgreSQL and Redis, runs migrations, then starts both the API and background worker.
 
 ## PostgreSQL migrations
 
