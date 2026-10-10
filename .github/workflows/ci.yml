@@ -38,6 +38,7 @@ jobs:
           python3 -m py_compile scripts/provider-validation-registry.py
           python3 -m py_compile scripts/provider-validation-policy.py
           python3 -m py_compile scripts/provider-operational-evidence.py
+          python3 -m py_compile scripts/provider-operational-approval.py
           ruby -c scripts/openapi-governance.rb
           ruby -c scripts/openapi-compatibility.rb
           ruby -c scripts/consumer-contract.rb
@@ -107,6 +108,7 @@ jobs:
             --target ai_remote \
             --environment staging \
             --reviewer "CI reviewer" \
+            --submitted-by "ci-submitter" \
             --checks-json '{"gateway_access_policy_review":{"status":"passed","reference":"https://example.com/access-review"},"real_outage_recovery_exercise":{"status":"passed","reference":"https://example.com/outage-exercise"},"pricing_calibration":{"status":"passed","reference":"https://example.com/pricing-calibration"}}' \
             --measurements-json '{"pricing_estimated_cost_cents":10,"pricing_observed_cost_cents":10,"pricing_tolerance_percent":5}' \
             --valid-days 30 \
@@ -119,6 +121,31 @@ jobs:
             --environment staging \
             --related-commit "$GITHUB_SHA" \
             --require-passed
+          python3 scripts/provider-operational-approval.py approve \
+            --evidence "$evidence_dir/operational-input/run-1/provider-operational-evidence.json" \
+            --output "$evidence_dir/operational-input/run-1/provider-operational-approval.json" \
+            --approved-by "ci-approver" \
+            --allowed-approvers "ci-approver,ci-revoker" \
+            --require-allowlist \
+            --target ai_remote \
+            --environment staging \
+            --note "CI dual-control approval" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+          python3 scripts/provider-operational-approval.py verify-approval \
+            --file "$evidence_dir/operational-input/run-1/provider-operational-approval.json" \
+            --evidence "$evidence_dir/operational-input/run-1/provider-operational-evidence.json" \
+            --allowed-approvers "ci-approver,ci-revoker" \
+            --require-allowlist
+          if python3 scripts/provider-operational-approval.py approve \
+            --evidence "$evidence_dir/operational-input/run-1/provider-operational-evidence.json" \
+            --output "$evidence_dir/self-approval.json" \
+            --approved-by "ci-submitter" \
+            --allowed-approvers "ci-submitter" \
+            --require-allowlist; then
+            echo "self-approval unexpectedly passed operational governance"
+            exit 1
+          fi
           python3 scripts/provider-validation-policy.py evaluate \
             --registry "$evidence_dir/registry.json" \
             --environment staging \
@@ -137,6 +164,65 @@ jobs:
             --expected-commit "$GITHUB_SHA" \
             --require-operational-evidence \
             --require-passed
+          python3 scripts/provider-validation-policy.py evaluate \
+            --registry "$evidence_dir/registry.json" \
+            --environment staging \
+            --required-targets ai_remote \
+            --expected-commit "$GITHUB_SHA" \
+            --require-current-commit \
+            --operational-evidence-dir "$evidence_dir/operational-input" \
+            --require-operational-evidence \
+            --require-operational-approval \
+            --mode enforce \
+            --output-json "$evidence_dir/policy-approved.json" \
+            --output-markdown "$evidence_dir/policy-approved.md"
+          python3 scripts/provider-validation-policy.py verify \
+            --file "$evidence_dir/policy-approved.json" \
+            --environment staging \
+            --required-targets ai_remote \
+            --expected-commit "$GITHUB_SHA" \
+            --require-operational-evidence \
+            --require-operational-approval \
+            --require-passed
+          python3 scripts/provider-operational-approval.py report \
+            --input-dir "$evidence_dir/operational-input" \
+            --environment staging \
+            --required-targets ai_remote \
+            --warning-days 45 \
+            --require-approval \
+            --output-json "$evidence_dir/operational-expiry.json" \
+            --output-markdown "$evidence_dir/operational-expiry.md"
+          grep -q '"status": "expiring"' "$evidence_dir/operational-expiry.json"
+          python3 scripts/provider-operational-approval.py revoke \
+            --evidence "$evidence_dir/operational-input/run-1/provider-operational-evidence.json" \
+            --approval "$evidence_dir/operational-input/run-1/provider-operational-approval.json" \
+            --output "$evidence_dir/operational-input/run-1/provider-operational-revocation.json" \
+            --revoked-by "ci-revoker" \
+            --allowed-approvers "ci-approver,ci-revoker" \
+            --require-allowlist \
+            --reason "CI governance revocation test" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+          python3 scripts/provider-operational-approval.py verify-revocation \
+            --file "$evidence_dir/operational-input/run-1/provider-operational-revocation.json" \
+            --evidence "$evidence_dir/operational-input/run-1/provider-operational-evidence.json" \
+            --approval "$evidence_dir/operational-input/run-1/provider-operational-approval.json" \
+            --allowed-approvers "ci-approver,ci-revoker" \
+            --require-allowlist
+          if python3 scripts/provider-validation-policy.py evaluate \
+            --registry "$evidence_dir/registry.json" \
+            --environment staging \
+            --required-targets ai_remote \
+            --expected-commit "$GITHUB_SHA" \
+            --operational-evidence-dir "$evidence_dir/operational-input" \
+            --require-operational-evidence \
+            --require-operational-approval \
+            --mode enforce \
+            --output-json "$evidence_dir/policy-revoked.json" \
+            --output-markdown "$evidence_dir/policy-revoked.md"; then
+            echo "revoked operational evidence unexpectedly passed provider policy"
+            exit 1
+          fi
           if python3 scripts/provider-validation-policy.py evaluate \
             --registry "$evidence_dir/registry.json" \
             --environment staging \
