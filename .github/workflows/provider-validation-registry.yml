@@ -71,6 +71,11 @@ on:
         required: true
         default: false
         type: boolean
+      policy_require_operational_evidence:
+        description: Require external operational evidence for every policy target
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -94,6 +99,7 @@ jobs:
       POLICY_ENVIRONMENT: ${{ inputs.policy_environment }}
       POLICY_MODE: ${{ inputs.policy_mode }}
       POLICY_REQUIRE_CURRENT_COMMIT: ${{ inputs.policy_require_current_commit }}
+      POLICY_REQUIRE_OPERATIONAL_EVIDENCE: ${{ inputs.policy_require_operational_evidence }}
 
     steps:
       - name: Checkout
@@ -148,6 +154,127 @@ jobs:
             mkdir -p "$destination"
             gh run download "$run_id"               --repo "$GITHUB_REPOSITORY"               --name "$artifact_name"               --dir "$destination"
           done < /tmp/provider-artifacts.tsv
+
+      - name: Discover operational evidence artifacts
+        if: env.POLICY_MODE != 'off' && env.POLICY_REQUIRE_OPERATIONAL_EVIDENCE == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p provider-operational-evidence
+          gh api --paginate \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-operational-evidence-"))) | [.workflow_run.id, .name] | @tsv' \
+            > /tmp/provider-operational-artifacts-all.tsv
+          awk '!seen[$0]++' /tmp/provider-operational-artifacts-all.tsv > /tmp/provider-operational-artifacts-unique.tsv
+          head -n "$MAX_ARTIFACTS" /tmp/provider-operational-artifacts-unique.tsv > /tmp/provider-operational-artifacts.tsv
+
+          while IFS=        run: |
+          set -euo pipefail
+          expected_commit="$EXPECTED_COMMIT_INPUT"
+          if [[ -z "$expected_commit" ]]; then
+            expected_commit="$GITHUB_SHA"
+          fi
+          case "$REGISTRY_ENVIRONMENTS" in
+            all) environments="development,staging,production" ;;
+            development|staging|production) environments="$REGISTRY_ENVIRONMENTS" ;;
+            *)
+              echo "::error::unsupported environments selection: $REGISTRY_ENVIRONMENTS"
+              exit 1
+              ;;
+          esac
+
+          python3 scripts/provider-validation-registry.py build             --input-dir provider-evidence             --output-json provider-validation-registry.json             --output-markdown provider-validation-registry.md             --max-age-days "$MAX_AGE_DAYS"             --expected-commit "$expected_commit"             --environments "$environments"
+
+          {
+            echo "EXPECTED_COMMIT_RESOLVED=$expected_commit"
+            echo "REGISTRY_ENVIRONMENTS_RESOLVED=$environments"
+          } >> "$GITHUB_ENV"
+
+          cat provider-validation-registry.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify validation registry
+        run: |
+          set -euo pipefail
+          args=(
+            verify
+            --file provider-validation-registry.json
+            --expected-commit "$EXPECTED_COMMIT_RESOLVED"
+          )
+          if [[ "$REQUIRE_ALL_PASSED" == "true" ]]; then
+            args+=(--require-all-passed)
+          fi
+          if [[ "$REQUIRE_CURRENT_COMMIT" == "true" ]]; then
+            args+=(--require-current-commit)
+          fi
+          python3 scripts/provider-validation-registry.py "${args[@]}"
+
+      - name: Evaluate required-provider policy
+        if: env.POLICY_MODE != 'off'
+        run: |
+          set -euo pipefail
+          if [[ -z "${POLICY_REQUIRED_TARGETS//[[:space:],]/}" ]]; then
+            echo "::error::required_targets must contain at least one target when policy_mode is warn or enforce."
+            exit 1
+          fi
+
+          policy_args=(
+            evaluate
+            --registry provider-validation-registry.json
+            --environment "$POLICY_ENVIRONMENT"
+            --required-targets "$POLICY_REQUIRED_TARGETS"
+            --expected-commit "$EXPECTED_COMMIT_RESOLVED"
+            --mode "$POLICY_MODE"
+            --output-json provider-validation-policy.json
+            --output-markdown provider-validation-policy.md
+          )
+          if [[ "$POLICY_REQUIRE_CURRENT_COMMIT" == "true" ]]; then
+            policy_args+=(--require-current-commit)
+          fi
+          if [[ "$POLICY_REQUIRE_OPERATIONAL_EVIDENCE" == "true" ]]; then
+            policy_args+=(
+              --operational-evidence-dir provider-operational-evidence
+              --require-operational-evidence
+            )
+          fi
+          python3 scripts/provider-validation-policy.py "${policy_args[@]}"
+
+          verify_args=(
+            verify
+            --file provider-validation-policy.json
+            --environment "$POLICY_ENVIRONMENT"
+            --required-targets "$POLICY_REQUIRED_TARGETS"
+            --expected-commit "$EXPECTED_COMMIT_RESOLVED"
+          )
+          if [[ "$POLICY_MODE" == "enforce" ]]; then
+            verify_args+=(--require-passed)
+          fi
+          if [[ "$POLICY_REQUIRE_OPERATIONAL_EVIDENCE" == "true" ]]; then
+            verify_args+=(--require-operational-evidence)
+          fi
+          python3 scripts/provider-validation-policy.py "${verify_args[@]}"
+          cat provider-validation-policy.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload registry evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-validation-registry-${{ github.run_id }}
+          path: |
+            provider-validation-registry.json
+            provider-validation-registry.md
+            provider-validation-policy.json
+            provider-validation-policy.md
+          if-no-files-found: warn
+          retention-days: 30
+\t' read -r run_id artifact_name; do
+            [[ -n "$run_id" && -n "$artifact_name" ]] || continue
+            safe_name="$(printf '%s' "$artifact_name" | tr -c 'A-Za-z0-9._-' '_')"
+            destination="provider-operational-evidence/${run_id}-${safe_name}"
+            mkdir -p "$destination"
+            gh run download "$run_id" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$artifact_name" \
+              --dir "$destination"
+          done < /tmp/provider-operational-artifacts.tsv
 
       - name: Build validation registry
         run: |
