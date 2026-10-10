@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import pathlib
 import sys
 from datetime import datetime, timezone
@@ -75,14 +77,85 @@ def parse_time(raw: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def canonical_digest(payload: dict[str, Any], digest_field: str) -> str:
+    material = dict(payload)
+    material.pop(digest_field, None)
+    material.pop("_path", None)
+    encoded = json.dumps(
+        material, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def valid_sha256(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def valid_approval(payload: dict[str, Any], evidence_digest: str, target: str, environment: str) -> bool:
+    if payload.get("schema_version") != 1:
+        return False
+    if payload.get("kind") != "provider_operational_approval":
+        return False
+    if payload.get("status") != "approved":
+        return False
+    if payload.get("target") != target or payload.get("environment") != environment:
+        return False
+    if payload.get("evidence_digest") != evidence_digest:
+        return False
+    if not payload.get("submitted_by") or not payload.get("approved_by"):
+        return False
+    if payload.get("submitted_by") == payload.get("approved_by"):
+        return False
+    digest = payload.get("approval_digest")
+    return valid_sha256(digest) and digest == canonical_digest(payload, "approval_digest")
+
+
+def valid_revocation(payload: dict[str, Any], evidence_digest: str, target: str, environment: str) -> bool:
+    if payload.get("schema_version") != 1:
+        return False
+    if payload.get("kind") != "provider_operational_revocation":
+        return False
+    if payload.get("status") != "revoked":
+        return False
+    if payload.get("target") != target or payload.get("environment") != environment:
+        return False
+    if payload.get("evidence_digest") != evidence_digest:
+        return False
+    digest = payload.get("revocation_digest")
+    return valid_sha256(digest) and digest == canonical_digest(payload, "revocation_digest")
+
+
 def find_operational_evidence(
-    directory: pathlib.Path, target: str, environment: str, now: datetime
+    directory: pathlib.Path,
+    target: str,
+    environment: str,
+    now: datetime,
+    require_approval: bool = False,
 ) -> dict[str, Any]:
     latest: dict[str, Any] | None = None
     latest_completed: datetime | None = None
 
     if not directory.exists():
-        return {"status": "not_run"}
+        return {"status": "not_run", "approval_status": "not_run" if require_approval else "not_required"}
+
+    approvals: list[dict[str, Any]] = []
+    revocations: list[dict[str, Any]] = []
+
+    for path in directory.rglob("provider-operational-approval.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                approvals.append(payload)
+        except (OSError, json.JSONDecodeError):
+            continue
+
+    for path in directory.rglob("provider-operational-revocation.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                revocations.append(payload)
+        except (OSError, json.JSONDecodeError):
+            continue
 
     for path in directory.rglob("provider-operational-evidence.json"):
         try:
@@ -106,7 +179,7 @@ def find_operational_evidence(
             }
 
     if latest is None:
-        return {"status": "not_run"}
+        return {"status": "not_run", "approval_status": "not_run" if require_approval else "not_required"}
 
     payload = latest["payload"]
     status = "passed"
@@ -115,15 +188,50 @@ def find_operational_evidence(
     elif latest["expires"] <= now:
         status = "expired"
 
+    evidence_digest = str(payload.get("evidence_digest", "") or "").strip().lower()
+    matching_approval: dict[str, Any] | None = None
+    matching_revocation: dict[str, Any] | None = None
+
+    if valid_sha256(evidence_digest):
+        for approval in approvals:
+            if valid_approval(approval, evidence_digest, target, environment):
+                matching_approval = approval
+                break
+        for revocation in revocations:
+            if valid_revocation(revocation, evidence_digest, target, environment):
+                matching_revocation = revocation
+                break
+
+    if matching_revocation is not None:
+        status = "revoked"
+
+    approval_status = "not_required"
+    if require_approval:
+        if matching_approval is None:
+            approval_status = "missing"
+            if status == "passed":
+                status = "unapproved"
+        else:
+            approval_status = "approved"
+    elif matching_approval is not None:
+        approval_status = "approved"
+
     return {
         "status": status,
+        "approval_status": approval_status,
         "completed_at": payload.get("completed_at"),
         "expires_at": payload.get("expires_at"),
         "reviewer": payload.get("reviewer"),
+        "submitted_by": payload.get("submitted_by"),
+        "evidence_digest": evidence_digest or None,
         "workflow_run_id": payload.get("workflow_run_id"),
         "workflow_run_attempt": payload.get("workflow_run_attempt"),
         "related_commit": payload.get("related_commit"),
         "path": latest["path"],
+        "approved_by": matching_approval.get("approved_by") if matching_approval else None,
+        "approval_digest": matching_approval.get("approval_digest") if matching_approval else None,
+        "revoked_by": matching_revocation.get("revoked_by") if matching_revocation else None,
+        "revocation_digest": matching_revocation.get("revocation_digest") if matching_revocation else None,
         "failure_reasons": list(payload.get("failure_reasons") or []),
         "limitations": list(payload.get("limitations") or []),
     }
@@ -143,6 +251,10 @@ def evaluate(args: argparse.Namespace) -> None:
     if args.require_operational_evidence and operational_dir is None:
         raise ValueError(
             "--operational-evidence-dir is required when operational evidence is enforced"
+        )
+    if args.require_operational_approval and not args.require_operational_evidence:
+        raise ValueError(
+            "--require-operational-approval requires --require-operational-evidence"
         )
     now = datetime.now(timezone.utc)
 
@@ -187,7 +299,11 @@ def evaluate(args: argparse.Namespace) -> None:
         operational = {"status": "not_required"}
         if args.require_operational_evidence:
             operational = find_operational_evidence(
-                operational_dir, target, args.environment, now
+                operational_dir,
+                target,
+                args.environment,
+                now,
+                args.require_operational_approval,
             )
             operational_status = operational.get("status")
             if operational_status != "passed":
@@ -225,6 +341,7 @@ def evaluate(args: argparse.Namespace) -> None:
         "expected_commit": args.expected_commit or registry.get("expected_commit"),
         "require_current_commit": args.require_current_commit,
         "require_operational_evidence": args.require_operational_evidence,
+        "require_operational_approval": args.require_operational_approval,
         "registry_generated_at": registry.get("generated_at"),
         "registry_max_age_days": registry.get("max_age_days"),
         "decisions": decisions,
@@ -241,6 +358,7 @@ def evaluate(args: argparse.Namespace) -> None:
         f"Expected commit: {payload['expected_commit'] or 'not enforced'}",
         f"Require current commit: {'yes' if args.require_current_commit else 'no'}",
         f"Require operational evidence: {'yes' if args.require_operational_evidence else 'no'}",
+        f"Require operational approval: {'yes' if args.require_operational_approval else 'no'}",
         "",
         "| Target | Registry | Operational | Policy | Age | Commit | Run | Reasons |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -305,6 +423,8 @@ def verify(args: argparse.Namespace) -> None:
 
     if args.require_operational_evidence and payload.get("require_operational_evidence") is not True:
         failures.append("require_operational_evidence: expected true")
+    if args.require_operational_approval and payload.get("require_operational_approval") is not True:
+        failures.append("require_operational_approval: expected true")
 
     if args.expected_commit is not None and payload.get("expected_commit") != args.expected_commit:
         failures.append(
@@ -367,6 +487,7 @@ eval_parser.add_argument("--expected-commit")
 eval_parser.add_argument("--require-current-commit", action="store_true")
 eval_parser.add_argument("--operational-evidence-dir")
 eval_parser.add_argument("--require-operational-evidence", action="store_true")
+eval_parser.add_argument("--require-operational-approval", action="store_true")
 eval_parser.add_argument("--mode", choices=sorted(MODES), default="enforce")
 eval_parser.add_argument("--output-json", required=True)
 eval_parser.add_argument("--output-markdown", required=True)
@@ -379,6 +500,7 @@ verify_parser.add_argument("--required-targets", required=True)
 verify_parser.add_argument("--expected-commit")
 verify_parser.add_argument("--require-passed", action="store_true")
 verify_parser.add_argument("--require-operational-evidence", action="store_true")
+verify_parser.add_argument("--require-operational-approval", action="store_true")
 verify_parser.set_defaults(func=verify)
 
 args = parser.parse_args()

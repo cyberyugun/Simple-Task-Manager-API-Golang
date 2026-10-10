@@ -1,0 +1,271 @@
+name: Provider Operational Evidence Governance
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Governance action
+        required: true
+        default: approve
+        type: choice
+        options:
+          - approve
+          - revoke
+      source_run_id:
+        description: Submission run ID for approve, approved-evidence run ID for revoke
+        required: true
+        type: string
+      target:
+        description: Provider target
+        required: true
+        type: choice
+        options:
+          - storage_s3
+          - storage_azure
+          - storage_gcs
+          - scanner
+          - secret_vault
+          - secret_aws
+          - secret_azure
+          - secret_gcp
+          - warehouse_bigquery
+          - warehouse_snowflake
+          - warehouse_redshift
+          - warehouse_databricks
+          - ai_remote
+          - region_automation
+      environment:
+        description: Evidence environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      approval_note:
+        description: Optional approval context
+        required: false
+        default: ""
+        type: string
+      supersedes_digest:
+        description: Optional SHA-256 digest of older evidence superseded by this approval
+        required: false
+        default: ""
+        type: string
+      revocation_reason:
+        description: Required reason when action is revoke
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  governance:
+    name: Govern provider operational evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ACTION: ${{ inputs.action }}
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      TARGET: ${{ inputs.target }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      APPROVAL_NOTE: ${{ inputs.approval_note }}
+      SUPERSEDES_DIGEST: ${{ inputs.supersedes_digest }}
+      REVOCATION_REASON: ${{ inputs.revocation_reason }}
+      ALLOWED_APPROVERS: ${{ vars.PROVIDER_OPERATIONAL_EVIDENCE_ALLOWED_APPROVERS }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate governance inputs
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || {
+            echo "::error::source_run_id must be a numeric GitHub Actions run ID"
+            exit 1
+          }
+          if [[ -n "$SUPERSEDES_DIGEST" ]] && [[ ! "$SUPERSEDES_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::supersedes_digest must be a lowercase 64-character SHA-256 digest"
+            exit 1
+          fi
+          if [[ "$ACTION" == "revoke" ]] && [[ ${#REVOCATION_REASON} -lt 5 ]]; then
+            echo "::error::revocation_reason must be at least 5 characters"
+            exit 1
+          fi
+          if [[ "$ENVIRONMENT" == "production" ]] && [[ -z "${ALLOWED_APPROVERS//[[:space:],]/}" ]]; then
+            echo "::error::PROVIDER_OPERATIONAL_EVIDENCE_ALLOWED_APPROVERS must be configured for production governance"
+            exit 1
+          fi
+
+      - name: Download submission evidence
+        if: env.ACTION == 'approve'
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "provider-operational-evidence-$ENVIRONMENT-$TARGET-*" \
+            --dir source
+          evidence_file="$(find source -type f -name provider-operational-evidence.json -print -quit)"
+          [[ -n "$evidence_file" ]] || {
+            echo "::error::provider-operational-evidence.json was not found in source run $SOURCE_RUN_ID"
+            exit 1
+          }
+          cp "$evidence_file" provider-operational-evidence.json
+
+      - name: Verify submission integrity
+        if: env.ACTION == 'approve'
+        run: |
+          set -euo pipefail
+          args=(
+            verify
+            --file provider-operational-evidence.json
+            --target "$TARGET"
+            --environment "$ENVIRONMENT"
+            --require-passed
+            --require-integrity
+            --require-submitter
+          )
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            args+=(--require-reference-digests)
+          fi
+          python3 scripts/provider-operational-evidence.py "${args[@]}"
+
+      - name: Approve evidence
+        if: env.ACTION == 'approve'
+        run: |
+          set -euo pipefail
+          args=(
+            approve
+            --evidence provider-operational-evidence.json
+            --output provider-operational-approval.json
+            --approved-by "$GITHUB_ACTOR"
+            --allowed-approvers "$ALLOWED_APPROVERS"
+            --target "$TARGET"
+            --environment "$ENVIRONMENT"
+            --note "$APPROVAL_NOTE"
+            --run-id "$GITHUB_RUN_ID"
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+          )
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            args+=(--require-allowlist)
+          fi
+          if [[ -n "$SUPERSEDES_DIGEST" ]]; then
+            args+=(--supersedes-digest "$SUPERSEDES_DIGEST")
+          fi
+          python3 scripts/provider-operational-approval.py "${args[@]}"
+
+          verify_args=(
+            verify-approval
+            --file provider-operational-approval.json
+            --evidence provider-operational-evidence.json
+            --allowed-approvers "$ALLOWED_APPROVERS"
+          )
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            verify_args+=(--require-allowlist)
+          fi
+          python3 scripts/provider-operational-approval.py "${verify_args[@]}"
+
+      - name: Upload approved evidence
+        if: env.ACTION == 'approve'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-operational-approved-${{ inputs.environment }}-${{ inputs.target }}-${{ github.run_id }}
+          path: |
+            provider-operational-evidence.json
+            provider-operational-approval.json
+          if-no-files-found: error
+          retention-days: 180
+
+      - name: Download approved evidence
+        if: env.ACTION == 'revoke'
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "provider-operational-approved-$ENVIRONMENT-$TARGET-*" \
+            --dir source
+          evidence_file="$(find source -type f -name provider-operational-evidence.json -print -quit)"
+          approval_file="$(find source -type f -name provider-operational-approval.json -print -quit)"
+          [[ -n "$evidence_file" && -n "$approval_file" ]] || {
+            echo "::error::approved evidence bundle was not found in source run $SOURCE_RUN_ID"
+            exit 1
+          }
+          cp "$evidence_file" provider-operational-evidence.json
+          cp "$approval_file" provider-operational-approval.json
+
+      - name: Verify approved evidence before revocation
+        if: env.ACTION == 'revoke'
+        run: |
+          set -euo pipefail
+          python3 scripts/provider-operational-evidence.py verify \
+            --file provider-operational-evidence.json \
+            --target "$TARGET" \
+            --environment "$ENVIRONMENT" \
+            --require-passed \
+            --require-integrity \
+            --require-submitter
+
+          args=(
+            verify-approval
+            --file provider-operational-approval.json
+            --evidence provider-operational-evidence.json
+            --allowed-approvers "$ALLOWED_APPROVERS"
+          )
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            args+=(--require-allowlist)
+          fi
+          python3 scripts/provider-operational-approval.py "${args[@]}"
+
+      - name: Revoke evidence
+        if: env.ACTION == 'revoke'
+        run: |
+          set -euo pipefail
+          args=(
+            revoke
+            --evidence provider-operational-evidence.json
+            --approval provider-operational-approval.json
+            --output provider-operational-revocation.json
+            --revoked-by "$GITHUB_ACTOR"
+            --allowed-approvers "$ALLOWED_APPROVERS"
+            --reason "$REVOCATION_REASON"
+            --run-id "$GITHUB_RUN_ID"
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+          )
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            args+=(--require-allowlist)
+          fi
+          python3 scripts/provider-operational-approval.py "${args[@]}"
+
+          verify_args=(
+            verify-revocation
+            --file provider-operational-revocation.json
+            --evidence provider-operational-evidence.json
+            --approval provider-operational-approval.json
+            --allowed-approvers "$ALLOWED_APPROVERS"
+          )
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            verify_args+=(--require-allowlist)
+          fi
+          python3 scripts/provider-operational-approval.py "${verify_args[@]}"
+
+      - name: Upload revocation evidence
+        if: env.ACTION == 'revoke'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-operational-revocation-${{ inputs.environment }}-${{ inputs.target }}-${{ github.run_id }}
+          path: |
+            provider-operational-evidence.json
+            provider-operational-approval.json
+            provider-operational-revocation.json
+          if-no-files-found: error
+          retention-days: 180

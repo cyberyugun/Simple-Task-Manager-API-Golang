@@ -105,6 +105,7 @@ jobs:
             --target "$TARGET"
             --environment "$ENVIRONMENT"
             --reviewer "$REVIEWER"
+            --submitted-by "$GITHUB_ACTOR"
             --checks-json "$CHECKS_JSON"
             --measurements-json "$MEASUREMENTS_JSON"
             --valid-days "$VALID_DAYS"
@@ -113,6 +114,9 @@ jobs:
           )
           if [[ -n "$RELATED_COMMIT" ]]; then
             args+=(--related-commit "$RELATED_COMMIT")
+          fi
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            args+=(--require-reference-digests)
           fi
           python3 scripts/provider-operational-evidence.py "${args[@]}"
 
@@ -130,9 +134,14 @@ jobs:
             --target "$TARGET"
             --environment "$ENVIRONMENT"
             --require-passed
+            --require-integrity
+            --require-submitter
           )
           if [[ -n "$RELATED_COMMIT" ]]; then
             args+=(--related-commit "$RELATED_COMMIT")
+          fi
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            args+=(--require-reference-digests)
           fi
           python3 scripts/provider-operational-evidence.py "${args[@]}"
 

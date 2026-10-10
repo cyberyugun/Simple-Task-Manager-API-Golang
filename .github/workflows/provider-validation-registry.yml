@@ -76,6 +76,11 @@ on:
         required: true
         default: false
         type: boolean
+      policy_require_operational_approval:
+        description: Require dual-controlled approval for operational evidence
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -100,6 +105,7 @@ jobs:
       POLICY_MODE: ${{ inputs.policy_mode }}
       POLICY_REQUIRE_CURRENT_COMMIT: ${{ inputs.policy_require_current_commit }}
       POLICY_REQUIRE_OPERATIONAL_EVIDENCE: ${{ inputs.policy_require_operational_evidence }}
+      POLICY_REQUIRE_OPERATIONAL_APPROVAL: ${{ inputs.policy_require_operational_approval }}
 
     steps:
       - name: Checkout
@@ -162,7 +168,7 @@ jobs:
           mkdir -p provider-operational-evidence
           gh api --paginate \
             "/repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.expired == false and (.name | startswith("provider-operational-evidence-"))) | [.workflow_run.id, .name] | @tsv' \
+            --jq '.artifacts[] | select(.expired == false and (((.name | startswith("provider-operational-evidence-"))) or ((.name | startswith("provider-operational-approved-"))) or ((.name | startswith("provider-operational-revocation-"))))) | [.workflow_run.id, .name] | @tsv' \
             > /tmp/provider-operational-artifacts-all.tsv
           awk '!seen[$0]++' /tmp/provider-operational-artifacts-all.tsv > /tmp/provider-operational-artifacts-unique.tsv
           head -n "$MAX_ARTIFACTS" /tmp/provider-operational-artifacts-unique.tsv > /tmp/provider-operational-artifacts.tsv
@@ -247,6 +253,9 @@ jobs:
               --require-operational-evidence
             )
           fi
+          if [[ "$POLICY_REQUIRE_OPERATIONAL_APPROVAL" == "true" ]]; then
+            policy_args+=(--require-operational-approval)
+          fi
           python3 scripts/provider-validation-policy.py "${policy_args[@]}"
 
           verify_args=(
@@ -261,6 +270,9 @@ jobs:
           fi
           if [[ "$POLICY_REQUIRE_OPERATIONAL_EVIDENCE" == "true" ]]; then
             verify_args+=(--require-operational-evidence)
+          fi
+          if [[ "$POLICY_REQUIRE_OPERATIONAL_APPROVAL" == "true" ]]; then
+            verify_args+=(--require-operational-approval)
           fi
           python3 scripts/provider-validation-policy.py "${verify_args[@]}"
           cat provider-validation-policy.md >> "$GITHUB_STEP_SUMMARY"

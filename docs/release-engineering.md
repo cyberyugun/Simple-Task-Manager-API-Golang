@@ -297,6 +297,10 @@ PROVIDER_VALIDATION_MAX_AGE_DAYS=30
 PROVIDER_VALIDATION_MAX_ARTIFACTS=200
 PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT=false
 PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=false
+PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL=false
+PROVIDER_OPERATIONAL_EVIDENCE_ALLOWED_APPROVERS=
+PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_WARNING_DAYS=14
+PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_FAIL=false
 ```
 
 Manual dispatch values override the canary weight/observation variables.
@@ -318,6 +322,8 @@ Normal CI now validates:
 - build step does not publish `:latest`
 - freeze and progressive release workflow steps remain present
 - production provider validation gate remains present and read-only evidence access is explicit
+- operational evidence approval/revocation and expiry workflows remain present
+- production approval enforcement remains opt-in and fail-closed when enabled
 - `:latest` promotion remains after successful release
 
 These controls make accidental removal of the release safety model a merge-blocking change.
@@ -331,6 +337,8 @@ The `production` GitHub Environment defines `PROVIDER_VALIDATION_REQUIRED_TARGET
 When active, the production deploy job discovers retained provider-validation artifacts with read-only Actions permission, builds a production-only registry for the required targets, evaluates `scripts/provider-validation-policy.py`, and stores the release registry/policy evidence for 90 days before any Kubernetes authentication or mutation.
 
 Use `warn` during rollout. Use `enforce` after the enabled production providers have passing evidence. When external operational exercises are also mandatory, set `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=true`; required providers must then have non-expired operational evidence before production cluster mutation begins.
+
+For stronger production governance, configure `PROVIDER_OPERATIONAL_EVIDENCE_ALLOWED_APPROVERS` and set `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL=true`. Operational submissions are bound to the authenticated GitHub submitter and a canonical digest; approval must come from a different allowlisted GitHub actor. Valid revocation artifacts immediately invalidate the matching evidence. The daily expiry workflow warns before evidence ages out and can be configured to fail when required evidence is invalid.
 
 See [provider validation policy](provider-validation-policy.md) and [external provider operational evidence](provider-operational-evidence.md).
 

@@ -51,6 +51,11 @@ grep -q 'name: Enforce production provider validation policy' .github/workflows/
 grep -q 'PROVIDER_VALIDATION_GATE_MODE' .github/workflows/deploy.yml
 grep -q 'PROVIDER_VALIDATION_REQUIRED_TARGETS' .github/workflows/deploy.yml
 grep -q 'PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED' .github/workflows/deploy.yml
+grep -q 'PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL' .github/workflows/deploy.yml
+grep -q 'provider-operational-approved-' .github/workflows/deploy.yml
+grep -q 'provider-operational-revocation-' .github/workflows/deploy.yml
+grep -q 'name: Provider Operational Evidence Governance' .github/workflows/provider-operational-evidence-governance.yml
+grep -q 'name: Provider Operational Evidence Expiry' .github/workflows/provider-operational-evidence-expiry.yml
 grep -q 'provider-operational-evidence' .github/workflows/deploy.yml
 grep -q 'provider-validation-release-policy.json' .github/workflows/deploy.yml
 grep -q 'actions: read' .github/workflows/deploy.yml
