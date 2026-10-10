@@ -17,6 +17,7 @@ PROVIDER_VALIDATION_MAX_AGE_DAYS=30
 PROVIDER_VALIDATION_MAX_ARTIFACTS=200
 PROVIDER_VALIDATION_REQUIRE_CURRENT_COMMIT=false
 PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=false
+PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL=false
 ```
 
 `PROVIDER_VALIDATION_GATE_MODE` defaults to `off` for backward compatibility.
@@ -101,7 +102,9 @@ For each required target, `scripts/provider-validation-policy.py` selects the co
 
 Provider-specific limitations remain visible in the policy decision. When `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=false`, those items remain separate production-readiness requirements.
 
-When `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=true`, each required target must also have a passed, non-expired `provider-operational-evidence.json` artifact for the same environment. The external evidence pack covers target-specific IAM/access review, real outage exercises, warehouse downstream readback, AI pricing calibration, and regional apply-gate/game-day/RPO-RTO evidence. It is operator-attested and references the external records; the repository does not independently inspect those systems.
+When `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRED=true`, each required target must also have a passed, non-expired `provider-operational-evidence.json` artifact for the same environment. The external evidence pack covers target-specific IAM/access review, real outage exercises, warehouse downstream readback, AI pricing calibration, and regional apply-gate/game-day/RPO-RTO evidence.
+
+Set `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL=true` to require dual-controlled evidence. The policy then requires a valid `provider-operational-approval.json` bound to the selected evidence digest. The approver must differ from the authenticated submitter. Any valid `provider-operational-revocation.json` invalidates the matching evidence regardless of whether approval enforcement is enabled.
 
 See [External Provider Operational Evidence](provider-operational-evidence.md).
 
@@ -120,7 +123,7 @@ Operational evidence itself is retained separately by the **Provider Operational
 
 The policy artifact is tied to the release `GITHUB_SHA`.
 
-A policy decision includes the required targets, environment, gate mode, expected commit, commit-enforcement setting, evidence age, source validation workflow run/attempt, and failure reasons.
+A policy decision includes the required targets, environment, gate mode, expected commit, commit-enforcement setting, evidence age, source validation workflow run/attempt, operational evidence digest, submitter, approval state/approver, revocation state, and failure reasons.
 
 ## Manual preview
 
@@ -132,6 +135,8 @@ Set:
 - `policy_environment`
 - `policy_mode`
 - `policy_require_current_commit`
+- `policy_require_operational_evidence`
+- `policy_require_operational_approval`
 
 This is the recommended way to preview a production policy before switching the deploy environment from `warn` to `enforce`.
 
@@ -156,6 +161,14 @@ For exact-commit enforcement, add:
 --require-current-commit
 ```
 
+For external operational controls, add:
+
+```text
+--operational-evidence-dir ./provider-operational-evidence
+--require-operational-evidence
+--require-operational-approval
+```
+
 Verify a generated policy artifact:
 
 ```bash
@@ -177,6 +190,8 @@ A safe adoption sequence is:
 4. set the deploy gate to `warn`;
 5. close missing/expired evidence and operational review gaps;
 6. switch the production environment to `enforce`;
-7. enable exact-commit enforcement only when the organization requires provider contracts to be rerun for every release commit.
+7. configure `PROVIDER_OPERATIONAL_EVIDENCE_ALLOWED_APPROVERS` and exercise submit/approve/revoke flows;
+8. enable `PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL=true` after approved evidence exists for required targets;
+9. enable exact-commit enforcement only when the organization requires provider contracts to be rerun for every release commit.
 
 This keeps unused integrations out of the release critical path while making enabled external dependencies explicit and auditable.
