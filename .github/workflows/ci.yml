@@ -39,6 +39,7 @@ jobs:
           python3 -m py_compile scripts/provider-validation-policy.py
           python3 -m py_compile scripts/provider-operational-evidence.py
           python3 -m py_compile scripts/provider-operational-approval.py
+          python3 -m py_compile scripts/release-attestation-bundle.py
           ruby -c scripts/openapi-governance.rb
           ruby -c scripts/openapi-compatibility.rb
           ruby -c scripts/consumer-contract.rb
@@ -87,6 +88,7 @@ jobs:
             --expected-commit "$GITHUB_SHA" \
             --require-all-passed \
             --require-current-commit
+          grep -Eq '"evidence_sha256": "[0-9a-f]{64}"' "$evidence_dir/registry.json"
           python3 scripts/provider-validation-policy.py evaluate \
             --registry "$evidence_dir/registry.json" \
             --environment staging \
@@ -257,6 +259,171 @@ jobs:
             --environments staging \
             --now 2100-01-01T00:00:00Z
           grep -q '"status": "expired"' "$evidence_dir/registry-expired.json"
+
+          attestation_dir="$evidence_dir/release-attestation"
+          mkdir -p "$attestation_dir"
+          python3 - "$attestation_dir" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+commit = sys.argv[2]
+run_id = sys.argv[3]
+run_attempt = sys.argv[4]
+image = "sha256:" + ("a" * 64)
+evidence_hash = "b" * 64
+operational_hash = "c" * 64
+
+(root / "release-evidence.json").write_text(json.dumps({
+    "status": "success",
+    "commit": commit,
+    "image_digest": image,
+    "started_at": "2026-10-10T00:00:00Z",
+    "finished_at": "2026-10-10T00:05:00Z"
+}, indent=2) + "\n", encoding="utf-8")
+
+(root / "staging-promotion-evidence.json").write_text(json.dumps({
+    "schema_version": 1,
+    "status": "passed",
+    "environment": "staging",
+    "commit": commit,
+    "image_digest": image,
+    "workflow_run_id": run_id,
+    "source_ref": "refs/heads/main",
+    "completed_at": "2026-10-10T00:00:00Z",
+    "checks": [
+        "signed-image-verified", "staging-readiness", "migration", "rollout",
+        "health", "readiness", "version", "k6-smoke"
+    ]
+}, indent=2) + "\n", encoding="utf-8")
+
+(root / "provider-validation-release-registry.json").write_text(json.dumps({
+    "schema_version": 1,
+    "generated_at": "2026-10-10T00:00:00Z",
+    "max_age_days": 30,
+    "expected_commit": commit,
+    "targets": ["ai_remote"],
+    "environments": ["production"],
+    "summary": {
+        "total_cells": 1, "passed": 1, "failed": 0, "expired": 0,
+        "not_run": 0, "all_passed": True, "discovered_evidence_files": 1,
+        "ignored_evidence_files": 0
+    },
+    "cells": [{
+        "target": "ai_remote",
+        "environment": "production",
+        "status": "passed",
+        "age_hours": 1,
+        "completed_at": "2026-10-10T00:00:00Z",
+        "tested_commit": commit,
+        "commit_matches_expected": True,
+        "workflow_run_id": run_id,
+        "workflow_run_attempt": run_attempt,
+        "evidence_path": "provider-validation-evidence.json",
+        "evidence_sha256": evidence_hash,
+        "gaps": []
+    }],
+    "ignored_evidence": []
+}, indent=2) + "\n", encoding="utf-8")
+
+(root / "provider-validation-release-policy.json").write_text(json.dumps({
+    "schema_version": 1,
+    "generated_at": "2026-10-10T00:00:00Z",
+    "status": "passed",
+    "mode": "enforce",
+    "environment": "production",
+    "required_targets": ["ai_remote"],
+    "expected_commit": commit,
+    "require_current_commit": True,
+    "require_operational_evidence": True,
+    "require_operational_approval": True,
+    "registry_generated_at": "2026-10-10T00:00:00Z",
+    "registry_max_age_days": 30,
+    "decisions": [{
+        "target": "ai_remote",
+        "environment": "production",
+        "status": "passed",
+        "policy_passed": True,
+        "reasons": [],
+        "age_hours": 1,
+        "tested_commit": commit,
+        "commit_matches_expected": True,
+        "completed_at": "2026-10-10T00:00:00Z",
+        "workflow_run_id": run_id,
+        "workflow_run_attempt": run_attempt,
+        "gaps": [],
+        "operational_evidence": {
+            "status": "passed",
+            "approval_status": "approved",
+            "evidence_digest": operational_hash,
+            "submitted_by": "ci-submitter",
+            "approved_by": "ci-approver"
+        }
+    }]
+}, indent=2) + "\n", encoding="utf-8")
+
+(root / "provider-operational-release-expiry.json").write_text(json.dumps({
+    "schema_version": 1,
+    "generated_at": "2026-10-10T00:00:00Z",
+    "environment": "production",
+    "warning_days": 14,
+    "require_approval": True,
+    "required_targets": ["ai_remote"],
+    "status": "healthy",
+    "rows": [{
+        "target": "ai_remote",
+        "status": "passed",
+        "expires_at": "2027-01-01T00:00:00Z",
+        "days_remaining": 80,
+        "approved_by": "ci-approver",
+        "submitted_by": "ci-submitter",
+        "evidence_digest": operational_hash
+    }]
+}, indent=2) + "\n", encoding="utf-8")
+PY
+
+          python3 scripts/release-attestation-bundle.py create \
+            --output-json "$attestation_dir/release-attestation.json" \
+            --output-markdown "$attestation_dir/release-attestation.md" \
+            --commit "$GITHUB_SHA" \
+            --image-digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --source-ref "$GITHUB_REF" \
+            --release-evidence "$attestation_dir/release-evidence.json" \
+            --staging-evidence "$attestation_dir/staging-promotion-evidence.json" \
+            --provider-gate-mode enforce \
+            --provider-registry "$attestation_dir/provider-validation-release-registry.json" \
+            --provider-policy "$attestation_dir/provider-validation-release-policy.json" \
+            --operational-expiry "$attestation_dir/provider-operational-release-expiry.json" \
+            --operational-evidence-required \
+            --operational-approval-required
+          python3 scripts/release-attestation-bundle.py verify \
+            --file "$attestation_dir/release-attestation.json" \
+            --component-dir "$attestation_dir" \
+            --commit "$GITHUB_SHA" \
+            --image-digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+            --run-id "$GITHUB_RUN_ID" \
+            --require-passed
+
+          mkdir -p "$evidence_dir/attestation-dashboard-input/run-1"
+          cp "$attestation_dir"/* "$evidence_dir/attestation-dashboard-input/run-1/"
+          python3 scripts/release-attestation-bundle.py dashboard \
+            --input-dir "$evidence_dir/attestation-dashboard-input" \
+            --output-json "$evidence_dir/release-attestation-dashboard.json" \
+            --output-markdown "$evidence_dir/release-attestation-dashboard.md" \
+            --require-valid
+          grep -q '"integrity": "valid"' "$evidence_dir/release-attestation-dashboard.json"
+
+          printf '%s\n' 'tampered' >> "$attestation_dir/release-evidence.json"
+          if python3 scripts/release-attestation-bundle.py verify \
+            --file "$attestation_dir/release-attestation.json" \
+            --component-dir "$attestation_dir"; then
+            echo "tampered release attestation unexpectedly passed integrity verification"
+            exit 1
+          fi
+
           rm -rf "$evidence_dir"
 
       - name: Test release safety gates
