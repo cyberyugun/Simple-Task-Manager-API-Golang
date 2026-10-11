@@ -58,6 +58,9 @@ Move :latest tag to promoted digest
 Create SHA-256 release attestation bundle
         |
         v
+GitHub artifact provenance attestation for release manifest
+        |
+        v
 Upload release evidence + attestation
 ```
 
@@ -154,7 +157,7 @@ The release evidence artifact records:
 
 The legacy release evidence artifact is retained for 90 days. After a successful release, the workflow also creates a 180-day `release-attestation-<commit>` bundle that binds the production release evidence, exact staging promotion evidence, provider registry/policy when enabled, and the operational-evidence expiry snapshot when required.
 
-The bundle stores SHA-256 hashes for every bound component and a canonical root digest. A read-only **Release Attestation Dashboard** workflow can later re-download retained bundles, recompute component/root hashes, and report invalid integrity without requiring cluster or provider credentials.
+The bundle stores SHA-256 hashes for every bound component and a canonical root digest. The production workflow then creates GitHub artifact provenance for the root `release-attestation.json` using the workflow's OIDC-backed attestation identity. A read-only **Release Attestation Dashboard** can later re-download retained bundles, recompute component/root hashes, and independently run `gh attestation verify` against the repository attestation store without requiring cluster or provider credentials.
 
 See [Production Release Attestation Bundle](release-attestation-bundle.md).
 
@@ -331,7 +334,7 @@ Normal CI now validates:
 - production provider validation gate remains present and read-only evidence access is explicit
 - operational evidence approval/revocation and expiry workflows remain present
 - production approval enforcement remains opt-in and fail-closed when enabled
-- final release attestation bundle creation and dashboard workflow remain present
+- final release attestation bundle creation, GitHub provenance attestation, and dashboard verification workflow remain present
 - `:latest` promotion remains after successful release
 
 These controls make accidental removal of the release safety model a merge-blocking change.

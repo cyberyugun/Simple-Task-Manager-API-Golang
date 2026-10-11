@@ -13,10 +13,16 @@ on:
         required: true
         default: false
         type: boolean
+      require_provenance:
+        description: Fail if GitHub artifact provenance is missing or invalid
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   actions: read
+  attestations: read
 
 jobs:
   dashboard:
@@ -27,6 +33,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       MAX_ARTIFACTS: ${{ inputs.max_artifacts }}
       REQUIRE_VALID: ${{ inputs.require_valid }}
+      REQUIRE_PROVENANCE: ${{ inputs.require_provenance }}
 
     steps:
       - name: Checkout
@@ -66,6 +73,37 @@ jobs:
               --dir "$destination"
           done < /tmp/release-attestations.tsv
 
+      - name: Verify GitHub artifact provenance
+        run: |
+          set -euo pipefail
+          while IFS= read -r manifest; do
+            [[ -n "$manifest" ]] || continue
+            status="missing_or_invalid"
+            if gh attestation verify "$manifest" --repo "$GITHUB_REPOSITORY" >/tmp/release-attestation-provenance.out 2>/tmp/release-attestation-provenance.err; then
+              status="verified"
+            fi
+
+            STATUS="$status" MANIFEST="$manifest" REPOSITORY="$GITHUB_REPOSITORY" python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          from datetime import datetime, timezone
+
+          manifest = pathlib.Path(os.environ["MANIFEST"])
+          payload = {
+              "schema_version": 1,
+              "status": os.environ["STATUS"],
+              "repository": os.environ["REPOSITORY"],
+              "verified_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+              "subject_file": manifest.name,
+          }
+          (manifest.parent / "release-attestation-provenance.json").write_text(
+              json.dumps(payload, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          done < <(find release-attestations -type f -name release-attestation.json -print)
+
       - name: Build dashboard
         run: |
           set -euo pipefail
@@ -78,6 +116,9 @@ jobs:
           )
           if [[ "$REQUIRE_VALID" == "true" ]]; then
             args+=(--require-valid)
+          fi
+          if [[ "$REQUIRE_PROVENANCE" == "true" ]]; then
+            args+=(--require-provenance)
           fi
           python3 scripts/release-attestation-bundle.py "${args[@]}"
           cat release-attestation-dashboard.md >> "$GITHUB_STEP_SUMMARY"

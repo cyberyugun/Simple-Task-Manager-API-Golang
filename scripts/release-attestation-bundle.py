@@ -626,10 +626,30 @@ def dashboard(args: argparse.Namespace) -> None:
             )
             if generated.tzinfo is None:
                 raise ValueError("generated_at must include timezone")
+            provenance_path = path.parent / "release-attestation-provenance.json"
+            provenance = "not_checked"
+            provenance_repository = None
+            provenance_verified_at = None
+            if provenance_path.is_file():
+                try:
+                    provenance_payload = read_object(
+                        provenance_path, "release attestation provenance"
+                    )
+                    provenance = str(provenance_payload.get("status", "invalid"))
+                    provenance_repository = provenance_payload.get("repository")
+                    provenance_verified_at = provenance_payload.get("verified_at")
+                    if provenance not in {"verified", "missing_or_invalid"}:
+                        provenance = "invalid"
+                except (OSError, ValueError, json.JSONDecodeError):
+                    provenance = "invalid"
+
             rows.append(
                 {
                     "generated_at": generated.astimezone(timezone.utc),
                     "integrity": "valid" if not failures else "invalid",
+                    "provenance": provenance,
+                    "provenance_repository": provenance_repository,
+                    "provenance_verified_at": provenance_verified_at,
                     "status": payload.get("status"),
                     "commit": payload.get("commit"),
                     "image_digest": payload.get("image_digest"),
@@ -655,6 +675,9 @@ def dashboard(args: argparse.Namespace) -> None:
                 {
                     "generated_at": datetime.min.replace(tzinfo=timezone.utc),
                     "integrity": "invalid",
+                    "provenance": "not_checked",
+                    "provenance_repository": None,
+                    "provenance_verified_at": None,
                     "status": "invalid",
                     "commit": None,
                     "image_digest": None,
@@ -671,6 +694,9 @@ def dashboard(args: argparse.Namespace) -> None:
     rows.sort(key=lambda row: row["generated_at"], reverse=True)
     rows = rows[: args.max_releases]
     invalid_count = sum(1 for row in rows if row["integrity"] != "valid")
+    provenance_invalid_count = sum(
+        1 for row in rows if row.get("provenance") != "verified"
+    )
 
     serializable_rows: list[dict[str, Any]] = []
     for row in rows:
@@ -682,12 +708,17 @@ def dashboard(args: argparse.Namespace) -> None:
         )
         serializable_rows.append(item)
 
+    dashboard_attention = invalid_count > 0 or (
+        args.require_provenance and provenance_invalid_count > 0
+    )
     payload = {
         "schema_version": 1,
         "generated_at": utc_now(),
-        "status": "attention_required" if invalid_count else "healthy",
+        "status": "attention_required" if dashboard_attention else "healthy",
         "release_count": len(rows),
         "invalid_count": invalid_count,
+        "provenance_invalid_count": provenance_invalid_count,
+        "require_provenance": args.require_provenance,
         "rows": serializable_rows,
     }
     pathlib.Path(args.output_json).write_text(
@@ -700,21 +731,24 @@ def dashboard(args: argparse.Namespace) -> None:
         f"Status: {payload['status']}",
         f"Releases inspected: {len(rows)}",
         f"Invalid bundles: {invalid_count}",
+        f"Unverified provenance: {provenance_invalid_count}",
+        f"Require provenance: {'yes' if args.require_provenance else 'no'}",
         "",
-        "| Generated | Integrity | Release | Provider policy | Commit | Run | Root digest |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| Generated | Integrity | Provenance | Release | Provider policy | Commit | Run | Root digest |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in serializable_rows:
         commit = (row.get("commit") or "-")[:12]
         digest = (row.get("root_digest") or "-")[:12]
         markdown.append(
             f"| {row.get('generated_at') or '-'} | {row.get('integrity')} | "
-            f"{row.get('status') or '-'} | {row.get('provider_policy_status') or '-'} | "
+            f"{row.get('provenance') or '-'} | {row.get('status') or '-'} | "
+            f"{row.get('provider_policy_status') or '-'} | "
             f"`{commit}` | {row.get('workflow_run_id') or '-'} | `{digest}` |"
         )
         if row.get("failures"):
             for failure in row["failures"]:
-                markdown.append(f"|  | ↳ |  |  |  |  | {failure} |")
+                markdown.append(f"|  | ↳ |  |  |  |  |  | {failure} |")
 
     pathlib.Path(args.output_markdown).write_text(
         "\n".join(markdown) + "\n", encoding="utf-8"
@@ -724,9 +758,15 @@ def dashboard(args: argparse.Namespace) -> None:
         raise SystemExit(
             f"release attestation dashboard contains {invalid_count} invalid bundle(s)"
         )
+    if args.require_provenance and provenance_invalid_count:
+        raise SystemExit(
+            "release attestation dashboard contains "
+            f"{provenance_invalid_count} release(s) without verified GitHub provenance"
+        )
     print(
         "Release attestation dashboard created: "
-        f"releases={len(rows)} invalid={invalid_count}"
+        f"releases={len(rows)} invalid={invalid_count} "
+        f"unverified_provenance={provenance_invalid_count}"
     )
 
 
@@ -768,6 +808,7 @@ dashboard_parser.add_argument("--output-json", required=True)
 dashboard_parser.add_argument("--output-markdown", required=True)
 dashboard_parser.add_argument("--max-releases", type=int, default=50)
 dashboard_parser.add_argument("--require-valid", action="store_true")
+dashboard_parser.add_argument("--require-provenance", action="store_true")
 dashboard_parser.set_defaults(func=dashboard)
 
 args = parser.parse_args()
