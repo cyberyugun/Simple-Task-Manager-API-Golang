@@ -60,6 +60,25 @@ canonical release-attestation.json
 
 Changing a bound component after bundle creation makes verification fail even when the JSON remains syntactically valid.
 
+## GitHub artifact provenance
+
+After the release manifest has passed local component/root verification, the production workflow also submits `release-attestation.json` to GitHub artifact attestation using the repository's OIDC-backed release workflow identity.
+
+This creates an external provenance record for the root manifest itself:
+
+```text
+release components
+      |
+      v
+release-attestation.json + root_digest
+      |
+      v
+GitHub artifact attestation / Sigstore-backed provenance
+```
+
+The GitHub provenance layer does not replace the local SHA-256 chain. The local chain proves which retained component bytes are bound by the manifest; GitHub artifact attestation separately proves that the manifest subject was attested by the repository workflow identity.
+
+
 ## Live provider evidence binding
 
 Provider-validation registry cells now record `evidence_sha256`, the SHA-256 of the selected `provider-validation-evidence.json` manifest.
@@ -130,11 +149,12 @@ Use `--require-passed` when `passed_with_warnings` should be treated as a verifi
 
 Run **Release Attestation Dashboard** to inspect retained release bundles without provider or cluster credentials.
 
-The workflow has only:
+The workflow uses only read permissions:
 
 ```text
 contents: read
 actions: read
+attestations: read
 ```
 
 It discovers recent non-expired `release-attestation-...` artifacts, downloads each bundle, recomputes component hashes and root digests, and publishes:
@@ -146,17 +166,20 @@ release-attestation-dashboard.md
 
 The dashboard shows:
 
-- bundle integrity;
+- local bundle integrity;
+- GitHub artifact provenance verification state;
 - release status;
 - provider-policy status;
 - source commit;
 - workflow run;
 - root digest.
 
-Set `require_valid=true` to make the dashboard workflow fail when any downloaded bundle has invalid integrity.
+For every downloaded manifest the workflow runs `gh attestation verify <manifest> --repo <repository>` and records a release-local verification snapshot as `release-attestation-provenance.json` in the dashboard workspace.
+
+Set `require_valid=true` to fail on invalid local bundle integrity. Set `require_provenance=true` to fail when a release manifest has no valid GitHub artifact provenance. These controls are independent so historical pre-provenance bundles can still be inspected during rollout.
 
 ## Limitations
 
-The release root digest proves integrity of the retained repository artifacts included in the bundle. It does not independently prove that an external HTTPS operational-evidence reference still serves the same object, that cloud IAM is least-privilege, that an outage/game-day actually occurred, or that a provider billing portal is correct.
+The release root digest proves integrity of the retained repository artifacts included in the bundle. GitHub artifact provenance additionally proves the root manifest has a valid attestation associated with the repository workflow identity when verification succeeds. Neither layer independently proves that an external HTTPS operational-evidence reference still serves the same object, that cloud IAM is least-privilege, that an outage/game-day actually occurred, or that a provider billing portal is correct.
 
 Those claims remain external operational evidence and are governed by the separate submit/approve/revoke process.
