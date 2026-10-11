@@ -848,6 +848,12 @@ jobs:
 
           cat release-attestation-bundle/release-attestation.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Attest production release manifest provenance
+        if: success()
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-attestation-bundle/release-attestation.json
+
       - name: Upload production release attestation bundle
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
