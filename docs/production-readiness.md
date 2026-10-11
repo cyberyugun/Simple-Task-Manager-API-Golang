@@ -277,7 +277,8 @@ Before enabling production progressive delivery:
 - use expand/contract database changes so the old stable version and new canary can run simultaneously
 - retain the release evidence artifact for audit and incident review
 - verify the successful deployment produced a `release-attestation-<commit>` bundle and preserve its root digest in the release/change record
-- periodically run **Release Attestation Dashboard** to re-verify retained bundle integrity
+- confirm the root `release-attestation.json` has GitHub artifact provenance from the production release workflow
+- periodically run **Release Attestation Dashboard** with `require_provenance=true` after the rollout period to re-verify both retained bundle integrity and repository provenance
 - exercise `scripts/rollback-drill.sh` in staging before relying on emergency rollback procedures
 
 See `docs/release-engineering.md` and `docs/production-release-checklist.md`.
