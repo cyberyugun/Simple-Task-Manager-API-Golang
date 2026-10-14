@@ -4,7 +4,7 @@ This audit compares the repository at the Phase 45 merge against the master road
 
 ## Executive result
 
-The repository has implementation history through Phase 45 plus post-roadmap hardening, migrations through `035_event_ownership_schema_deprecation.sql`, OpenAPI 1.13.0, generated SDKs, PostgreSQL integration coverage, Docker runtime smoke, API contract governance and security CI.
+The repository has implementation history through Phase 45 plus post-roadmap hardening, migrations through `036_developer_portal_review_governance.sql`, OpenAPI 1.14.0, generated SDKs, PostgreSQL integration coverage, Docker runtime smoke, API contract governance and security CI.
 
 The remaining work is not a missing Phase 45 feature. The material gaps are production adapters and external control-plane execution behind several provider-neutral boundaries.
 
@@ -20,7 +20,7 @@ The remaining work is not a missing Phase 45 feature. The material gaps are prod
 | Phase 37 Search & Analytics | PostgreSQL FTS, saved views, dashboards, exports, scheduled reports, configurable field/recency ranking, bounded symmetric synonym expansion, and opt-in report-run retention with daily historical aggregation | Complete at repository level |
 | Phase 38 Connector OAuth & Secret Governance | OAuth PKCE, refresh, policy-driven stored-secret rotation, strict least-privilege scope controls, credential read/lifecycle audit, envelope encryption, health and native Vault/AWS/Azure/GCP secret backends | Repository hardening complete; live provider validation remains deployment-specific |
 | Phase 39 Event Fabric | Schema registry, compatibility, structured ownership metadata, actor/reason/replacement deprecation lifecycle, historical-version replay safety, routing, durable subscriptions, replay/DLQ and outbox adapter | Complete at repository level; external buses are optional |
-| Phase 40 Developer Platform | Apps, credentials, scopes/quotas, sandbox, webhook console, analytics and generated SDKs | Complete at repository level |
+| Phase 40 Developer Platform | Apps, immutable review-round history, credentials, scopes/quotas, sandbox, webhook console, ranked OpenAPI documentation search, analytics and generated SDKs | Complete at repository level |
 | Phase 41 AI Assistance | Governance, redaction, structured provider boundary, approvals, budgets, evaluations, local provider and opt-in remote structured provider | Complete at repository level; live gateway/provider validation remains environment-level |
 | Phase 42 Multi-Region & Residency | Region policy, placement, migration/transfer approval, route decision, failover evidence and compliance report | Complete control-plane foundation; cloud failover execution remains external |
 | Phase 43 Zero Trust | Workload mTLS, certificate rotation, adaptive risk, revocation, audit checkpoints, WORM/SIEM | Complete at repository level |
@@ -40,6 +40,8 @@ Phase 35's remaining product recommendation is also closed at repository level: 
 Phase 38's additional product recommendations are now closed at repository level. Organization connector administrators can configure bounded rotation intervals and opt-in automatic stored-secret rotation; OAuth completion/refresh can enforce that granted scopes are no broader than the configured request; connection tests expose missing/excess scope posture; and every credential read path records backend/reference-only access audit metadata without secret values. Automatic rotation rewrites the existing logical credential through its active backend rather than pretending to rotate the external OAuth provider token.
 
 Phase 39's additional roadmap recommendations are now hardened beyond the original owner/deprecate fields. Schema versions carry logical owner, producing service and operational contact metadata; deprecation captures actor, reason and replacement linkage; replacement targets are validated; and deprecated schemas remain usable for exact historical event validation so retirement does not poison persisted outbox replay.
+
+Phase 40's additional roadmap recommendations are now hardened beyond their initial implementation. Developer documentation search indexes path, method, operation ID, tags, summary and description with deterministic ranking and bounded results. Developer application governance now tracks submission rounds and submitters and persists immutable approve/reject/suspend decisions, so resubmission no longer destroys historical review evidence while existing lifecycle and credential behavior remains compatible.
 
 ## Confirmed production-hardening gaps
 
