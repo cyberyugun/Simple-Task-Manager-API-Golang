@@ -611,6 +611,61 @@ def verify(args: argparse.Namespace) -> None:
     )
 
 
+def parse_dashboard_time(raw: Any, label: str) -> datetime:
+    value = str(raw or "").strip()
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be an ISO-8601 timestamp") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"{label} must include timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def load_expected_deploy_runs(path: pathlib.Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload = read_object(path, "expected deploy runs")
+    if payload.get("schema_version") != 1:
+        raise ValueError(
+            f"expected deploy runs schema_version must be 1, got {payload.get('schema_version')!r}"
+        )
+
+    raw_runs = payload.get("runs")
+    if not isinstance(raw_runs, list):
+        raise ValueError("expected deploy runs .runs must be a list")
+
+    normalized: list[dict[str, Any]] = []
+    seen_run_ids: set[str] = set()
+    for index, item in enumerate(raw_runs):
+        if not isinstance(item, dict):
+            raise ValueError(f"expected deploy run #{index + 1} must be an object")
+
+        run_id = validate_run_id(str(item.get("run_id", "")))
+        if run_id in seen_run_ids:
+            raise ValueError(f"expected deploy runs contains duplicate run_id {run_id}")
+        seen_run_ids.add(run_id)
+
+        commit = validate_commit(str(item.get("head_sha", "")))
+        created_at = parse_dashboard_time(
+            item.get("created_at"), f"expected deploy run {run_id} created_at"
+        )
+        normalized.append(
+            {
+                "run_id": run_id,
+                "run_attempt": str(item.get("run_attempt", "") or ""),
+                "head_sha": commit,
+                "created_at": created_at,
+                "event": item.get("event"),
+                "head_branch": item.get("head_branch"),
+                "html_url": item.get("html_url"),
+            }
+        )
+
+    normalized.sort(key=lambda item: item["created_at"], reverse=True)
+    return payload, normalized
+
+
 def dashboard(args: argparse.Namespace) -> None:
     root = pathlib.Path(args.input_dir)
     manifests = list(root.rglob("release-attestation.json")) if root.exists() else []
@@ -692,6 +747,7 @@ def dashboard(args: argparse.Namespace) -> None:
             )
 
     rows.sort(key=lambda row: row["generated_at"], reverse=True)
+    all_rows = list(rows)
     rows = rows[: args.max_releases]
     invalid_count = sum(1 for row in rows if row["integrity"] != "valid")
     provenance_invalid_count = sum(
@@ -708,8 +764,99 @@ def dashboard(args: argparse.Namespace) -> None:
         )
         serializable_rows.append(item)
 
-    dashboard_attention = invalid_count > 0 or (
-        args.require_provenance and provenance_invalid_count > 0
+    coverage_status = "not_checked"
+    coverage_expected_count = 0
+    coverage_covered_count = 0
+    coverage_gap_count = 0
+    coverage_missing_count = 0
+    coverage_mismatch_count = 0
+    coverage_duplicate_count = 0
+    coverage_unscoped_attestation_count = 0
+    coverage_rows: list[dict[str, Any]] = []
+    coverage_metadata: dict[str, Any] | None = None
+
+    if args.require_complete and not args.expected_runs_json:
+        raise ValueError("--require-complete requires --expected-runs-json")
+
+    if args.expected_runs_json:
+        expected_payload, expected_runs = load_expected_deploy_runs(
+            pathlib.Path(args.expected_runs_json)
+        )
+        coverage_metadata = {
+            "repository": expected_payload.get("repository"),
+            "workflow": expected_payload.get("workflow"),
+            "lookback_days": expected_payload.get("lookback_days"),
+            "coverage_start_at": expected_payload.get("coverage_start_at"),
+            "generated_at": expected_payload.get("generated_at"),
+        }
+        coverage_expected_count = len(expected_runs)
+
+        by_run: dict[str, list[dict[str, Any]]] = {}
+        for row in all_rows:
+            run_id = str(row.get("workflow_run_id") or "")
+            if run_id:
+                by_run.setdefault(run_id, []).append(row)
+
+        expected_ids = {item["run_id"] for item in expected_runs}
+        coverage_unscoped_attestation_count = sum(
+            1
+            for row in all_rows
+            if str(row.get("workflow_run_id") or "") not in expected_ids
+        )
+
+        for expected in expected_runs:
+            matches = by_run.get(expected["run_id"], [])
+            status = "covered"
+            reason = None
+            attestation_commit = None
+            attestation_root = None
+
+            if not matches:
+                status = "missing_attestation"
+                reason = "successful_deploy_has_no_retained_release_attestation"
+                coverage_missing_count += 1
+            elif len(matches) > 1:
+                status = "duplicate_attestation"
+                reason = "multiple_release_attestations_reference_the_same_deploy_run"
+                coverage_duplicate_count += 1
+                attestation_commit = matches[0].get("commit")
+                attestation_root = matches[0].get("root_digest")
+            else:
+                attestation = matches[0]
+                attestation_commit = attestation.get("commit")
+                attestation_root = attestation.get("root_digest")
+                if str(attestation_commit or "").lower() != expected["head_sha"]:
+                    status = "commit_mismatch"
+                    reason = "attestation_commit_does_not_match_successful_deploy_head_sha"
+                    coverage_mismatch_count += 1
+
+            if status == "covered":
+                coverage_covered_count += 1
+            else:
+                coverage_gap_count += 1
+
+            coverage_rows.append(
+                {
+                    "run_id": expected["run_id"],
+                    "run_attempt": expected["run_attempt"],
+                    "created_at": expected["created_at"].isoformat().replace("+00:00", "Z"),
+                    "event": expected["event"],
+                    "head_branch": expected["head_branch"],
+                    "expected_commit": expected["head_sha"],
+                    "attestation_commit": attestation_commit,
+                    "attestation_root_digest": attestation_root,
+                    "status": status,
+                    "reason": reason,
+                    "html_url": expected["html_url"],
+                }
+            )
+
+        coverage_status = "complete" if coverage_gap_count == 0 else "incomplete"
+
+    dashboard_attention = (
+        invalid_count > 0
+        or (args.require_provenance and provenance_invalid_count > 0)
+        or coverage_gap_count > 0
     )
     payload = {
         "schema_version": 1,
@@ -719,6 +866,17 @@ def dashboard(args: argparse.Namespace) -> None:
         "invalid_count": invalid_count,
         "provenance_invalid_count": provenance_invalid_count,
         "require_provenance": args.require_provenance,
+        "coverage_status": coverage_status,
+        "coverage_expected_count": coverage_expected_count,
+        "coverage_covered_count": coverage_covered_count,
+        "coverage_gap_count": coverage_gap_count,
+        "coverage_missing_count": coverage_missing_count,
+        "coverage_mismatch_count": coverage_mismatch_count,
+        "coverage_duplicate_count": coverage_duplicate_count,
+        "coverage_unscoped_attestation_count": coverage_unscoped_attestation_count,
+        "require_complete": args.require_complete,
+        "coverage_metadata": coverage_metadata,
+        "coverage_rows": coverage_rows,
         "rows": serializable_rows,
     }
     pathlib.Path(args.output_json).write_text(
@@ -733,10 +891,41 @@ def dashboard(args: argparse.Namespace) -> None:
         f"Invalid bundles: {invalid_count}",
         f"Unverified provenance: {provenance_invalid_count}",
         f"Require provenance: {'yes' if args.require_provenance else 'no'}",
+        f"Coverage status: {coverage_status}",
+        f"Successful deploys in coverage scope: {coverage_expected_count}",
+        f"Covered deploys: {coverage_covered_count}",
+        f"Coverage gaps: {coverage_gap_count}",
+        f"Require complete coverage: {'yes' if args.require_complete else 'no'}",
+        "",
+    ]
+
+    if coverage_rows:
+        markdown.extend(
+            [
+                "## Successful production deploy coverage",
+                "",
+                "| Deploy time | Coverage | Commit | Run | Attestation root | Reason |",
+                "| --- | --- | --- | --- | --- | --- |",
+            ]
+        )
+        for item in coverage_rows:
+            expected_commit = (item.get("expected_commit") or "-")[:12]
+            root_digest = (item.get("attestation_root_digest") or "-")[:12]
+            markdown.append(
+                f"| {item.get('created_at') or '-'} | {item.get('status') or '-'} | "
+                f"`{expected_commit}` | {item.get('run_id') or '-'} | "
+                f"`{root_digest}` | {item.get('reason') or '-'} |"
+            )
+        markdown.append("")
+
+    markdown.extend(
+        [
+        "## Retained release attestations",
         "",
         "| Generated | Integrity | Provenance | Release | Provider policy | Commit | Run | Root digest |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
-    ]
+        ]
+    )
     for row in serializable_rows:
         commit = (row.get("commit") or "-")[:12]
         digest = (row.get("root_digest") or "-")[:12]
@@ -763,10 +952,16 @@ def dashboard(args: argparse.Namespace) -> None:
             "release attestation dashboard contains "
             f"{provenance_invalid_count} release(s) without verified GitHub provenance"
         )
+    if args.require_complete and coverage_gap_count:
+        raise SystemExit(
+            "release attestation dashboard contains "
+            f"{coverage_gap_count} successful deploy coverage gap(s)"
+        )
     print(
         "Release attestation dashboard created: "
         f"releases={len(rows)} invalid={invalid_count} "
-        f"unverified_provenance={provenance_invalid_count}"
+        f"unverified_provenance={provenance_invalid_count} "
+        f"coverage={coverage_status} gaps={coverage_gap_count}"
     )
 
 
@@ -809,6 +1004,8 @@ dashboard_parser.add_argument("--output-markdown", required=True)
 dashboard_parser.add_argument("--max-releases", type=int, default=50)
 dashboard_parser.add_argument("--require-valid", action="store_true")
 dashboard_parser.add_argument("--require-provenance", action="store_true")
+dashboard_parser.add_argument("--expected-runs-json")
+dashboard_parser.add_argument("--require-complete", action="store_true")
 dashboard_parser.set_defaults(func=dashboard)
 
 args = parser.parse_args()
