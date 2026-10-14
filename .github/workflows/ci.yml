@@ -1089,7 +1089,7 @@ jobs:
           endpoints="$(curl --fail --silent http://localhost:8080/api/notifications/endpoints -H "Authorization: Bearer $token")"
           printf '%s' "$endpoints" | ENDPOINT_ID="$endpoint_id" python3 -c 'import json,os,sys; eid=int(os.environ["ENDPOINT_ID"]); items=json.load(sys.stdin)["data"]; assert any(x["id"]==eid and x["channel"]=="email" for x in items)'
 
-          webhook_endpoint="$(curl --fail --silent -X POST http://localhost:8080/api/notifications/endpoints -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"channel":"webhook","address":"http://notification-suppressed.invalid/hook"}')"
+          webhook_endpoint="$(curl --fail --silent -X POST http://localhost:8080/api/notifications/endpoints -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"channel":"webhook","address":"https://example.com/ci-notification-suppressed"}')"
           webhook_endpoint_id="$(printf '%s' "$webhook_endpoint" | python3 -c 'import json,sys; e=json.load(sys.stdin)["data"]; assert e["channel"]=="webhook"; assert e["signing_secret"]; print(e["id"])')"
 
           organization_response="$(curl --fail --silent -X POST http://localhost:8080/api/organizations -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Notifications","max_workspaces":20,"max_members":100}')"
