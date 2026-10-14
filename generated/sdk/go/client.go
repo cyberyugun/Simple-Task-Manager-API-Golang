@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const OpenAPIVersion = "1.12.0"
+const OpenAPIVersion = "1.13.0"
 const OpenAPIPathCount = 268
 
 type Client struct {

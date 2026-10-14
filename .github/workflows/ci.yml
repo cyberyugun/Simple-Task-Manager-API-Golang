@@ -1214,9 +1214,15 @@ jobs:
           adapters="$(curl --fail --silent "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/adapters" -H "Authorization: Bearer $token")"
           printf '%s' "$adapters" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; pg=next(x for x in d if x["key"]=="postgres_outbox"); assert pg["durable"] is True and pg["configured"] is True; assert any(x["key"]=="kafka" and x["configured"] is False for x in d)'
 
-          schema_payload='{"event_type":"task.created","compatibility":"backward","owner":"tasks","description":"CI Phase 39 task event","schema":{"required":["id","title"],"properties":{"id":{"type":"integer"},"title":{"type":"string"}}}}'
+          schema_payload='{"event_type":"task.created","compatibility":"backward","owner":"tasks","owner_service":"task-api","owner_contact":"tasks@example.com","description":"CI Phase 39 task event","schema":{"required":["id","title"],"properties":{"id":{"type":"integer"},"title":{"type":"string"}}}}'
           schema="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/schemas" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$schema_payload")"
-          printf '%s' "$schema" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["schema"]["version"]==1; assert d["compatibility"]["compatible"] is True'
+          schema_id="$(printf '%s' "$schema" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; s=d["schema"]; assert s["version"]==1; assert s["owner_service"]=="task-api"; assert s["owner_contact"]=="tasks@example.com"; assert d["compatibility"]["compatible"] is True; print(s["id"])')"
+          replacement_payload='{"event_type":"task.created","compatibility":"backward","owner":"tasks","owner_service":"task-api-v2","owner_contact":"tasks-oncall@example.com","description":"CI Phase 39 task event v2","schema":{"required":["id","title"],"properties":{"id":{"type":"integer"},"title":{"type":"string"},"description":{"type":"string"}}}}'
+          replacement="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/schemas" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$replacement_payload")"
+          replacement_id="$(printf '%s' "$replacement" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]["schema"]; assert d["version"]==2; print(d["id"])')"
+          deprecate_payload="$(python3 -c 'import json,sys; print(json.dumps({"reason":"superseded by CI v2","replacement_schema_id":int(sys.argv[1])}))' "$replacement_id")"
+          deprecated="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/schemas/$schema_id/deprecate" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$deprecate_payload")"
+          printf '%s' "$deprecated" | REPLACEMENT_ID="$replacement_id" python3 -c 'import json,os,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="deprecated"; assert d["deprecation_reason"]=="superseded by CI v2"; assert d["replacement_schema_id"]==int(os.environ["REPLACEMENT_ID"]); assert d["deprecated_by_user_id"] is not None'
 
           subscription="$(curl --fail --silent -X POST "http://localhost:8080/api/workspaces/$workspace_id/event-fabric/subscriptions" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI task projection","consumer_key":"ci.task.projection","event_types":["task.created"],"adapter":"postgres_outbox","max_attempts":3,"retention_days":30}')"
           subscription_id="$(printf '%s' "$subscription" | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["status"]=="active"; print(d["id"])')"
@@ -1664,7 +1670,7 @@ jobs:
       - name: Validate production operations
         run: |
           migration_count="$(docker compose exec -T postgres psql -U task_user -d task_manager -tAc 'SELECT COUNT(*) FROM schema_migrations')"
-          test "$migration_count" = "34"
+          test "$migration_count" = "35"
 
           docker compose exec -T redis sh -c \
             "redis-cli --scan --pattern 'task-api:auth-rate:*' | grep -q 'task-api:auth-rate:'"

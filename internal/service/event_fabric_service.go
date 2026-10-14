@@ -16,6 +16,7 @@ import (
 var (
 	ErrEventFabricForbidden            = errors.New("event fabric action is forbidden")
 	ErrInvalidEventSchema              = errors.New("invalid event schema")
+	ErrInvalidEventSchemaDeprecation   = errors.New("invalid event schema deprecation")
 	ErrEventSchemaIncompatible         = errors.New("event schema is incompatible with the previous version")
 	ErrEventSchemaUnknownVersion       = errors.New("event schema version is not registered")
 	ErrInvalidEventFabricSubscription  = errors.New("invalid event fabric subscription")
@@ -108,11 +109,14 @@ func (s *EventFabricService) CreateSchema(actorUserID, workspaceID int64, req mo
 	}
 	eventType := normalizeEventType(req.EventType)
 	owner := strings.TrimSpace(req.Owner)
+	ownerService := strings.TrimSpace(req.OwnerService)
+	ownerContact := strings.TrimSpace(req.OwnerContact)
 	compatibility := strings.ToLower(strings.TrimSpace(req.Compatibility))
 	if compatibility == "" {
 		compatibility = model.EventSchemaCompatibilityBackward
 	}
-	if eventType == "" || len(eventType) > 160 || owner == "" || len(owner) > 160 || !validEventCompatibility(compatibility) {
+	if eventType == "" || len(eventType) > 160 || owner == "" || len(owner) > 160 ||
+		len(ownerService) > 200 || len(ownerContact) > 320 || !validEventCompatibility(compatibility) {
 		return model.EventSchemaVersion{}, model.EventSchemaCompatibilityResult{}, ErrInvalidEventSchema
 	}
 	if err := validateEventSchemaShape(req.Schema); err != nil {
@@ -134,25 +138,81 @@ func (s *EventFabricService) CreateSchema(actorUserID, workspaceID int64, req mo
 	now := time.Now().UTC()
 	item, err := s.repo.CreateSchema(model.EventSchemaVersion{
 		WorkspaceID: workspaceID, EventType: eventType, Version: version, Compatibility: compatibility,
-		Status: model.EventSchemaStatusActive, Owner: owner, Description: strings.TrimSpace(req.Description),
-		Schema: req.Schema, CreatedByUserID: actorUserID, CreatedAt: now,
+		Status: model.EventSchemaStatusActive, Owner: owner, OwnerService: ownerService, OwnerContact: ownerContact,
+		Description: strings.TrimSpace(req.Description), Schema: req.Schema, CreatedByUserID: actorUserID, CreatedAt: now,
 	})
 	if err == nil {
 		_ = s.audit(workspaceID, actorUserID, "event_fabric.schema.created", "event_schema", fmt.Sprint(item.ID),
-			map[string]any{"event_type": eventType, "version": version, "compatibility": compatibility}, now)
+			map[string]any{
+				"event_type": eventType, "version": version, "compatibility": compatibility,
+				"owner": owner, "owner_service": ownerService, "owner_contact": ownerContact,
+			}, now)
 	}
 	return item, result, err
 }
 
-func (s *EventFabricService) DeprecateSchema(actorUserID, workspaceID, schemaID int64) error {
+func (s *EventFabricService) DeprecateSchema(actorUserID, workspaceID, schemaID int64, req model.DeprecateEventSchemaRequest) (model.EventSchemaVersion, error) {
 	if _, err := s.requireAdmin(actorUserID, workspaceID); err != nil {
-		return err
+		return model.EventSchemaVersion{}, err
+	}
+	current, err := s.repo.GetSchema(workspaceID, schemaID)
+	if err != nil {
+		return model.EventSchemaVersion{}, err
+	}
+	if current.Status == model.EventSchemaStatusDeprecated {
+		return current, nil
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		reason = "operator_requested"
+	}
+	if len(reason) > 1000 {
+		return model.EventSchemaVersion{}, ErrInvalidEventSchemaDeprecation
+	}
+	var replacementID *int64
+	if req.ReplacementSchemaID > 0 {
+		if req.ReplacementSchemaID == schemaID {
+			return model.EventSchemaVersion{}, ErrInvalidEventSchemaDeprecation
+		}
+		replacement, err := s.repo.GetSchema(workspaceID, req.ReplacementSchemaID)
+		if err != nil {
+			return model.EventSchemaVersion{}, err
+		}
+		if replacement.EventType != current.EventType || replacement.Status != model.EventSchemaStatusActive {
+			return model.EventSchemaVersion{}, ErrInvalidEventSchemaDeprecation
+		}
+		value := replacement.ID
+		replacementID = &value
+	} else {
+		versions, err := s.repo.ListSchemas(workspaceID, current.EventType)
+		if err != nil {
+			return model.EventSchemaVersion{}, err
+		}
+		for _, candidate := range versions {
+			if candidate.ID != current.ID && candidate.Status == model.EventSchemaStatusActive {
+				value := candidate.ID
+				replacementID = &value
+				break
+			}
+		}
 	}
 	now := time.Now().UTC()
-	if err := s.repo.DeprecateSchema(workspaceID, schemaID, now); err != nil {
-		return err
+	item, err := s.repo.DeprecateSchema(workspaceID, schemaID, actorUserID, reason, replacementID, now)
+	if err != nil {
+		return model.EventSchemaVersion{}, err
 	}
-	return s.audit(workspaceID, actorUserID, "event_fabric.schema.deprecated", "event_schema", fmt.Sprint(schemaID), nil, now)
+	metadata := map[string]any{
+		"event_type": item.EventType,
+		"version":    item.Version,
+		"reason":     reason,
+	}
+	if replacementID != nil {
+		metadata["replacement_schema_id"] = *replacementID
+	}
+	if err := s.audit(workspaceID, actorUserID, "event_fabric.schema.deprecated", "event_schema", fmt.Sprint(schemaID), metadata, now); err != nil {
+		return model.EventSchemaVersion{}, err
+	}
+	return item, nil
 }
 
 func (s *EventFabricService) Subscriptions(actorUserID, workspaceID int64) ([]model.EventFabricSubscription, error) {
@@ -320,7 +380,7 @@ func (s *EventFabricService) Consume(_ context.Context, event model.DomainEvent)
 	if len(schemas) > 0 {
 		var schema *model.EventSchemaVersion
 		for i := range schemas {
-			if schemas[i].Version == event.SchemaVersion && schemas[i].Status == model.EventSchemaStatusActive {
+			if schemas[i].Version == event.SchemaVersion {
 				schema = &schemas[i]
 				break
 			}

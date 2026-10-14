@@ -1,5 +1,20 @@
 # API Changelog
 
+## 1.13.0 — Phase 39 post-roadmap event governance hardening
+
+Compatibility line: **v1**.
+
+Additive event-fabric governance release:
+
+- expands schema ownership metadata with optional owning service and operational contact fields
+- records deprecation actor, reason and optional replacement schema ID on every deprecated schema version
+- keeps the existing no-body deprecation call compatible by defaulting the reason to `operator_requested`
+- validates replacement schemas are active versions of the same event type
+- automatically records the newest active sibling as the replacement when one exists and none is explicitly supplied
+- preserves deprecated schema definitions for exact-version validation so historical outbox events and range replay remain processable
+- adds migration 035 plus unit, PostgreSQL integration and Docker smoke coverage
+- preserves existing Phase 39 routes, operation IDs and v1 event-delivery contracts
+
 ## 1.12.0 — Phase 38 post-roadmap connector credential governance
 
 Compatibility line: **v1**.

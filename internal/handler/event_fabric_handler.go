@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -83,11 +84,18 @@ func (h *EventFabricHandler) DeprecateSchema(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	if err := h.service.DeprecateSchema(userID, workspaceID, schemaID); err != nil {
+	defer r.Body.Close()
+	var req model.DeprecateEventSchemaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		badJSON(w)
+		return
+	}
+	item, err := h.service.DeprecateSchema(userID, workspaceID, schemaID, req)
+	if err != nil {
 		h.handleError(w, err)
 		return
 	}
-	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "event schema deprecated"})
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "event schema deprecated", Data: item})
 }
 
 func (h *EventFabricHandler) Subscriptions(w http.ResponseWriter, r *http.Request) {
@@ -282,6 +290,7 @@ func (h *EventFabricHandler) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrEventFabricForbidden):
 		response.JSON(w, http.StatusForbidden, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrInvalidEventSchema),
+		errors.Is(err, service.ErrInvalidEventSchemaDeprecation),
 		errors.Is(err, service.ErrInvalidEventFabricSubscription),
 		errors.Is(err, service.ErrInvalidEventRoute),
 		errors.Is(err, service.ErrInvalidEventReplay):

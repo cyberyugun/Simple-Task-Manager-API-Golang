@@ -22,6 +22,7 @@ func TestEventFabricSchemaRoutingOffsetReplayAndDLQ(t *testing.T) {
 
 	first, compatibility, err := service.CreateSchema(7, access.ID, model.CreateEventSchemaRequest{
 		EventType: "task.created", Compatibility: model.EventSchemaCompatibilityFull, Owner: "tasks",
+		OwnerService: "task-api", OwnerContact: "tasks@example.com",
 		Schema: map[string]any{
 			"required": []any{"id", "title"},
 			"properties": map[string]any{
@@ -32,6 +33,9 @@ func TestEventFabricSchemaRoutingOffsetReplayAndDLQ(t *testing.T) {
 	})
 	if err != nil || !compatibility.Compatible || first.Version != 1 {
 		t.Fatalf("schema=%+v compatibility=%+v err=%v", first, compatibility, err)
+	}
+	if first.OwnerService != "task-api" || first.OwnerContact != "tasks@example.com" {
+		t.Fatalf("missing ownership metadata: %+v", first)
 	}
 
 	_, result, err := service.CreateSchema(7, access.ID, model.CreateEventSchemaRequest{
@@ -64,6 +68,24 @@ func TestEventFabricSchemaRoutingOffsetReplayAndDLQ(t *testing.T) {
 		t.Fatalf("schema=%+v compatibility=%+v err=%v", second, result, err)
 	}
 
+	if _, err := service.DeprecateSchema(7, access.ID, second.ID, model.DeprecateEventSchemaRequest{
+		Reason: "invalid self replacement", ReplacementSchemaID: second.ID,
+	}); !errors.Is(err, ErrInvalidEventSchemaDeprecation) {
+		t.Fatalf("expected invalid self replacement, got %v", err)
+	}
+	deprecated, err := service.DeprecateSchema(7, access.ID, first.ID, model.DeprecateEventSchemaRequest{
+		Reason: "superseded by v2", ReplacementSchemaID: second.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deprecated.Status != model.EventSchemaStatusDeprecated || deprecated.DeprecatedAt == nil ||
+		deprecated.DeprecatedByUserID == nil || *deprecated.DeprecatedByUserID != 7 ||
+		deprecated.DeprecationReason != "superseded by v2" ||
+		deprecated.ReplacementSchemaID == nil || *deprecated.ReplacementSchemaID != second.ID {
+		t.Fatalf("unexpected deprecation lifecycle metadata: %+v", deprecated)
+	}
+
 	subscription, err := service.CreateSubscription(7, access.ID, model.CreateEventFabricSubscriptionRequest{
 		Name: "Task projection", ConsumerKey: "projection.tasks", EventTypes: []string{"task.*"},
 		Adapter: model.EventFabricAdapterPostgresOutbox, MaxAttempts: 3, RetentionDays: 30,
@@ -84,7 +106,7 @@ func TestEventFabricSchemaRoutingOffsetReplayAndDLQ(t *testing.T) {
 		AggregateType: "task", AggregateID: "42", SchemaVersion: 1, Data: payload, OccurredAt: occurred,
 	}
 	if err := service.Consume(context.Background(), event); err != nil {
-		t.Fatal(err)
+		t.Fatalf("deprecated historical schema must remain valid for replay: %v", err)
 	}
 	pending, err := repo.ListDeliveries(access.ID, subscription.ID, model.EventFabricDeliveryPending, 10)
 	if err != nil || len(pending) != 1 || pending[0].CorrelationID != event.EventKey {

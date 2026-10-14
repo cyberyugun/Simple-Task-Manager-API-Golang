@@ -25,15 +25,17 @@ func (r *PostgresEventFabricRepository) CreateSchema(item model.EventSchemaVersi
 	var schemaRaw []byte
 	err = r.db.QueryRow(`
 		INSERT INTO event_schema_versions (
-			workspace_id,event_type,version,compatibility,status,owner_name,description,schema,
-			created_by_user_id,created_at,deprecated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)
-		RETURNING id,workspace_id,event_type,version,compatibility,status,owner_name,description,schema,
-			created_by_user_id,created_at,deprecated_at
+			workspace_id,event_type,version,compatibility,status,owner_name,owner_service,owner_contact,description,schema,
+			created_by_user_id,created_at,deprecated_at,deprecated_by_user_id,deprecation_reason,replacement_schema_id
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15,$16)
+		RETURNING id,workspace_id,event_type,version,compatibility,status,owner_name,owner_service,owner_contact,description,schema,
+			created_by_user_id,created_at,deprecated_at,deprecated_by_user_id,deprecation_reason,replacement_schema_id
 	`, item.WorkspaceID, item.EventType, item.Version, item.Compatibility, item.Status, item.Owner,
-		item.Description, string(raw), item.CreatedByUserID, item.CreatedAt, item.DeprecatedAt).Scan(
+		item.OwnerService, item.OwnerContact, item.Description, string(raw), item.CreatedByUserID, item.CreatedAt,
+		item.DeprecatedAt, item.DeprecatedByUserID, item.DeprecationReason, item.ReplacementSchemaID).Scan(
 		&item.ID, &item.WorkspaceID, &item.EventType, &item.Version, &item.Compatibility, &item.Status,
-		&item.Owner, &item.Description, &schemaRaw, &item.CreatedByUserID, &item.CreatedAt, &item.DeprecatedAt,
+		&item.Owner, &item.OwnerService, &item.OwnerContact, &item.Description, &schemaRaw, &item.CreatedByUserID,
+		&item.CreatedAt, &item.DeprecatedAt, &item.DeprecatedByUserID, &item.DeprecationReason, &item.ReplacementSchemaID,
 	)
 	if err != nil {
 		return model.EventSchemaVersion{}, err
@@ -46,8 +48,8 @@ func (r *PostgresEventFabricRepository) CreateSchema(item model.EventSchemaVersi
 
 func (r *PostgresEventFabricRepository) ListSchemas(workspaceID int64, eventType string) ([]model.EventSchemaVersion, error) {
 	rows, err := r.db.Query(`
-		SELECT id,workspace_id,event_type,version,compatibility,status,owner_name,description,schema,
-			created_by_user_id,created_at,deprecated_at
+		SELECT id,workspace_id,event_type,version,compatibility,status,owner_name,owner_service,owner_contact,description,schema,
+			created_by_user_id,created_at,deprecated_at,deprecated_by_user_id,deprecation_reason,replacement_schema_id
 		FROM event_schema_versions
 		WHERE workspace_id=$1 AND ($2='' OR event_type=$2)
 		ORDER BY event_type,version DESC
@@ -67,10 +69,22 @@ func (r *PostgresEventFabricRepository) ListSchemas(workspaceID int64, eventType
 	return items, rows.Err()
 }
 
+func (r *PostgresEventFabricRepository) GetSchema(workspaceID, schemaID int64) (model.EventSchemaVersion, error) {
+	item, err := scanEventSchema(r.db.QueryRow(`
+		SELECT id,workspace_id,event_type,version,compatibility,status,owner_name,owner_service,owner_contact,description,schema,
+			created_by_user_id,created_at,deprecated_at,deprecated_by_user_id,deprecation_reason,replacement_schema_id
+		FROM event_schema_versions
+		WHERE workspace_id=$1 AND id=$2
+	`, workspaceID, schemaID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.EventSchemaVersion{}, ErrEventSchemaNotFound
+	}
+	return item, err
+}
 func (r *PostgresEventFabricRepository) LatestSchema(workspaceID int64, eventType string) (model.EventSchemaVersion, error) {
 	item, err := scanEventSchema(r.db.QueryRow(`
-		SELECT id,workspace_id,event_type,version,compatibility,status,owner_name,description,schema,
-			created_by_user_id,created_at,deprecated_at
+		SELECT id,workspace_id,event_type,version,compatibility,status,owner_name,owner_service,owner_contact,description,schema,
+			created_by_user_id,created_at,deprecated_at,deprecated_by_user_id,deprecation_reason,replacement_schema_id
 		FROM event_schema_versions
 		WHERE workspace_id=$1 AND event_type=$2 AND status='active'
 		ORDER BY version DESC LIMIT 1
@@ -81,23 +95,22 @@ func (r *PostgresEventFabricRepository) LatestSchema(workspaceID int64, eventTyp
 	return item, err
 }
 
-func (r *PostgresEventFabricRepository) DeprecateSchema(workspaceID, schemaID int64, now time.Time) error {
-	res, err := r.db.Exec(`
+func (r *PostgresEventFabricRepository) DeprecateSchema(workspaceID, schemaID, deprecatedByUserID int64, reason string, replacementSchemaID *int64, now time.Time) (model.EventSchemaVersion, error) {
+	item, err := scanEventSchema(r.db.QueryRow(`
 		UPDATE event_schema_versions
-		SET status='deprecated', deprecated_at=$3
+		SET status='deprecated',
+		    deprecated_at=$3,
+		    deprecated_by_user_id=$4,
+		    deprecation_reason=$5,
+		    replacement_schema_id=$6
 		WHERE workspace_id=$1 AND id=$2
-	`, workspaceID, schemaID, now)
-	if err != nil {
-		return err
+		RETURNING id,workspace_id,event_type,version,compatibility,status,owner_name,owner_service,owner_contact,description,schema,
+			created_by_user_id,created_at,deprecated_at,deprecated_by_user_id,deprecation_reason,replacement_schema_id
+	`, workspaceID, schemaID, now, deprecatedByUserID, reason, replacementSchemaID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.EventSchemaVersion{}, ErrEventSchemaNotFound
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return ErrEventSchemaNotFound
-	}
-	return nil
+	return item, err
 }
 
 func (r *PostgresEventFabricRepository) CreateSubscription(item model.EventFabricSubscription) (model.EventFabricSubscription, error) {
@@ -565,7 +578,8 @@ func scanEventSchema(scanner eventFabricScanner) (model.EventSchemaVersion, erro
 	var raw []byte
 	err := scanner.Scan(
 		&item.ID, &item.WorkspaceID, &item.EventType, &item.Version, &item.Compatibility, &item.Status,
-		&item.Owner, &item.Description, &raw, &item.CreatedByUserID, &item.CreatedAt, &item.DeprecatedAt,
+		&item.Owner, &item.OwnerService, &item.OwnerContact, &item.Description, &raw, &item.CreatedByUserID,
+		&item.CreatedAt, &item.DeprecatedAt, &item.DeprecatedByUserID, &item.DeprecationReason, &item.ReplacementSchemaID,
 	)
 	if err != nil {
 		return model.EventSchemaVersion{}, err

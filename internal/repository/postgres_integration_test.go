@@ -516,6 +516,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"032_report_retention_aggregation.sql",
 		"033_notification_analytics_suppression.sql",
 		"034_connector_rotation_scope_governance.sql",
+		"035_event_ownership_schema_deprecation.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {
