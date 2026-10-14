@@ -215,4 +215,73 @@ func TestIntegrationPostgresNotificationRepository(t *testing.T) {
 	if err != nil || resolvedOrgID == nil || *resolvedOrgID != org.ID {
 		t.Fatalf("workspace organization=%v err=%v", resolvedOrgID, err)
 	}
+
+	rule, err := notifications.CreateSuppressionRule(model.NotificationSuppressionRule{
+		OrganizationID: org.ID,
+		EventType: model.NotificationEventTaskAssigned,
+		Channel: model.NotificationChannelEmail,
+		Reason: "integration suppression",
+		Active: true,
+		CreatedByUserID: owner.ID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil || rule.ID == 0 {
+		t.Fatalf("suppression rule=%+v err=%v", rule, err)
+	}
+	activeRules, err := notifications.ListActiveSuppressionRules(org.ID, model.NotificationEventTaskAssigned, now.Add(time.Second))
+	if err != nil || len(activeRules) != 1 || activeRules[0].ID != rule.ID {
+		t.Fatalf("active suppression rules=%+v err=%v", activeRules, err)
+	}
+	userID := member.ID
+	notificationID := notification.ID
+	ruleID := rule.ID
+	if err := notifications.RecordSuppression(model.NotificationSuppressionEvent{
+		OrganizationID: org.ID,
+		WorkspaceID: &workspace.ID,
+		UserID: &userID,
+		NotificationID: &notificationID,
+		RuleID: &ruleID,
+		EventType: model.NotificationEventTaskAssigned,
+		Channel: model.NotificationChannelEmail,
+		Reason: rule.Reason,
+		DedupeKey: "integration:suppression:email",
+		CreatedAt: now.Add(7 * time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := notifications.RecordSuppression(model.NotificationSuppressionEvent{
+		OrganizationID: org.ID,
+		WorkspaceID: &workspace.ID,
+		UserID: &userID,
+		NotificationID: &notificationID,
+		RuleID: &ruleID,
+		EventType: model.NotificationEventTaskAssigned,
+		Channel: model.NotificationChannelEmail,
+		Reason: rule.Reason,
+		DedupeKey: "integration:suppression:email",
+		CreatedAt: now.Add(8 * time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	analytics, err := notifications.NotificationAnalytics(org.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analytics.Summary.Generated != 1 || analytics.Summary.Read != 1 ||
+		analytics.Summary.Deliveries != 1 || analytics.Summary.Sent != 1 ||
+		analytics.Summary.Suppressed != 1 || analytics.Summary.DeliveryAttempts != 1 {
+		t.Fatalf("notification analytics=%+v", analytics)
+	}
+	if len(analytics.ByEvent) != 1 || analytics.ByEvent[0].Generated != 1 || analytics.ByEvent[0].Suppressed != 1 {
+		t.Fatalf("event analytics=%+v", analytics.ByEvent)
+	}
+	if err := notifications.DeleteSuppressionRule(org.ID, rule.ID, now.Add(9*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	activeRules, err = notifications.ListActiveSuppressionRules(org.ID, model.NotificationEventTaskAssigned, now.Add(10*time.Second))
+	if err != nil || len(activeRules) != 0 {
+		t.Fatalf("active suppression rules after disable=%+v err=%v", activeRules, err)
+	}
 }
