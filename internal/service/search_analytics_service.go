@@ -26,6 +26,7 @@ type SearchAnalyticsService struct {
 	repo       repository.SearchAnalyticsRepository
 	workspaces repository.WorkspaceRepository
 	relevance  model.SearchRelevanceOptions
+	retention  model.ReportRetentionPolicy
 }
 
 type ReportExportResult struct {
@@ -43,7 +44,10 @@ func NewSearchAnalyticsServiceWithRelevance(repo repository.SearchAnalyticsRepos
 	if !relevance.Configured {
 		relevance = model.DefaultSearchRelevanceOptions()
 	}
-	return &SearchAnalyticsService{repo: repo, workspaces: workspaces, relevance: relevance}
+	return &SearchAnalyticsService{
+		repo: repo, workspaces: workspaces, relevance: relevance,
+		retention: DefaultReportRetentionPolicy(),
+	}
 }
 
 func (s *SearchAnalyticsService) Search(workspaceID int64, query model.SearchQuery) (model.SearchPage, error) {
