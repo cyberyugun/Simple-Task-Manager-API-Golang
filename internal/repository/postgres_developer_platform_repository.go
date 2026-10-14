@@ -23,12 +23,13 @@ func (r *PostgresDeveloperPlatformRepository) CreateApplication(item model.Devel
 		return model.DeveloperApplication{}, err
 	}
 	var raw []byte
-	err = r.db.QueryRow("INSERT INTO developer_applications (workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,review_note,created_at,updated_at,submitted_at,reviewed_at) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id,workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,review_note,created_at,updated_at,submitted_at,reviewed_at",
+	err = r.db.QueryRow("INSERT INTO developer_applications (workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,submitted_by_user_id,review_round,review_note,created_at,updated_at,submitted_at,reviewed_at) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id,workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,submitted_by_user_id,review_round,review_note,created_at,updated_at,submitted_at,reviewed_at",
 		item.WorkspaceID, item.Name, item.Description, item.Status, string(scopes), item.DailyRequestLimit, item.MonthlyRequestLimit,
-		item.SandboxEnabled, item.CreatedByUserID, item.ReviewedByUserID, item.ReviewNote, item.CreatedAt, item.UpdatedAt, item.SubmittedAt, item.ReviewedAt,
+		item.SandboxEnabled, item.CreatedByUserID, item.ReviewedByUserID, item.SubmittedByUserID, item.ReviewRound, item.ReviewNote,
+		item.CreatedAt, item.UpdatedAt, item.SubmittedAt, item.ReviewedAt,
 	).Scan(&item.ID, &item.WorkspaceID, &item.Name, &item.Description, &item.Status, &raw, &item.DailyRequestLimit,
-		&item.MonthlyRequestLimit, &item.SandboxEnabled, &item.CreatedByUserID, &item.ReviewedByUserID, &item.ReviewNote,
-		&item.CreatedAt, &item.UpdatedAt, &item.SubmittedAt, &item.ReviewedAt)
+		&item.MonthlyRequestLimit, &item.SandboxEnabled, &item.CreatedByUserID, &item.ReviewedByUserID, &item.SubmittedByUserID,
+		&item.ReviewRound, &item.ReviewNote, &item.CreatedAt, &item.UpdatedAt, &item.SubmittedAt, &item.ReviewedAt)
 	if err != nil {
 		return model.DeveloperApplication{}, err
 	}
@@ -39,7 +40,7 @@ func (r *PostgresDeveloperPlatformRepository) CreateApplication(item model.Devel
 }
 
 func (r *PostgresDeveloperPlatformRepository) ListApplications(workspaceID int64) ([]model.DeveloperApplication, error) {
-	rows, err := r.db.Query("SELECT id,workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,review_note,created_at,updated_at,submitted_at,reviewed_at FROM developer_applications WHERE workspace_id=$1 ORDER BY id", workspaceID)
+	rows, err := r.db.Query("SELECT id,workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,submitted_by_user_id,review_round,review_note,created_at,updated_at,submitted_at,reviewed_at FROM developer_applications WHERE workspace_id=$1 ORDER BY id", workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -56,19 +57,67 @@ func (r *PostgresDeveloperPlatformRepository) ListApplications(workspaceID int64
 }
 
 func (r *PostgresDeveloperPlatformRepository) GetApplication(workspaceID, appID int64) (model.DeveloperApplication, error) {
-	item, err := scanDeveloperApplication(r.db.QueryRow("SELECT id,workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,review_note,created_at,updated_at,submitted_at,reviewed_at FROM developer_applications WHERE workspace_id=$1 AND id=$2", workspaceID, appID))
+	item, err := scanDeveloperApplication(r.db.QueryRow("SELECT id,workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,submitted_by_user_id,review_round,review_note,created_at,updated_at,submitted_at,reviewed_at FROM developer_applications WHERE workspace_id=$1 AND id=$2", workspaceID, appID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.DeveloperApplication{}, ErrDeveloperAppNotFound
 	}
 	return item, err
 }
 
-func (r *PostgresDeveloperPlatformRepository) UpdateApplicationLifecycle(workspaceID, appID int64, status string, reviewerID *int64, note string, submittedAt, reviewedAt *time.Time, now time.Time) (model.DeveloperApplication, error) {
-	item, err := scanDeveloperApplication(r.db.QueryRow("UPDATE developer_applications SET status=$3,reviewed_by_user_id=$4,review_note=$5,submitted_at=$6,reviewed_at=$7,updated_at=$8 WHERE workspace_id=$1 AND id=$2 RETURNING id,workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,review_note,created_at,updated_at,submitted_at,reviewed_at", workspaceID, appID, status, reviewerID, note, submittedAt, reviewedAt, now))
+func (r *PostgresDeveloperPlatformRepository) UpdateApplicationLifecycle(workspaceID, appID int64, status string, reviewerID, submittedByUserID *int64, reviewRound int, note string, submittedAt, reviewedAt *time.Time, now time.Time) (model.DeveloperApplication, error) {
+	item, err := scanDeveloperApplication(r.db.QueryRow("UPDATE developer_applications SET status=$3,reviewed_by_user_id=$4,submitted_by_user_id=$5,review_round=$6,review_note=$7,submitted_at=$8,reviewed_at=$9,updated_at=$10 WHERE workspace_id=$1 AND id=$2 RETURNING id,workspace_id,name,description,status,allowed_scopes,daily_request_limit,monthly_request_limit,sandbox_enabled,created_by_user_id,reviewed_by_user_id,submitted_by_user_id,review_round,review_note,created_at,updated_at,submitted_at,reviewed_at", workspaceID, appID, status, reviewerID, submittedByUserID, reviewRound, note, submittedAt, reviewedAt, now))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.DeveloperApplication{}, ErrDeveloperAppNotFound
 	}
 	return item, err
+}
+
+func (r *PostgresDeveloperPlatformRepository) CreateApplicationReview(item model.DeveloperAppReview) (model.DeveloperAppReview, error) {
+	err := r.db.QueryRow(`
+		INSERT INTO developer_app_reviews (
+			app_id,workspace_id,review_round,decision,from_status,to_status,note,
+			submitted_by_user_id,reviewed_by_user_id,created_at
+		) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+		WHERE EXISTS (
+			SELECT 1 FROM developer_applications WHERE id=$1 AND workspace_id=$2
+		)
+		RETURNING id,app_id,workspace_id,review_round,decision,from_status,to_status,note,
+			submitted_by_user_id,reviewed_by_user_id,created_at
+	`, item.AppID, item.WorkspaceID, item.ReviewRound, item.Decision, item.FromStatus, item.ToStatus,
+		item.Note, item.SubmittedByUserID, item.ReviewedByUserID, item.CreatedAt).Scan(
+		&item.ID, &item.AppID, &item.WorkspaceID, &item.ReviewRound, &item.Decision, &item.FromStatus,
+		&item.ToStatus, &item.Note, &item.SubmittedByUserID, &item.ReviewedByUserID, &item.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.DeveloperAppReview{}, ErrDeveloperAppNotFound
+	}
+	return item, err
+}
+
+func (r *PostgresDeveloperPlatformRepository) ListApplicationReviews(workspaceID, appID int64) ([]model.DeveloperAppReview, error) {
+	if _, err := r.GetApplication(workspaceID, appID); err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(`
+		SELECT id,app_id,workspace_id,review_round,decision,from_status,to_status,note,
+			submitted_by_user_id,reviewed_by_user_id,created_at
+		FROM developer_app_reviews
+		WHERE workspace_id=$1 AND app_id=$2
+		ORDER BY review_round DESC,id DESC
+	`, workspaceID, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DeveloperAppReview, 0)
+	for rows.Next() {
+		item, err := scanDeveloperAppReview(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (r *PostgresDeveloperPlatformRepository) CreateCredential(item model.DeveloperCredential) (model.DeveloperCredential, error) {
@@ -134,7 +183,7 @@ func (r *PostgresDeveloperPlatformRepository) GetCredential(workspaceID, credent
 }
 
 func (r *PostgresDeveloperPlatformRepository) FindCredentialByExternalID(externalID string) (model.DeveloperCredential, model.DeveloperApplication, error) {
-	row := r.db.QueryRow("SELECT c.id,c.app_id,c.workspace_id,c.kind,c.environment,c.external_id,c.key_prefix,c.scopes,c.redirect_uris,c.status,c.rotated_from_id,c.created_by_user_id,c.created_at,c.revoked_at,a.id,a.workspace_id,a.name,a.description,a.status,a.allowed_scopes,a.daily_request_limit,a.monthly_request_limit,a.sandbox_enabled,a.created_by_user_id,a.reviewed_by_user_id,a.review_note,a.created_at,a.updated_at,a.submitted_at,a.reviewed_at FROM developer_app_credentials c JOIN developer_applications a ON a.id=c.app_id WHERE c.external_id=$1 AND c.status='active'", externalID)
+	row := r.db.QueryRow("SELECT c.id,c.app_id,c.workspace_id,c.kind,c.environment,c.external_id,c.key_prefix,c.scopes,c.redirect_uris,c.status,c.rotated_from_id,c.created_by_user_id,c.created_at,c.revoked_at,a.id,a.workspace_id,a.name,a.description,a.status,a.allowed_scopes,a.daily_request_limit,a.monthly_request_limit,a.sandbox_enabled,a.created_by_user_id,a.reviewed_by_user_id,a.submitted_by_user_id,a.review_round,a.review_note,a.created_at,a.updated_at,a.submitted_at,a.reviewed_at FROM developer_app_credentials c JOIN developer_applications a ON a.id=c.app_id WHERE c.external_id=$1 AND c.status='active'", externalID)
 	return scanDeveloperCredentialAndApp(row)
 }
 
@@ -159,7 +208,7 @@ func (r *PostgresDeveloperPlatformRepository) ConsumeRequest(externalID string, 
 		return model.DeveloperCredential{}, model.DeveloperApplication{}, err
 	}
 	defer tx.Rollback()
-	row := tx.QueryRow("SELECT c.id,c.app_id,c.workspace_id,c.kind,c.environment,c.external_id,c.key_prefix,c.scopes,c.redirect_uris,c.status,c.rotated_from_id,c.created_by_user_id,c.created_at,c.revoked_at,a.id,a.workspace_id,a.name,a.description,a.status,a.allowed_scopes,a.daily_request_limit,a.monthly_request_limit,a.sandbox_enabled,a.created_by_user_id,a.reviewed_by_user_id,a.review_note,a.created_at,a.updated_at,a.submitted_at,a.reviewed_at FROM developer_app_credentials c JOIN developer_applications a ON a.id=c.app_id WHERE c.external_id=$1 AND c.workspace_id=$2 AND c.status='active' FOR UPDATE OF a", externalID, workspaceID)
+	row := tx.QueryRow("SELECT c.id,c.app_id,c.workspace_id,c.kind,c.environment,c.external_id,c.key_prefix,c.scopes,c.redirect_uris,c.status,c.rotated_from_id,c.created_by_user_id,c.created_at,c.revoked_at,a.id,a.workspace_id,a.name,a.description,a.status,a.allowed_scopes,a.daily_request_limit,a.monthly_request_limit,a.sandbox_enabled,a.created_by_user_id,a.reviewed_by_user_id,a.submitted_by_user_id,a.review_round,a.review_note,a.created_at,a.updated_at,a.submitted_at,a.reviewed_at FROM developer_app_credentials c JOIN developer_applications a ON a.id=c.app_id WHERE c.external_id=$1 AND c.workspace_id=$2 AND c.status='active' FOR UPDATE OF a", externalID, workspaceID)
 	credential, app, err := scanDeveloperCredentialAndApp(row)
 	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, ErrDeveloperCredentialNotFound) {
 		return model.DeveloperCredential{}, model.DeveloperApplication{}, ErrDeveloperCredentialNotFound
@@ -275,9 +324,14 @@ type developerScanner interface{ Scan(dest ...any) error }
 func scanDeveloperApplication(scanner developerScanner) (model.DeveloperApplication, error) {
 	var item model.DeveloperApplication
 	var scopes []byte
-	var reviewer sql.NullInt64
+	var reviewer, submitter sql.NullInt64
 	var submitted, reviewed sql.NullTime
-	err := scanner.Scan(&item.ID, &item.WorkspaceID, &item.Name, &item.Description, &item.Status, &scopes, &item.DailyRequestLimit, &item.MonthlyRequestLimit, &item.SandboxEnabled, &item.CreatedByUserID, &reviewer, &item.ReviewNote, &item.CreatedAt, &item.UpdatedAt, &submitted, &reviewed)
+	err := scanner.Scan(
+		&item.ID, &item.WorkspaceID, &item.Name, &item.Description, &item.Status, &scopes,
+		&item.DailyRequestLimit, &item.MonthlyRequestLimit, &item.SandboxEnabled, &item.CreatedByUserID,
+		&reviewer, &submitter, &item.ReviewRound, &item.ReviewNote, &item.CreatedAt, &item.UpdatedAt,
+		&submitted, &reviewed,
+	)
 	if err != nil {
 		return model.DeveloperApplication{}, err
 	}
@@ -288,6 +342,10 @@ func scanDeveloperApplication(scanner developerScanner) (model.DeveloperApplicat
 		v := reviewer.Int64
 		item.ReviewedByUserID = &v
 	}
+	if submitter.Valid {
+		v := submitter.Int64
+		item.SubmittedByUserID = &v
+	}
 	if submitted.Valid {
 		v := submitted.Time
 		item.SubmittedAt = &v
@@ -295,6 +353,23 @@ func scanDeveloperApplication(scanner developerScanner) (model.DeveloperApplicat
 	if reviewed.Valid {
 		v := reviewed.Time
 		item.ReviewedAt = &v
+	}
+	return item, nil
+}
+
+func scanDeveloperAppReview(scanner developerScanner) (model.DeveloperAppReview, error) {
+	var item model.DeveloperAppReview
+	var submitter sql.NullInt64
+	err := scanner.Scan(
+		&item.ID, &item.AppID, &item.WorkspaceID, &item.ReviewRound, &item.Decision,
+		&item.FromStatus, &item.ToStatus, &item.Note, &submitter, &item.ReviewedByUserID, &item.CreatedAt,
+	)
+	if err != nil {
+		return model.DeveloperAppReview{}, err
+	}
+	if submitter.Valid {
+		value := submitter.Int64
+		item.SubmittedByUserID = &value
 	}
 	return item, nil
 }
@@ -329,9 +404,15 @@ func scanDeveloperCredentialAndApp(scanner developerScanner) (model.DeveloperCre
 	var c model.DeveloperCredential
 	var a model.DeveloperApplication
 	var cs, redirects, as []byte
-	var rotated, reviewer sql.NullInt64
+	var rotated, reviewer, submitter sql.NullInt64
 	var revoked, submitted, reviewed sql.NullTime
-	err := scanner.Scan(&c.ID, &c.AppID, &c.WorkspaceID, &c.Kind, &c.Environment, &c.ExternalID, &c.KeyPrefix, &cs, &redirects, &c.Status, &rotated, &c.CreatedByUserID, &c.CreatedAt, &revoked, &a.ID, &a.WorkspaceID, &a.Name, &a.Description, &a.Status, &as, &a.DailyRequestLimit, &a.MonthlyRequestLimit, &a.SandboxEnabled, &a.CreatedByUserID, &reviewer, &a.ReviewNote, &a.CreatedAt, &a.UpdatedAt, &submitted, &reviewed)
+	err := scanner.Scan(
+		&c.ID, &c.AppID, &c.WorkspaceID, &c.Kind, &c.Environment, &c.ExternalID, &c.KeyPrefix, &cs, &redirects,
+		&c.Status, &rotated, &c.CreatedByUserID, &c.CreatedAt, &revoked, &a.ID, &a.WorkspaceID, &a.Name,
+		&a.Description, &a.Status, &as, &a.DailyRequestLimit, &a.MonthlyRequestLimit, &a.SandboxEnabled,
+		&a.CreatedByUserID, &reviewer, &submitter, &a.ReviewRound, &a.ReviewNote, &a.CreatedAt, &a.UpdatedAt,
+		&submitted, &reviewed,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.DeveloperCredential{}, model.DeveloperApplication{}, ErrDeveloperCredentialNotFound
 	}
@@ -358,6 +439,10 @@ func scanDeveloperCredentialAndApp(scanner developerScanner) (model.DeveloperCre
 	if reviewer.Valid {
 		v := reviewer.Int64
 		a.ReviewedByUserID = &v
+	}
+	if submitter.Valid {
+		v := submitter.Int64
+		a.SubmittedByUserID = &v
 	}
 	if submitted.Valid {
 		v := submitted.Time
