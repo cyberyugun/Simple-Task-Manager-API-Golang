@@ -25,9 +25,11 @@ var (
 	ErrConnectorOAuthState         = errors.New("invalid or expired connector oauth state")
 	ErrConnectorOAuthExchange      = errors.New("connector oauth token exchange failed")
 	ErrConnectorScopeMismatch      = errors.New("connector oauth scopes do not satisfy required scopes")
+	ErrConnectorScopeExcess        = errors.New("connector oauth granted scopes exceed the configured least-privilege scope set")
 	ErrConnectorCredentialRevoked  = errors.New("connector credential is revoked")
 	ErrConnectorCredentialExpired  = errors.New("connector credential is expired")
 	ErrConnectorCredentialRotation = errors.New("invalid connector credential rotation")
+	ErrConnectorCredentialPolicy   = errors.New("invalid connector credential policy")
 )
 
 type ConnectorSecurityService struct {
@@ -153,6 +155,49 @@ func (s *ConnectorSecurityService) BeginOAuth(actorUserID, organizationID, conne
 	parsed.RawQuery = q.Encode()
 	s.audit(organizationID, actorUserID, "integration.oauth.started", "integration_connection", fmt.Sprint(connectionID), map[string]any{"provider": connection.Provider})
 	return model.ConnectorOAuthStart{AuthorizationURL: parsed.String(), State: state, ExpiresAt: expires}, nil
+}
+
+func (s *ConnectorSecurityService) CredentialPolicy(actorUserID, organizationID int64) (model.ConnectorCredentialPolicy, error) {
+	if _, err := s.requireAdmin(actorUserID, organizationID); err != nil {
+		return model.ConnectorCredentialPolicy{}, err
+	}
+	return s.credentialPolicy(organizationID)
+}
+
+func (s *ConnectorSecurityService) UpdateCredentialPolicy(actorUserID, organizationID int64, req model.UpdateConnectorCredentialPolicyRequest) (model.ConnectorCredentialPolicy, error) {
+	if _, err := s.requireAdmin(actorUserID, organizationID); err != nil {
+		return model.ConnectorCredentialPolicy{}, err
+	}
+	intervalDays := req.RotationIntervalDays
+	if intervalDays == 0 {
+		intervalDays = 90
+	}
+	if intervalDays < 1 || intervalDays > 3650 || (req.AutoRotate && !req.RotationEnabled) {
+		return model.ConnectorCredentialPolicy{}, ErrConnectorCredentialPolicy
+	}
+	now := time.Now().UTC()
+	actor := actorUserID
+	item, err := s.repo.UpsertCredentialPolicy(model.ConnectorCredentialPolicy{
+		OrganizationID:              organizationID,
+		RotationEnabled:             req.RotationEnabled,
+		AutoRotate:                  req.AutoRotate,
+		RotationIntervalDays:        intervalDays,
+		EnforceLeastPrivilegeScopes: req.EnforceLeastPrivilegeScopes,
+		CreatedByUserID:             &actor,
+		UpdatedByUserID:             &actor,
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	})
+	if err != nil {
+		return model.ConnectorCredentialPolicy{}, err
+	}
+	s.audit(organizationID, actorUserID, "integration.credential_policy.updated", "integration_credential_policy", fmt.Sprint(organizationID), map[string]any{
+		"rotation_enabled": item.RotationEnabled,
+		"auto_rotate": item.AutoRotate,
+		"rotation_interval_days": item.RotationIntervalDays,
+		"enforce_least_privilege_scopes": item.EnforceLeastPrivilegeScopes,
+	})
+	return item, nil
 }
 
 func (s *ConnectorSecurityService) CompleteOAuth(actorUserID, organizationID, connectionID int64, req model.CompleteConnectorOAuthRequest) (model.ConnectorCredentialMetadata, error) {
