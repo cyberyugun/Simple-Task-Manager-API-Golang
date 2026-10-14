@@ -99,7 +99,12 @@ func (h *SearchAnalyticsHandler) Dashboard(w http.ResponseWriter, r *http.Reques
 		}
 		days = value
 	}
-	item, err := h.service.Dashboard(access.ID, days)
+	projectID, err := parseAnalyticsProjectID(r)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	item, err := h.service.Dashboard(access.ID, projectID, days)
 	h.write(w, item, err, http.StatusOK)
 }
 
@@ -112,7 +117,12 @@ func (h *SearchAnalyticsHandler) Workload(w http.ResponseWriter, r *http.Request
 	if !ok || !requireTaskScope(w, r) {
 		return
 	}
-	item, err := h.service.Dashboard(access.ID, 30)
+	projectID, err := parseAnalyticsProjectID(r)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	item, err := h.service.Dashboard(access.ID, projectID, 30)
 	if err != nil {
 		h.writeError(w, err)
 		return
@@ -138,7 +148,12 @@ func (h *SearchAnalyticsHandler) Trends(w http.ResponseWriter, r *http.Request) 
 		}
 		days = value
 	}
-	item, err := h.service.Dashboard(access.ID, days)
+	projectID, err := parseAnalyticsProjectID(r)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	item, err := h.service.Dashboard(access.ID, projectID, days)
 	if err != nil {
 		h.writeError(w, err)
 		return
@@ -261,6 +276,18 @@ func parseSearchQuery(r *http.Request) (model.SearchQuery, error) {
 		}
 	}
 	return query, nil
+}
+
+func parseAnalyticsProjectID(r *http.Request) (*int64, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return nil, service.ErrInvalidAnalyticsRequest
+	}
+	return &value, nil
 }
 
 func reportFiltersFromQuery(r *http.Request) map[string]any {

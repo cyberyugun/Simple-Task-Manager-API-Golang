@@ -105,7 +105,7 @@ func (r *PostgresSearchAnalyticsRepository) SearchTasks(workspaceID int64, query
 	}, nil
 }
 
-func (r *PostgresSearchAnalyticsRepository) Analytics(workspaceID int64, days int, now time.Time) (model.AnalyticsDashboard, error) {
+func (r *PostgresSearchAnalyticsRepository) Analytics(workspaceID int64, projectID *int64, days int, now time.Time) (model.AnalyticsDashboard, error) {
 	dashboard := model.AnalyticsDashboard{
 		ByStatus: map[string]int64{}, ByPriority: map[string]int64{},
 		Workload: []model.WorkloadMetric{}, Trend: []model.TrendMetric{}, Days: days,
@@ -119,8 +119,11 @@ func (r *PostgresSearchAnalyticsRepository) Analytics(workspaceID int64, days in
 			COALESCE(AVG(EXTRACT(EPOCH FROM (completed_at - created_at)) / 3600.0) FILTER (WHERE completed_at IS NOT NULL), 0)::double precision,
 			COALESCE(AVG(EXTRACT(EPOCH FROM (completed_at - start_at)) / 3600.0) FILTER (WHERE completed_at IS NOT NULL AND start_at IS NOT NULL), 0)::double precision
 		FROM tasks
-		WHERE workspace_id = $1 AND deleted_at IS NULL AND archived_at IS NULL
-	`, workspaceID, now).Scan(
+		WHERE workspace_id = $1
+		  AND ($3::bigint IS NULL OR project_id = $3)
+		  AND deleted_at IS NULL
+		  AND archived_at IS NULL
+	`, workspaceID, now, projectID).Scan(
 		&dashboard.Summary.TotalTasks, &dashboard.Summary.OpenTasks,
 		&dashboard.Summary.CompletedTasks, &dashboard.Summary.OverdueTasks,
 		&dashboard.Summary.AverageCycleHours, &dashboard.Summary.AverageLeadTimeHours,
@@ -132,10 +135,10 @@ func (r *PostgresSearchAnalyticsRepository) Analytics(workspaceID int64, days in
 		dashboard.Summary.CompletionRate = float64(dashboard.Summary.CompletedTasks) / float64(dashboard.Summary.TotalTasks)
 	}
 
-	if err := r.fillDimension(workspaceID, "status", dashboard.ByStatus); err != nil {
+	if err := r.fillDimension(workspaceID, projectID, "status", dashboard.ByStatus); err != nil {
 		return model.AnalyticsDashboard{}, err
 	}
-	if err := r.fillDimension(workspaceID, "priority", dashboard.ByPriority); err != nil {
+	if err := r.fillDimension(workspaceID, projectID, "priority", dashboard.ByPriority); err != nil {
 		return model.AnalyticsDashboard{}, err
 	}
 
@@ -150,12 +153,13 @@ func (r *PostgresSearchAnalyticsRepository) Analytics(workspaceID int64, days in
 		LEFT JOIN task_assignees ta ON ta.user_id = wm.user_id
 		LEFT JOIN tasks t ON t.id = ta.task_id
 			AND t.workspace_id = wm.workspace_id
+			AND ($3::bigint IS NULL OR t.project_id = $3)
 			AND t.deleted_at IS NULL
 			AND t.archived_at IS NULL
 		WHERE wm.workspace_id = $1
 		GROUP BY wm.user_id, u.name
 		ORDER BY COUNT(t.id) FILTER (WHERE t.status <> 'DONE') DESC, wm.user_id
-	`, workspaceID, now)
+	`, workspaceID, now, projectID)
 	if err != nil {
 		return model.AnalyticsDashboard{}, err
 	}
@@ -185,6 +189,7 @@ func (r *PostgresSearchAnalyticsRepository) Analytics(workspaceID int64, days in
 			)::bigint
 		FROM dates d
 		LEFT JOIN tasks t ON t.workspace_id = $1
+			AND ($4::bigint IS NULL OR t.project_id = $4)
 			AND t.deleted_at IS NULL
 			AND t.archived_at IS NULL
 			AND (
@@ -194,7 +199,7 @@ func (r *PostgresSearchAnalyticsRepository) Analytics(workspaceID int64, days in
 			)
 		GROUP BY d.day
 		ORDER BY d.day
-	`, workspaceID, now, days)
+	`, workspaceID, now, days, projectID)
 	if err != nil {
 		return model.AnalyticsDashboard{}, err
 	}
@@ -209,17 +214,20 @@ func (r *PostgresSearchAnalyticsRepository) Analytics(workspaceID int64, days in
 	return dashboard, trendRows.Err()
 }
 
-func (r *PostgresSearchAnalyticsRepository) fillDimension(workspaceID int64, column string, target map[string]int64) error {
+func (r *PostgresSearchAnalyticsRepository) fillDimension(workspaceID int64, projectID *int64, column string, target map[string]int64) error {
 	if column != "status" && column != "priority" {
 		return errors.New("unsupported analytics dimension")
 	}
 	rows, err := r.db.Query(fmt.Sprintf(`
 		SELECT %s, COUNT(*)::bigint
 		FROM tasks
-		WHERE workspace_id = $1 AND deleted_at IS NULL AND archived_at IS NULL
+		WHERE workspace_id = $1
+		  AND ($2::bigint IS NULL OR project_id = $2)
+		  AND deleted_at IS NULL
+		  AND archived_at IS NULL
 		GROUP BY %s
 		ORDER BY %s
-	`, column, column, column), workspaceID)
+	`, column, column, column), workspaceID, projectID)
 	if err != nil {
 		return err
 	}

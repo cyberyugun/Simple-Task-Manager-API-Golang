@@ -48,7 +48,9 @@ A view stores a bounded JSON filter object. Private views are visible only to th
 
 ## Analytics
 
-`GET /api/analytics/dashboard?days=30`
+`GET /api/analytics/dashboard?days=30&project_id=123`
+
+`project_id` is optional. When present, summary, status/priority breakdowns, workload and trends are scoped to that project, providing the roadmap's project dashboard while preserving the workspace-wide default.
 
 Dashboard metrics include:
 
@@ -65,8 +67,8 @@ The reporting window is 7–365 days.
 
 Convenience endpoints expose focused subsets:
 
-- `GET /api/analytics/workload`
-- `GET /api/analytics/trends?days=30`
+- `GET /api/analytics/workload?project_id=123`
+- `GET /api/analytics/trends?days=30&project_id=123`
 
 ## Exports
 
