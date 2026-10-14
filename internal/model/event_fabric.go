@@ -27,18 +27,23 @@ const (
 )
 
 type EventSchemaVersion struct {
-	ID              int64          `json:"id"`
-	WorkspaceID     int64          `json:"workspace_id"`
-	EventType       string         `json:"event_type"`
-	Version         int            `json:"version"`
-	Compatibility   string         `json:"compatibility"`
-	Status          string         `json:"status"`
-	Owner           string         `json:"owner"`
-	Description     string         `json:"description,omitempty"`
-	Schema          map[string]any `json:"schema"`
-	CreatedByUserID int64          `json:"created_by_user_id"`
-	CreatedAt       time.Time      `json:"created_at"`
-	DeprecatedAt    *time.Time     `json:"deprecated_at,omitempty"`
+	ID                  int64          `json:"id"`
+	WorkspaceID         int64          `json:"workspace_id"`
+	EventType           string         `json:"event_type"`
+	Version             int            `json:"version"`
+	Compatibility       string         `json:"compatibility"`
+	Status              string         `json:"status"`
+	Owner               string         `json:"owner"`
+	OwnerService        string         `json:"owner_service,omitempty"`
+	OwnerContact        string         `json:"owner_contact,omitempty"`
+	Description         string         `json:"description,omitempty"`
+	Schema              map[string]any `json:"schema"`
+	CreatedByUserID     int64          `json:"created_by_user_id"`
+	CreatedAt           time.Time      `json:"created_at"`
+	DeprecatedAt        *time.Time     `json:"deprecated_at,omitempty"`
+	DeprecatedByUserID  *int64         `json:"deprecated_by_user_id,omitempty"`
+	DeprecationReason   string         `json:"deprecation_reason,omitempty"`
+	ReplacementSchemaID *int64         `json:"replacement_schema_id,omitempty"`
 }
 
 type EventFabricSubscription struct {
@@ -113,8 +118,15 @@ type CreateEventSchemaRequest struct {
 	EventType     string         `json:"event_type"`
 	Compatibility string         `json:"compatibility"`
 	Owner         string         `json:"owner"`
+	OwnerService  string         `json:"owner_service,omitempty"`
+	OwnerContact  string         `json:"owner_contact,omitempty"`
 	Description   string         `json:"description,omitempty"`
 	Schema        map[string]any `json:"schema"`
+}
+
+type DeprecateEventSchemaRequest struct {
+	Reason              string `json:"reason,omitempty"`
+	ReplacementSchemaID int64  `json:"replacement_schema_id,omitempty"`
 }
 
 type CreateEventFabricSubscriptionRequest struct {
