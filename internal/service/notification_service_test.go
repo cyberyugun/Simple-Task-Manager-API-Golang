@@ -224,6 +224,134 @@ func TestNotificationTemplateVersioningPublish(t *testing.T) {
 	}
 }
 
+func TestNotificationSuppressionRulesAndAnalytics(t *testing.T) {
+	svc, users, _, _, repo, orgs := newNotificationTestService(t)
+	now := time.Now().UTC()
+	owner, err := users.Create(model.User{
+		Name: "Suppression Owner", Email: "suppression-owner@example.com", PasswordHash: "hash",
+		CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	org, err := orgs.CreateOrganization(model.Organization{
+		Name: "Suppression Org", Status: model.OrganizationStatusActive, OwnerUserID: owner.ID,
+		MaxMembers: 100, MaxWorkspaces: 20, CreatedByUserID: owner.ID, CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdatePreferences(owner.ID, model.UpdateNotificationPreferenceRequest{
+		Locale: "en", Timezone: "UTC", DigestFrequency: model.NotificationDigestOff, DigestHour: 8,
+		Channels: map[string]bool{
+			model.NotificationChannelInApp: true,
+			model.NotificationChannelEmail: true,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc.config.EmailProviderURL = "https://email.example.test"
+
+	emailRule, err := svc.CreateSuppressionRule(owner.ID, org.ID, model.CreateNotificationSuppressionRuleRequest{
+		EventType: model.NotificationEventTaskAssigned,
+		Channel: model.NotificationChannelEmail,
+		Reason: "pause assignment email during migration",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	orgID := org.ID
+	created, err := svc.createNotificationWithResult(model.NotificationCreate{
+		OrganizationID: &orgID,
+		UserID: owner.ID,
+		EventType: model.NotificationEventTaskAssigned,
+		TemplateKey: "task.assigned",
+		Data: map[string]any{"task_title": "Suppressed email"},
+		DedupeKey: "suppression-assigned-1",
+	})
+	if err != nil || !created {
+		t.Fatalf("created=%v err=%v", created, err)
+	}
+	deliveries, err := repo.ListDeliveries(owner.ID, 10)
+	if err != nil || len(deliveries) != 0 {
+		t.Fatalf("deliveries=%+v err=%v", deliveries, err)
+	}
+
+	allRule, err := svc.CreateSuppressionRule(owner.ID, org.ID, model.CreateNotificationSuppressionRuleRequest{
+		EventType: model.NotificationEventTaskMention,
+		Channel: model.NotificationSuppressionChannelAll,
+		Reason: "temporarily suppress mention notifications",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err = svc.createNotificationWithResult(model.NotificationCreate{
+		OrganizationID: &orgID,
+		UserID: owner.ID,
+		EventType: model.NotificationEventTaskMention,
+		TemplateKey: "task.mention",
+		Data: map[string]any{"task_title": "Suppressed mention", "comment_body": "hello"},
+		DedupeKey: "suppression-mention-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created {
+		t.Fatal("all-channel suppression should prevent notification creation")
+	}
+
+	analytics, err := svc.Analytics(owner.ID, org.ID, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analytics.Summary.Generated != 1 || analytics.Summary.Suppressed != 2 || analytics.Summary.Deliveries != 0 {
+		t.Fatalf("analytics=%+v", analytics)
+	}
+	channels := map[string]model.NotificationChannelAnalytics{}
+	for _, item := range analytics.ByChannel {
+		channels[item.Channel] = item
+	}
+	if channels[model.NotificationChannelEmail].Suppressed != 1 ||
+		channels[model.NotificationSuppressionChannelAll].Suppressed != 1 {
+		t.Fatalf("channel analytics=%+v", analytics.ByChannel)
+	}
+
+	if err := svc.DeleteSuppressionRule(owner.ID, org.ID, emailRule.ID); err != nil {
+		t.Fatal(err)
+	}
+	active, err := repo.ListActiveSuppressionRules(org.ID, model.NotificationEventTaskAssigned, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 0 {
+		t.Fatalf("active rules after delete=%+v", active)
+	}
+
+	created, err = svc.createNotificationWithResult(model.NotificationCreate{
+		OrganizationID: &orgID,
+		UserID: owner.ID,
+		EventType: model.NotificationEventTaskAssigned,
+		TemplateKey: "task.assigned",
+		Data: map[string]any{"task_title": "Email allowed"},
+		DedupeKey: "suppression-assigned-2",
+	})
+	if err != nil || !created {
+		t.Fatalf("created=%v err=%v", created, err)
+	}
+	deliveries, err = repo.ListDeliveries(owner.ID, 10)
+	if err != nil || len(deliveries) != 1 || deliveries[0].Channel != model.NotificationChannelEmail {
+		t.Fatalf("deliveries=%+v err=%v", deliveries, err)
+	}
+
+	rules, err := svc.SuppressionRules(owner.ID, org.ID)
+	if err != nil || len(rules) != 2 {
+		t.Fatalf("rules=%+v err=%v", rules, err)
+	}
+	if allRule.ID == emailRule.ID {
+		t.Fatal("suppression rule ids should be distinct")
+	}
+}
+
 func notificationTestInt64(value int64) string {
 	return fmt.Sprint(value)
 }
