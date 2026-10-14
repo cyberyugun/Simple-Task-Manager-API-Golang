@@ -21,10 +21,12 @@ import (
 )
 
 var (
-	ErrInvalidNotificationPreference = errors.New("invalid notification preference")
-	ErrInvalidNotificationEndpoint   = errors.New("invalid notification endpoint")
-	ErrInvalidNotificationTemplate   = errors.New("invalid notification template")
-	ErrNotificationForbidden         = errors.New("notification action is forbidden")
+	ErrInvalidNotificationPreference  = errors.New("invalid notification preference")
+	ErrInvalidNotificationEndpoint    = errors.New("invalid notification endpoint")
+	ErrInvalidNotificationTemplate    = errors.New("invalid notification template")
+	ErrInvalidNotificationSuppression = errors.New("invalid notification suppression rule")
+	ErrInvalidNotificationAnalytics   = errors.New("invalid notification analytics request")
+	ErrNotificationForbidden          = errors.New("notification action is forbidden")
 )
 
 type NotificationConfig struct {
@@ -292,6 +294,116 @@ func (s *NotificationService) PublishTemplate(actorUserID, organizationID, templ
 	return s.repo.UpdateTemplate(item)
 }
 
+func (s *NotificationService) SuppressionRules(actorUserID, organizationID int64) ([]model.NotificationSuppressionRule, error) {
+	if _, err := s.requireNotificationAdmin(actorUserID, organizationID); err != nil {
+		return nil, err
+	}
+	return s.repo.ListSuppressionRules(organizationID)
+}
+
+func (s *NotificationService) CreateSuppressionRule(actorUserID, organizationID int64, req model.CreateNotificationSuppressionRuleRequest) (model.NotificationSuppressionRule, error) {
+	if _, err := s.requireNotificationAdmin(actorUserID, organizationID); err != nil {
+		return model.NotificationSuppressionRule{}, err
+	}
+	eventType := strings.ToLower(strings.TrimSpace(req.EventType))
+	channel := strings.ToLower(strings.TrimSpace(req.Channel))
+	reason := strings.TrimSpace(req.Reason)
+	if eventType == "" {
+		eventType = "*"
+	}
+	if channel == "" {
+		channel = model.NotificationSuppressionChannelAll
+	}
+	if !validNotificationSuppressionEvent(eventType) || !validNotificationSuppressionChannel(channel) ||
+		reason == "" || len(reason) > 1000 {
+		return model.NotificationSuppressionRule{}, ErrInvalidNotificationSuppression
+	}
+	var startsAt, endsAt *time.Time
+	if req.StartsAt != nil {
+		value := req.StartsAt.UTC()
+		startsAt = &value
+	}
+	if req.EndsAt != nil {
+		value := req.EndsAt.UTC()
+		endsAt = &value
+	}
+	if startsAt != nil && endsAt != nil && !endsAt.After(*startsAt) {
+		return model.NotificationSuppressionRule{}, ErrInvalidNotificationSuppression
+	}
+	now := time.Now().UTC()
+	item, err := s.repo.CreateSuppressionRule(model.NotificationSuppressionRule{
+		OrganizationID:  organizationID,
+		EventType:       eventType,
+		Channel:         channel,
+		Reason:          reason,
+		Active:          true,
+		StartsAt:        startsAt,
+		EndsAt:          endsAt,
+		CreatedByUserID: actorUserID,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+	if err != nil {
+		return model.NotificationSuppressionRule{}, err
+	}
+	actor := actorUserID
+	if err := s.orgs.RecordAudit(model.OrganizationAuditEvent{
+		OrganizationID: organizationID,
+		ActorUserID:    &actor,
+		Action:         "notification.suppression_rule.created",
+		ResourceType:   "notification_suppression_rule",
+		ResourceID:     strconv.FormatInt(item.ID, 10),
+		Metadata:       map[string]any{"event_type": item.EventType, "channel": item.Channel, "reason": item.Reason},
+		CreatedAt:      now,
+	}); err != nil {
+		return model.NotificationSuppressionRule{}, err
+	}
+	return item, nil
+}
+
+func (s *NotificationService) DeleteSuppressionRule(actorUserID, organizationID, ruleID int64) error {
+	if _, err := s.requireNotificationAdmin(actorUserID, organizationID); err != nil {
+		return err
+	}
+	if ruleID <= 0 {
+		return ErrInvalidNotificationSuppression
+	}
+	now := time.Now().UTC()
+	if err := s.repo.DeleteSuppressionRule(organizationID, ruleID, now); err != nil {
+		return err
+	}
+	actor := actorUserID
+	return s.orgs.RecordAudit(model.OrganizationAuditEvent{
+		OrganizationID: organizationID,
+		ActorUserID:    &actor,
+		Action:         "notification.suppression_rule.deleted",
+		ResourceType:   "notification_suppression_rule",
+		ResourceID:     strconv.FormatInt(ruleID, 10),
+		CreatedAt:      now,
+	})
+}
+
+func (s *NotificationService) Analytics(actorUserID, organizationID int64, days int) (model.NotificationAnalyticsDashboard, error) {
+	if _, err := s.requireNotificationAdmin(actorUserID, organizationID); err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	if days == 0 {
+		days = 30
+	}
+	if days < 7 || days > 365 {
+		return model.NotificationAnalyticsDashboard{}, ErrInvalidNotificationAnalytics
+	}
+	now := time.Now().UTC()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -days+1)
+	result, err := s.repo.NotificationAnalytics(organizationID, start, now)
+	if err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	result.Days = days
+	result.GeneratedAt = now
+	return result, nil
+}
+
 func (s *NotificationService) Consume(_ context.Context, event model.DomainEvent) error {
 	switch event.EventType {
 	case model.EventTaskAssigned:
@@ -519,20 +631,41 @@ func (s *NotificationService) createNotificationWithResult(input model.Notificat
 	if err != nil {
 		return false, err
 	}
-	if enabled, exists := preference.Events[input.EventType]; exists && !enabled {
-		return false, nil
-	}
 	if input.OrganizationID == nil && input.WorkspaceID != nil {
 		input.OrganizationID, err = s.repo.WorkspaceOrganization(*input.WorkspaceID)
 		if err != nil {
 			return false, err
 		}
 	}
+	now := time.Now().UTC()
+	rules := []model.NotificationSuppressionRule{}
+	if input.OrganizationID != nil {
+		rules, err = s.repo.ListActiveSuppressionRules(*input.OrganizationID, input.EventType, now)
+		if err != nil {
+			return false, err
+		}
+	}
+	if enabled, exists := preference.Events[input.EventType]; exists && !enabled {
+		if input.OrganizationID != nil {
+			if err := s.recordSuppression(input, nil, nil, model.NotificationSuppressionChannelAll,
+				"user event preference disabled", "preference", now); err != nil {
+				return false, err
+			}
+		}
+		return false, nil
+	}
+	if rule := notificationSuppressionRuleForChannel(rules, model.NotificationSuppressionChannelAll); rule != nil {
+		if err := s.recordSuppression(input, nil, rule, model.NotificationSuppressionChannelAll,
+			rule.Reason, fmt.Sprintf("rule:%d", rule.ID), now); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+
 	subject, body, err := s.render(input.OrganizationID, input.TemplateKey, preference.Locale, model.NotificationChannelInApp, input.Data)
 	if err != nil {
 		return false, err
 	}
-	now := time.Now().UTC()
 	item := model.Notification{
 		OrganizationID: input.OrganizationID, WorkspaceID: input.WorkspaceID,
 		UserID: input.UserID, EventType: input.EventType, TemplateKey: input.TemplateKey,
@@ -543,57 +676,81 @@ func (s *NotificationService) createNotificationWithResult(input model.Notificat
 		item.ReadAt = &now
 	}
 	notification, created, err := s.repo.CreateNotification(item)
-	if err != nil || !created {
+	if err != nil {
+		return false, err
+	}
+	if err := s.enqueueExternalDeliveries(notification, preference, now, rules); err != nil {
 		return created, err
 	}
-	if err := s.enqueueExternalDeliveries(notification, preference, now); err != nil {
-		return true, err
-	}
-	return true, nil
+	return created, nil
 }
 
-func (s *NotificationService) enqueueExternalDeliveries(notification model.Notification, preference model.NotificationPreference, now time.Time) error {
+func (s *NotificationService) enqueueExternalDeliveries(notification model.Notification, preference model.NotificationPreference, now time.Time, rules []model.NotificationSuppressionRule) error {
 	availableAt := nextNotificationAllowedTime(now, preference)
-	user, err := s.users.FindByID(notification.UserID)
+	endpoints, err := s.repo.ListEndpoints(notification.UserID)
 	if err != nil {
 		return err
 	}
+
 	if preference.Channels[model.NotificationChannelEmail] && strings.TrimSpace(s.config.EmailProviderURL) != "" {
-		destinations := []model.NotificationEndpoint{}
-		endpoints, err := s.repo.ListEndpoints(notification.UserID)
-		if err != nil {
-			return err
-		}
+		destinations := make([]model.NotificationEndpoint, 0)
 		for _, endpoint := range endpoints {
 			if endpoint.Channel == model.NotificationChannelEmail && endpoint.Active {
 				destinations = append(destinations, endpoint)
 			}
 		}
-		if len(destinations) == 0 && user.Email != "" {
-			destinations = append(destinations, model.NotificationEndpoint{Address: user.Email, Channel: model.NotificationChannelEmail, Active: true})
+		if len(destinations) == 0 {
+			user, err := s.users.FindByID(notification.UserID)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(user.Email) != "" {
+				destinations = append(destinations, model.NotificationEndpoint{
+					Address: user.Email, Channel: model.NotificationChannelEmail, Active: true,
+				})
+			}
+		}
+		if len(destinations) > 0 {
+			if rule := notificationSuppressionRuleForChannel(rules, model.NotificationChannelEmail); rule != nil {
+				if err := s.recordNotificationChannelSuppression(notification, rule, model.NotificationChannelEmail, now); err != nil {
+					return err
+				}
+			} else {
+				for _, endpoint := range destinations {
+					if err := s.createDelivery(notification, endpoint, availableAt); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	for _, channel := range []string{model.NotificationChannelPush, model.NotificationChannelWebhook} {
+		if !preference.Channels[channel] {
+			continue
+		}
+		if channel == model.NotificationChannelPush && strings.TrimSpace(s.config.PushProviderURL) == "" {
+			continue
+		}
+		destinations := make([]model.NotificationEndpoint, 0)
+		for _, endpoint := range endpoints {
+			if endpoint.Active && endpoint.Channel == channel {
+				destinations = append(destinations, endpoint)
+			}
+		}
+		if len(destinations) == 0 {
+			continue
+		}
+		if rule := notificationSuppressionRuleForChannel(rules, channel); rule != nil {
+			if err := s.recordNotificationChannelSuppression(notification, rule, channel, now); err != nil {
+				return err
+			}
+			continue
 		}
 		for _, endpoint := range destinations {
 			if err := s.createDelivery(notification, endpoint, availableAt); err != nil {
 				return err
 			}
-		}
-	}
-	endpoints, err := s.repo.ListEndpoints(notification.UserID)
-	if err != nil {
-		return err
-	}
-	for _, endpoint := range endpoints {
-		if !endpoint.Active || !preference.Channels[endpoint.Channel] {
-			continue
-		}
-		if endpoint.Channel == model.NotificationChannelPush && strings.TrimSpace(s.config.PushProviderURL) == "" {
-			continue
-		}
-		if endpoint.Channel != model.NotificationChannelPush && endpoint.Channel != model.NotificationChannelWebhook {
-			continue
-		}
-		if err := s.createDelivery(notification, endpoint, availableAt); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -613,6 +770,61 @@ func (s *NotificationService) createDelivery(notification model.Notification, en
 		AvailableAt: availableAt, CreatedAt: now, UpdatedAt: now,
 	})
 	return err
+}
+
+func (s *NotificationService) recordNotificationChannelSuppression(notification model.Notification, rule *model.NotificationSuppressionRule, channel string, now time.Time) error {
+	if notification.OrganizationID == nil || rule == nil {
+		return nil
+	}
+	userID := notification.UserID
+	notificationID := notification.ID
+	workspaceID := notification.WorkspaceID
+	ruleID := rule.ID
+	return s.repo.RecordSuppression(model.NotificationSuppressionEvent{
+		OrganizationID: *notification.OrganizationID,
+		WorkspaceID:    workspaceID,
+		UserID:         &userID,
+		NotificationID: &notificationID,
+		RuleID:         &ruleID,
+		EventType:      notification.EventType,
+		Channel:        channel,
+		Reason:         rule.Reason,
+		DedupeKey:      fmt.Sprintf("notification:%d:channel:%s:rule:%d", notification.ID, channel, rule.ID),
+		CreatedAt:      now,
+	})
+}
+
+func (s *NotificationService) recordSuppression(input model.NotificationCreate, notificationID *int64, rule *model.NotificationSuppressionRule, channel, reason, suffix string, now time.Time) error {
+	if input.OrganizationID == nil {
+		return nil
+	}
+	userID := input.UserID
+	var ruleID *int64
+	if rule != nil {
+		value := rule.ID
+		ruleID = &value
+	}
+	return s.repo.RecordSuppression(model.NotificationSuppressionEvent{
+		OrganizationID: *input.OrganizationID,
+		WorkspaceID:    input.WorkspaceID,
+		UserID:         &userID,
+		NotificationID: notificationID,
+		RuleID:         ruleID,
+		EventType:      input.EventType,
+		Channel:        channel,
+		Reason:         reason,
+		DedupeKey:      fmt.Sprintf("event:%s:%s:%s", input.DedupeKey, channel, suffix),
+		CreatedAt:      now,
+	})
+}
+
+func notificationSuppressionRuleForChannel(rules []model.NotificationSuppressionRule, channel string) *model.NotificationSuppressionRule {
+	for i := range rules {
+		if rules[i].Channel == channel {
+			return &rules[i]
+		}
+	}
+	return nil
 }
 
 func (s *NotificationService) render(organizationID *int64, key, locale, channel string, data map[string]any) (string, string, error) {
@@ -651,6 +863,20 @@ func (s *NotificationService) requireNotificationAdmin(userID, organizationID in
 	default:
 		return model.OrganizationMember{}, ErrNotificationForbidden
 	}
+}
+
+func validNotificationSuppressionChannel(channel string) bool {
+	switch channel {
+	case model.NotificationSuppressionChannelAll, model.NotificationChannelEmail,
+		model.NotificationChannelPush, model.NotificationChannelWebhook:
+		return true
+	default:
+		return false
+	}
+}
+
+func validNotificationSuppressionEvent(eventType string) bool {
+	return eventType == "*" || validNotificationTemplateKey(eventType)
 }
 
 func validNotificationChannel(channel string) bool {

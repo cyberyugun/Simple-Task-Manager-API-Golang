@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	ErrNotificationNotFound         = errors.New("notification not found")
-	ErrNotificationEndpointNotFound = errors.New("notification endpoint not found")
-	ErrNotificationTemplateNotFound = errors.New("notification template not found")
-	ErrNotificationDeliveryNotFound = errors.New("notification delivery not found")
+	ErrNotificationNotFound                = errors.New("notification not found")
+	ErrNotificationEndpointNotFound        = errors.New("notification endpoint not found")
+	ErrNotificationTemplateNotFound        = errors.New("notification template not found")
+	ErrNotificationDeliveryNotFound        = errors.New("notification delivery not found")
+	ErrNotificationSuppressionRuleNotFound = errors.New("notification suppression rule not found")
 )
 
 type NotificationRepository interface {
@@ -34,6 +35,13 @@ type NotificationRepository interface {
 	UpdateTemplate(item model.NotificationTemplate) (model.NotificationTemplate, error)
 	NextTemplateVersion(organizationID *int64, key, locale, channel string) (int, error)
 	GetPublishedTemplate(organizationID *int64, key, locale, channel string) (model.NotificationTemplate, error)
+
+	CreateSuppressionRule(item model.NotificationSuppressionRule) (model.NotificationSuppressionRule, error)
+	ListSuppressionRules(organizationID int64) ([]model.NotificationSuppressionRule, error)
+	DeleteSuppressionRule(organizationID, ruleID int64, at time.Time) error
+	ListActiveSuppressionRules(organizationID int64, eventType string, now time.Time) ([]model.NotificationSuppressionRule, error)
+	RecordSuppression(item model.NotificationSuppressionEvent) error
+	NotificationAnalytics(organizationID int64, since, now time.Time) (model.NotificationAnalyticsDashboard, error)
 
 	CreateNotification(item model.Notification) (model.Notification, bool, error)
 	GetNotification(userID, notificationID int64) (model.Notification, error)
@@ -58,29 +66,37 @@ type NotificationRepository interface {
 type InMemoryNotificationRepository struct {
 	mu sync.Mutex
 
-	preferences   map[int64]model.NotificationPreference
-	endpoints     map[int64]model.NotificationEndpoint
-	templates     map[int64]model.NotificationTemplate
-	notifications map[int64]model.Notification
-	deliveries    map[int64]model.NotificationDelivery
+	preferences       map[int64]model.NotificationPreference
+	endpoints         map[int64]model.NotificationEndpoint
+	templates         map[int64]model.NotificationTemplate
+	suppressionRules  map[int64]model.NotificationSuppressionRule
+	suppressionEvents map[int64]model.NotificationSuppressionEvent
+	notifications     map[int64]model.Notification
+	deliveries        map[int64]model.NotificationDelivery
 
-	nextEndpointID     int64
-	nextTemplateID     int64
-	nextNotificationID int64
-	nextDeliveryID     int64
+	nextEndpointID         int64
+	nextTemplateID         int64
+	nextSuppressionRuleID  int64
+	nextSuppressionEventID int64
+	nextNotificationID     int64
+	nextDeliveryID         int64
 }
 
 func NewInMemoryNotificationRepository() *InMemoryNotificationRepository {
 	return &InMemoryNotificationRepository{
-		preferences:        map[int64]model.NotificationPreference{},
-		endpoints:          map[int64]model.NotificationEndpoint{},
-		templates:          map[int64]model.NotificationTemplate{},
-		notifications:      map[int64]model.Notification{},
-		deliveries:         map[int64]model.NotificationDelivery{},
-		nextEndpointID:     1,
-		nextTemplateID:     1,
-		nextNotificationID: 1,
-		nextDeliveryID:     1,
+		preferences:            map[int64]model.NotificationPreference{},
+		endpoints:              map[int64]model.NotificationEndpoint{},
+		templates:              map[int64]model.NotificationTemplate{},
+		suppressionRules:       map[int64]model.NotificationSuppressionRule{},
+		suppressionEvents:      map[int64]model.NotificationSuppressionEvent{},
+		notifications:          map[int64]model.Notification{},
+		deliveries:             map[int64]model.NotificationDelivery{},
+		nextEndpointID:         1,
+		nextTemplateID:         1,
+		nextSuppressionRuleID:  1,
+		nextSuppressionEventID: 1,
+		nextNotificationID:     1,
+		nextDeliveryID:         1,
 	}
 }
 
@@ -273,6 +289,200 @@ func (r *InMemoryNotificationRepository) GetPublishedTemplate(organizationID *in
 		return model.NotificationTemplate{}, ErrNotificationTemplateNotFound
 	}
 	return best, nil
+}
+
+func (r *InMemoryNotificationRepository) CreateSuppressionRule(item model.NotificationSuppressionRule) (model.NotificationSuppressionRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item.ID = r.nextSuppressionRuleID
+	r.nextSuppressionRuleID++
+	r.suppressionRules[item.ID] = item
+	return item, nil
+}
+
+func (r *InMemoryNotificationRepository) ListSuppressionRules(organizationID int64) ([]model.NotificationSuppressionRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := make([]model.NotificationSuppressionRule, 0)
+	for _, item := range r.suppressionRules {
+		if item.OrganizationID == organizationID {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	return items, nil
+}
+
+func (r *InMemoryNotificationRepository) DeleteSuppressionRule(organizationID, ruleID int64, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item, ok := r.suppressionRules[ruleID]
+	if !ok || item.OrganizationID != organizationID || !item.Active {
+		return ErrNotificationSuppressionRuleNotFound
+	}
+	item.Active = false
+	item.UpdatedAt = at
+	r.suppressionRules[ruleID] = item
+	return nil
+}
+
+func (r *InMemoryNotificationRepository) ListActiveSuppressionRules(organizationID int64, eventType string, now time.Time) ([]model.NotificationSuppressionRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := make([]model.NotificationSuppressionRule, 0)
+	for _, item := range r.suppressionRules {
+		if item.OrganizationID != organizationID || !item.Active {
+			continue
+		}
+		if item.EventType != "*" && item.EventType != eventType {
+			continue
+		}
+		if item.StartsAt != nil && now.Before(*item.StartsAt) {
+			continue
+		}
+		if item.EndsAt != nil && !now.Before(*item.EndsAt) {
+			continue
+		}
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].EventType != items[j].EventType {
+			return items[i].EventType == eventType
+		}
+		return items[i].ID < items[j].ID
+	})
+	return items, nil
+}
+
+func (r *InMemoryNotificationRepository) RecordSuppression(item model.NotificationSuppressionEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.suppressionEvents {
+		if existing.OrganizationID == item.OrganizationID && existing.DedupeKey == item.DedupeKey {
+			return nil
+		}
+	}
+	item.ID = r.nextSuppressionEventID
+	r.nextSuppressionEventID++
+	r.suppressionEvents[item.ID] = item
+	return nil
+}
+
+func (r *InMemoryNotificationRepository) NotificationAnalytics(organizationID int64, since, now time.Time) (model.NotificationAnalyticsDashboard, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := model.NotificationAnalyticsDashboard{
+		OrganizationID: organizationID,
+		GeneratedAt:    now,
+		ByEvent:        []model.NotificationEventAnalytics{},
+		ByChannel:      []model.NotificationChannelAnalytics{},
+		Daily:          []model.NotificationDailyAnalytics{},
+	}
+	eventMetrics := map[string]*model.NotificationEventAnalytics{}
+	channelMetrics := map[string]*model.NotificationChannelAnalytics{}
+	dailyMetrics := map[string]*model.NotificationDailyAnalytics{}
+	start := time.Date(since.UTC().Year(), since.UTC().Month(), since.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	end := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		key := day.Format("2006-01-02")
+		dailyMetrics[key] = &model.NotificationDailyAnalytics{Date: key}
+	}
+	for _, item := range r.notifications {
+		if item.OrganizationID == nil || *item.OrganizationID != organizationID || item.CreatedAt.Before(since) || item.CreatedAt.After(now) {
+			continue
+		}
+		result.Summary.Generated++
+		metric := eventMetrics[item.EventType]
+		if metric == nil {
+			metric = &model.NotificationEventAnalytics{EventType: item.EventType}
+			eventMetrics[item.EventType] = metric
+		}
+		metric.Generated++
+		day := dailyMetrics[item.CreatedAt.UTC().Format("2006-01-02")]
+		if day != nil {
+			day.Generated++
+		}
+		if item.ReadAt != nil {
+			result.Summary.Read++
+			metric.Read++
+			if day != nil {
+				day.Read++
+			}
+		} else {
+			result.Summary.Unread++
+		}
+	}
+	for _, delivery := range r.deliveries {
+		notification, ok := r.notifications[delivery.NotificationID]
+		if !ok || notification.OrganizationID == nil || *notification.OrganizationID != organizationID ||
+			delivery.CreatedAt.Before(since) || delivery.CreatedAt.After(now) {
+			continue
+		}
+		result.Summary.Deliveries++
+		result.Summary.DeliveryAttempts += int64(delivery.Attempts)
+		metric := channelMetrics[delivery.Channel]
+		if metric == nil {
+			metric = &model.NotificationChannelAnalytics{Channel: delivery.Channel}
+			channelMetrics[delivery.Channel] = metric
+		}
+		metric.Deliveries++
+		metric.Attempts += int64(delivery.Attempts)
+		switch delivery.Status {
+		case model.NotificationDeliverySent:
+			result.Summary.Sent++
+			metric.Sent++
+			if delivery.SentAt != nil {
+				if day := dailyMetrics[delivery.SentAt.UTC().Format("2006-01-02")]; day != nil {
+					day.Sent++
+				}
+			}
+		case model.NotificationDeliveryRetry:
+			result.Summary.Retrying++
+			metric.Retrying++
+		case model.NotificationDeliveryDeadLetter:
+			result.Summary.DeadLetter++
+			metric.DeadLetter++
+			if day := dailyMetrics[delivery.UpdatedAt.UTC().Format("2006-01-02")]; day != nil {
+				day.DeadLetter++
+			}
+		}
+	}
+	for _, event := range r.suppressionEvents {
+		if event.OrganizationID != organizationID || event.CreatedAt.Before(since) || event.CreatedAt.After(now) {
+			continue
+		}
+		result.Summary.Suppressed++
+		eventMetric := eventMetrics[event.EventType]
+		if eventMetric == nil {
+			eventMetric = &model.NotificationEventAnalytics{EventType: event.EventType}
+			eventMetrics[event.EventType] = eventMetric
+		}
+		eventMetric.Suppressed++
+		channelMetric := channelMetrics[event.Channel]
+		if channelMetric == nil {
+			channelMetric = &model.NotificationChannelAnalytics{Channel: event.Channel}
+			channelMetrics[event.Channel] = channelMetric
+		}
+		channelMetric.Suppressed++
+		if day := dailyMetrics[event.CreatedAt.UTC().Format("2006-01-02")]; day != nil {
+			day.Suppressed++
+		}
+	}
+	if result.Summary.Deliveries > 0 {
+		result.Summary.DeliverySuccessRate = float64(result.Summary.Sent) / float64(result.Summary.Deliveries)
+	}
+	for _, metric := range eventMetrics {
+		result.ByEvent = append(result.ByEvent, *metric)
+	}
+	sort.Slice(result.ByEvent, func(i, j int) bool { return result.ByEvent[i].EventType < result.ByEvent[j].EventType })
+	for _, metric := range channelMetrics {
+		result.ByChannel = append(result.ByChannel, *metric)
+	}
+	sort.Slice(result.ByChannel, func(i, j int) bool { return result.ByChannel[i].Channel < result.ByChannel[j].Channel })
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		result.Daily = append(result.Daily, *dailyMetrics[day.Format("2006-01-02")])
+	}
+	return result, nil
 }
 
 func (r *InMemoryNotificationRepository) CreateNotification(item model.Notification) (model.Notification, bool, error) {

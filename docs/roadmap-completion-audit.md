@@ -4,7 +4,7 @@ This audit compares the repository at the Phase 45 merge against the master road
 
 ## Executive result
 
-The repository has implementation history through Phase 45 plus post-roadmap hardening, migrations through `032_report_retention_aggregation.sql`, OpenAPI 1.10.0, generated SDKs, PostgreSQL integration coverage, Docker runtime smoke, API contract governance and security CI.
+The repository has implementation history through Phase 45 plus post-roadmap hardening, migrations through `033_notification_analytics_suppression.sql`, OpenAPI 1.10.0, generated SDKs, PostgreSQL integration coverage, Docker runtime smoke, API contract governance and security CI.
 
 The remaining work is not a missing Phase 45 feature. The material gaps are production adapters and external control-plane execution behind several provider-neutral boundaries.
 
@@ -15,7 +15,7 @@ The remaining work is not a missing Phase 45 feature. The material gaps are prod
 | Phase 1–32 historical platform | Delivered baseline recorded by the master roadmap and present in current architecture | Complete at repository level |
 | Phase 33 Task Management 2.0 | Rich task lifecycle, collaboration, recurrence, dependencies, labels, custom-field foundation, audit/events | Complete at repository level |
 | Phase 34 Workflow Builder | Versioned DAG, approvals, delay/branch/parallel/join, checkpoint/resume, retry/compensation and observability | Complete at repository level |
-| Phase 35 Notifications | In-app/email abstraction, preferences, quiet hours, digest, retries/DLQ and reminders | Complete at repository level |
+| Phase 35 Notifications | In-app/email abstraction, preferences, quiet hours, digest, retries/DLQ, reminders, template localization/versioning, organization suppression rules and delivery/suppression analytics | Complete at repository level |
 | Phase 36 Files & Content Security | Direct upload contract, validation, scan states, quotas, governance, attachment version chains, reviewed quarantine release, preview pipeline, native scanner/storage adapters and live-provider contract harness | Repository hardening complete; provider-environment evidence remains deployment-specific |
 | Phase 37 Search & Analytics | PostgreSQL FTS, saved views, dashboards, exports, scheduled reports, configurable field/recency ranking, bounded symmetric synonym expansion, and opt-in report-run retention with daily historical aggregation | Complete at repository level |
 | Phase 38 Connector OAuth & Secret Governance | OAuth PKCE, refresh, rotation, envelope encryption, health, audit and native Vault/AWS/Azure/GCP secret backends | Repository hardening complete; live provider validation remains deployment-specific |
@@ -34,6 +34,8 @@ Phase 37's roadmap recommendation for search synonyms and ranking controls is no
 Phase 37's remaining analytics retention/aggregation recommendation is also implemented. Operators explicitly opt in to payload and detail retention windows; terminal report payloads are purged first, expired detailed report runs are aggregated into UTC daily workspace/format/status metrics, and only rows carrying an aggregation marker are deleted. Original payload size, row volume, error counts and duration totals survive detail deletion, while pending/running report executions remain untouched.
 
 Phase 36's remaining product recommendations are also closed at repository level: attachment version chains are persisted with previous-version links, owner/admin quarantine release is audited and blocked for infected content, and an optional signed remote preview gateway supports image/PDF thumbnail generation without pulling raw object bytes into the core API process.
+
+Phase 35's remaining product recommendation is also closed at repository level: organization notification administrators can apply exact-event or wildcard suppression rules to all notification generation or individual external channels, while durable suppression events feed organization analytics for generation, read state, delivery outcomes, attempts, dead-letter volume and UTC trends.
 
 ## Confirmed production-hardening gaps
 

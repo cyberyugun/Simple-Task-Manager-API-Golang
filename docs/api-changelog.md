@@ -1,5 +1,20 @@
 # API Changelog
 
+## 1.11.0 — Phase 35 post-roadmap notification hardening
+
+Compatibility line: **v1**.
+
+Additive notification analytics and suppression-rule release:
+
+- adds organization-scoped notification suppression rules with exact-event or wildcard matching
+- supports whole-notification suppression plus email, push, and webhook route suppression
+- adds optional suppression start/end windows and required operator reasons
+- records idempotent suppression events for rule enforcement and user event-preference suppression
+- adds organization notification analytics for generated/read/unread counts, delivery states, attempts, suppression totals, event/channel breakdowns, and UTC daily trends
+- keeps suppression administration and analytics restricted to organization notification administrators
+- preserves existing notification preference, quiet-hours, digest, retry/DLQ, template, and delivery contracts
+- preserves all existing v1 paths, operation IDs, request requirements and response fields
+
 ## 1.10.0 — Phase 36 post-roadmap attachment hardening
 
 Compatibility line: **v1**.

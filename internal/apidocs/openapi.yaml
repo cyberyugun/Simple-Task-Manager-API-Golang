@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.10.0
+  version: 1.11.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -3586,6 +3586,68 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /api/organizations/{id}/notification-suppression-rules:
+    get:
+      tags: [Enterprise Notifications]
+      summary: List organization notification suppression rules
+      operationId: listNotificationSuppressionRules
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification suppression rules }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Enterprise Notifications]
+      summary: Create an organization notification suppression rule
+      operationId: createNotificationSuppressionRule
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                event_type:
+                  type: string
+                  description: Exact event type or * for all events. Defaults to *.
+                channel:
+                  type: string
+                  enum: [all, email, push, webhook]
+                  description: all suppresses notification creation; a concrete external channel suppresses only that route.
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+                starts_at: { type: string, format: date-time }
+                ends_at: { type: string, format: date-time }
+      responses:
+        '201': { description: Notification suppression rule created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/organizations/{id}/notification-suppression-rules/{rule_id}:
+    delete:
+      tags: [Enterprise Notifications]
+      summary: Disable an organization notification suppression rule
+      operationId: deleteNotificationSuppressionRule
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification suppression rule disabled }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/organizations/{id}/notification-analytics:
+    get:
+      tags: [Enterprise Notifications]
+      summary: Get organization notification generation delivery and suppression analytics
+      operationId: getNotificationAnalytics
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: days
+          required: false
+          schema: { type: integer, minimum: 7, maximum: 365, default: 30 }
+      responses:
+        '200': { description: Notification analytics dashboard }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/integrations/connectors:
     get:
