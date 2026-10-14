@@ -21,7 +21,9 @@ The platform supports:
 - manual dead-letter replay;
 - per-user deduplication keys;
 - organization-scoped template draft/version/publish lifecycle;
-- locale fallback and built-in English/Indonesian templates.
+- locale fallback and built-in English/Indonesian templates;
+- organization-scoped suppression rules with bounded time windows;
+- notification generation, delivery, retry/dead-letter, read and suppression analytics.
 
 ## Event fanout
 
@@ -137,6 +139,37 @@ Built-in template keys currently include:
 
 Template variables use deterministic `{{variable}}` substitution. Arbitrary code execution is not supported.
 
+## Notification suppression rules
+
+Organization owners, admins, and delegated admins can create suppression rules for an exact event type or `*` wildcard. Rules are evaluated after user preferences and organization resolution but before notification fanout.
+
+Supported rule channels are:
+
+- `all`: suppress the notification before the in-app record or any external delivery is created;
+- `email`: keep the in-app record but suppress email routing;
+- `push`: keep the in-app record but suppress push routing;
+- `webhook`: keep the in-app record but suppress notification-webhook routing.
+
+Rules may define `starts_at` and `ends_at`; omitted boundaries are open-ended. Every rule requires a reason. Deleting a rule disables it instead of erasing the historical rule row.
+
+Suppression enforcement writes an idempotent analytics event keyed to the notification/event dedupe boundary. User event-preference suppression is recorded for organization-scoped events as well. This makes retries safe without double-counting suppressions.
+
+External channel fanout remains idempotent. If notification creation succeeds but external fanout is retried, existing notification rows can be revisited and missing delivery rows are created through the existing unique delivery constraint.
+
+## Notification analytics
+
+`GET /api/organizations/{id}/notification-analytics?days=30` exposes a 7–365 day UTC analytics window for organization notification administrators.
+
+The dashboard includes:
+
+- generated, read, unread, and suppressed notification counts;
+- delivery totals, sent/retry/dead-letter counts, delivery attempts and success rate;
+- per-event generated/read/suppressed metrics;
+- per-channel delivery and suppression metrics;
+- UTC daily generated/read/suppressed/sent/dead-letter trends.
+
+Analytics are derived from durable notification, delivery, and suppression records. Raw destinations, provider tokens, webhook secrets, and message payload bodies are not exposed by the analytics endpoint.
+
 ## API
 
 User communication endpoints:
@@ -160,9 +193,15 @@ POST   /api/notifications/deliveries/{delivery_id}/retry
 Organization template governance:
 
 ```text
-GET  /api/organizations/{id}/notification-templates
-POST /api/organizations/{id}/notification-templates
-POST /api/organizations/{id}/notification-templates/{template_id}/publish
+GET    /api/organizations/{id}/notification-templates
+POST   /api/organizations/{id}/notification-templates
+POST   /api/organizations/{id}/notification-templates/{template_id}/publish
+
+GET    /api/organizations/{id}/notification-suppression-rules
+POST   /api/organizations/{id}/notification-suppression-rules
+DELETE /api/organizations/{id}/notification-suppression-rules/{rule_id}
+
+GET    /api/organizations/{id}/notification-analytics?days=30
 ```
 
 ## Persistence
@@ -174,6 +213,12 @@ Migration `020_notification_reminder_communication.sql` adds:
 - `notification_templates`
 - `notifications`
 - `notification_deliveries`
+
+Post-roadmap migration `033_notification_analytics_suppression.sql` adds:
+
+- `notification_suppression_rules`
+- `notification_suppression_events`
+- indexes for active rule matching and organization/event/channel analytics.
 
 ## Worker configuration
 
