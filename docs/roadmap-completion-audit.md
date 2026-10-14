@@ -17,7 +17,7 @@ The remaining work is not a missing Phase 45 feature. The material gaps are prod
 | Phase 34 Workflow Builder | Versioned DAG, approvals, delay/branch/parallel/join, checkpoint/resume, retry/compensation and observability | Complete at repository level |
 | Phase 35 Notifications | In-app/email abstraction, preferences, quiet hours, digest, retries/DLQ and reminders | Complete at repository level |
 | Phase 36 Files & Content Security | Direct upload contract, validation, scan states, quotas, governance, native scanner/storage adapters and live-provider contract harness | Repository hardening complete; provider-environment evidence remains deployment-specific |
-| Phase 37 Search & Analytics | PostgreSQL FTS, saved views, dashboards, exports and scheduled reports | Complete at repository level |
+| Phase 37 Search & Analytics | PostgreSQL FTS, saved views, dashboards, exports, scheduled reports, configurable field/recency ranking and bounded symmetric synonym expansion | Complete at repository level |
 | Phase 38 Connector OAuth & Secret Governance | OAuth PKCE, refresh, rotation, envelope encryption, health, audit and native Vault/AWS/Azure/GCP secret backends | Repository hardening complete; live provider validation remains deployment-specific |
 | Phase 39 Event Fabric | Schema registry, compatibility, routing, durable subscriptions, replay/DLQ and outbox adapter | Complete at repository level; external buses are optional |
 | Phase 40 Developer Platform | Apps, credentials, scopes/quotas, sandbox, webhook console, analytics and generated SDKs | Complete at repository level |
@@ -26,6 +26,10 @@ The remaining work is not a missing Phase 45 feature. The material gaps are prod
 | Phase 43 Zero Trust | Workload mTLS, certificate rotation, adaptive risk, revocation, audit checkpoints, WORM/SIEM | Complete at repository level |
 | Phase 44 Data Platform | Incremental checkpoints, masking, lineage, schemas, export jobs, BI contracts, dashboard and native BigQuery/Snowflake/Redshift/Databricks delivery | Repository hardening complete; live provider validation remains deployment-specific |
 | Phase 45 Marketplace | Publisher/app review, install/uninstall, scoped tokens, event subscriptions, quotas, packs and audit | Complete at repository level |
+
+## Post-roadmap product hardening
+
+Phase 37's roadmap recommendation for search synonyms and ranking controls is now implemented without changing the v1 API. Search relevance is deployment-configurable, synonym expansion is bounded and symmetric, PostgreSQL full-text search remains the primary matcher, and the in-memory implementation follows the same relevance model for test/runtime parity.
 
 ## Confirmed production-hardening gaps
 
