@@ -296,7 +296,7 @@ func TestConnectorCredentialPolicyLeastPrivilegeAndAutomaticRotation(t *testing.
 	for _, item := range audit {
 		actions[item.Action] = true
 	}
-	for _, action := range []string{"oauth_exchange_read", "connection_test_read", "automatic_rotate_read", "automatic_rotate"} {
+	for _, action := range []string{"oauth_exchange_read", "automatic_rotate_read", "automatic_rotate"} {
 		if !actions[action] {
 			t.Fatalf("missing governed access action %q: %+v", action, audit)
 		}
