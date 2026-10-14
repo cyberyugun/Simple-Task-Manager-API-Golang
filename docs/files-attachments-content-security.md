@@ -54,7 +54,22 @@ After the direct upload, the client calls the completion endpoint with the obser
 
 ## Integrity and deduplication
 
-Each attachment stores SHA-256 and size metadata. Optional workspace-local deduplication can create a new attachment reference that reuses a clean object with the same digest and size.
+Each attachment stores SHA-256 and size metadata. Optional workspace-local deduplication can create a new attachment reference that reuses a clean object with the same digest and size. Deletion now checks live object references before deleting a deduplicated source object, so removing one logical attachment does not break another attachment that still points to the same object.
+
+## Attachment versioning
+
+Every service-created attachment belongs to an opaque \`version_group_id\`. The first upload is version 1; creating a version from an existing attachment inherits its task/comment association, records \`previous_attachment_id\`, and allocates the next version number in that group.
+
+Version history is immutable metadata: uploading a new version creates a new attachment row and object rather than overwriting the previous object. Existing attachment downloads remain addressable according to their own scan/governance state.
+
+API:
+
+\`\`\`text
+GET  /api/attachments/{attachment_id}/versions
+POST /api/attachments/{attachment_id}/versions
+\`\`\`
+
+The POST body contains only the new file metadata (\`file_name\`, \`content_type\`, \`size_bytes\`, \`sha256\`); task/comment scope comes from the prior version.
 
 ## Malware scanning
 
@@ -82,6 +97,42 @@ uploaded -> scanning -> clean
 
 Only \`clean\` attachments can receive download URLs.
 
+## Quarantine and reviewed release
+
+Scanner transport/protocol failure automatically places the attachment in \`quarantined\` state. Workspace owners/admins may also manually quarantine a non-deleted attachment with a required reason.
+
+A quarantined attachment remains blocked from both source downloads and preview downloads. Owner/admin release requires a non-empty review note and records the reviewer plus release timestamp. The release endpoint applies only to \`quarantined\` content; malware-positive \`infected\` content cannot be released through this path.
+
+\`\`\`text
+POST /api/attachments/{attachment_id}/quarantine
+POST /api/attachments/{attachment_id}/quarantine/release
+\`\`\`
+
+Audit events retain the quarantine reason and reviewed-release note.
+
+## Thumbnail and preview pipeline
+
+Preview generation is optional and runs only after an attachment reaches \`clean\`. Supported source MIME types are JPEG, PNG, WebP, GIF and PDF.
+
+When \`ATTACHMENT_PREVIEW_URL\` is configured, the worker sends source-object metadata plus a deterministic destination object key to a remote preview gateway. The gateway uses its own storage identity to read the source and write a raster preview. The core API never downloads raw source bytes for preview generation.
+
+The gateway client:
+
+- requires HTTPS outside explicit insecure-development mode;
+- refuses redirects;
+- supports bearer authentication and HMAC-SHA256 request signing;
+- bounds response size and validates the exact requested destination key;
+- accepts only PNG/JPEG/WebP preview results with bounded dimensions;
+- records \`pending -> processing -> ready|failed\` preview state independently from malware scan state.
+
+A ready preview is retrieved through:
+
+\`\`\`text
+POST /api/attachments/{attachment_id}/preview
+\`\`\`
+
+The returned URL uses the same short-lived object-store presigning boundary as normal downloads.
+
 ## Governance
 
 Attachment metadata includes:
@@ -102,8 +153,13 @@ Workspace owners/admins can update attachment governance metadata. Workspace aud
 POST   /api/attachments/uploads
 GET    /api/attachments?task_id=&comment_id=
 GET    /api/attachments/usage
+GET    /api/attachments/{attachment_id}/versions
+POST   /api/attachments/{attachment_id}/versions
 POST   /api/attachments/{attachment_id}/complete
 POST   /api/attachments/{attachment_id}/download
+POST   /api/attachments/{attachment_id}/preview
+POST   /api/attachments/{attachment_id}/quarantine
+POST   /api/attachments/{attachment_id}/quarantine/release
 PATCH  /api/attachments/{attachment_id}/governance
 DELETE /api/attachments/{attachment_id}
 \`\`\`
@@ -127,6 +183,10 @@ ATTACHMENT_SCANNER_URL=https://scanner.internal.example/v1/scan
 ATTACHMENT_SCANNER_REQUIRED=true
 ATTACHMENT_SCANNER_BEARER_TOKEN=<optional>
 ATTACHMENT_SCANNER_SIGNING_SECRET=<recommended>
+ATTACHMENT_PREVIEW_URL=https://preview.internal.example/v1/render
+ATTACHMENT_PREVIEW_REQUIRED=false
+ATTACHMENT_PREVIEW_BEARER_TOKEN=<optional>
+ATTACHMENT_PREVIEW_SIGNING_SECRET=<recommended>
 ATTACHMENT_SCAN_POLL_INTERVAL=5s
 ATTACHMENT_RETENTION_POLL_INTERVAL=1h
 ATTACHMENT_BATCH_SIZE=50
@@ -150,7 +210,7 @@ A response with \`clean:false\` marks the attachment infected. HTTP errors, time
 
 ## Persistence
 
-Migration \`021_file_attachment_platform.sql\` adds the \`attachments\` table with indexes for:
+Migration \`021_file_attachment_platform.sql\` adds the base \`attachments\` table. Post-roadmap migration \`031_attachment_versioning_preview_quarantine.sql\` adds version-chain, reviewed-quarantine and preview lifecycle metadata.\n\nIndexes cover:
 
 - workspace/task listing;
 - workspace/comment listing;
@@ -160,4 +220,4 @@ Migration \`021_file_attachment_platform.sql\` adds the \`attachments\` table wi
 
 ## Definition of done
 
-Phase 36 is considered complete when direct-upload metadata and presigning, provider abstraction, task/comment attachment links, MIME/size/hash validation, quota accounting, scanning states, download gating, legal hold/retention integration, PostgreSQL parity, OpenAPI, unit/integration coverage, and Docker runtime smoke are green.
+Phase 36 is considered complete when direct-upload metadata and presigning, provider abstraction, task/comment attachment links, MIME/size/hash validation, quota accounting, scanning states, download gating, legal hold/retention integration, attachment version chains, reviewed quarantine release, optional preview generation, PostgreSQL parity, OpenAPI, unit/integration coverage, and Docker runtime smoke are green.
