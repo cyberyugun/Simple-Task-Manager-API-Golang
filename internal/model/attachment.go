@@ -11,6 +11,12 @@ const (
 	AttachmentStatusQuarantine = "quarantined"
 	AttachmentStatusDeleted    = "deleted"
 
+	AttachmentPreviewStatusNone       = "none"
+	AttachmentPreviewStatusPending    = "pending"
+	AttachmentPreviewStatusProcessing = "processing"
+	AttachmentPreviewStatusReady      = "ready"
+	AttachmentPreviewStatusFailed     = "failed"
+
 	AttachmentProviderS3           = "s3"
 	AttachmentProviderS3Compatible = "s3_compatible"
 	AttachmentProviderAzureBlob    = "azure_blob"
@@ -34,16 +40,30 @@ type Attachment struct {
 	Status           string     `json:"status"`
 	ScanEngine       string     `json:"scan_engine,omitempty"`
 	ScanMessage      string     `json:"scan_message,omitempty"`
-	Encryption       string     `json:"encryption,omitempty"`
-	EncryptionKeyID  string     `json:"encryption_key_id,omitempty"`
-	Version          int        `json:"version"`
-	LegalHold        bool       `json:"legal_hold"`
-	RetainUntil      *time.Time `json:"retain_until,omitempty"`
-	UploadedAt       *time.Time `json:"uploaded_at,omitempty"`
-	ScannedAt        *time.Time `json:"scanned_at,omitempty"`
-	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	Encryption           string     `json:"encryption,omitempty"`
+	EncryptionKeyID      string     `json:"encryption_key_id,omitempty"`
+	Version              int        `json:"version"`
+	VersionGroupID       string     `json:"version_group_id"`
+	PreviousAttachmentID *int64     `json:"previous_attachment_id,omitempty"`
+	LegalHold            bool       `json:"legal_hold"`
+	RetainUntil          *time.Time `json:"retain_until,omitempty"`
+	QuarantineReason     string     `json:"quarantine_reason,omitempty"`
+	ReleasedByUserID     *int64     `json:"released_by_user_id,omitempty"`
+	ReleasedAt           *time.Time `json:"released_at,omitempty"`
+	ReleaseNote          string     `json:"release_note,omitempty"`
+	PreviewStatus        string     `json:"preview_status"`
+	PreviewObjectKey     string     `json:"preview_object_key,omitempty"`
+	PreviewContentType   string     `json:"preview_content_type,omitempty"`
+	PreviewWidth         int        `json:"preview_width,omitempty"`
+	PreviewHeight        int        `json:"preview_height,omitempty"`
+	PreviewEngine        string     `json:"preview_engine,omitempty"`
+	PreviewMessage       string     `json:"preview_message,omitempty"`
+	PreviewCreatedAt     *time.Time `json:"preview_created_at,omitempty"`
+	UploadedAt           *time.Time `json:"uploaded_at,omitempty"`
+	ScannedAt            *time.Time `json:"scanned_at,omitempty"`
+	DeletedAt            *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 type AttachmentUploadRequest struct {
@@ -58,6 +78,22 @@ type AttachmentUploadRequest struct {
 type CompleteAttachmentUploadRequest struct {
 	SizeBytes int64  `json:"size_bytes"`
 	SHA256    string `json:"sha256"`
+}
+
+
+type AttachmentVersionUploadRequest struct {
+	FileName    string `json:"file_name"`
+	ContentType string `json:"content_type"`
+	SizeBytes   int64  `json:"size_bytes"`
+	SHA256      string `json:"sha256"`
+}
+
+type AttachmentQuarantineRequest struct {
+	Reason string `json:"reason"`
+}
+
+type AttachmentReleaseRequest struct {
+	Note string `json:"note"`
 }
 
 type AttachmentUploadSession struct {
@@ -78,6 +114,22 @@ type AttachmentScanResult struct {
 	Clean   bool   `json:"clean"`
 	Engine  string `json:"engine"`
 	Message string `json:"message,omitempty"`
+}
+
+
+type AttachmentPreviewResult struct {
+	ObjectKey   string `json:"object_key"`
+	ContentType string `json:"content_type"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Engine      string `json:"engine"`
+	Message     string `json:"message,omitempty"`
+}
+
+type AttachmentPreviewDownload struct {
+	Attachment Attachment `json:"attachment"`
+	PreviewURL string     `json:"preview_url"`
+	ExpiresAt  time.Time  `json:"expires_at"`
 }
 
 type AttachmentUsage struct {
