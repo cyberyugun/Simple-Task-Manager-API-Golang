@@ -35,6 +35,17 @@ type SearchAnalyticsRepository interface {
 	CreateReportRun(item model.ReportRun) (model.ReportRun, error)
 	CompleteReportRun(item model.ReportRun) (model.ReportRun, error)
 	ListReportRuns(workspaceID, userID int64, limit int) ([]model.ReportRunSummary, error)
+	PurgeReportRunPayloads(before time.Time, limit int, now time.Time) (int64, error)
+	AggregateReportRuns(before time.Time, limit int, now time.Time) (int64, error)
+	DeleteAggregatedReportRuns(before time.Time, limit int) (int64, error)
+	ListReportRunAggregates(workspaceID int64, fromDay time.Time) ([]model.ReportRunDailyAggregate, error)
+}
+
+type reportAggregateKey struct {
+	WorkspaceID int64
+	Day         string
+	Format      string
+	Status      string
 }
 
 type InMemorySearchAnalyticsRepository struct {
@@ -45,6 +56,7 @@ type InMemorySearchAnalyticsRepository struct {
 	savedViews map[int64]model.SavedSearchView
 	schedules  map[int64]model.ScheduledReport
 	runs       map[int64]model.ReportRun
+	aggregates map[reportAggregateKey]model.ReportRunDailyAggregate
 
 	nextViewID     int64
 	nextScheduleID int64
@@ -57,6 +69,7 @@ func NewInMemorySearchAnalyticsRepository(tasks TaskRepository) *InMemorySearchA
 		savedViews:     map[int64]model.SavedSearchView{},
 		schedules:      map[int64]model.ScheduledReport{},
 		runs:           map[int64]model.ReportRun{},
+		aggregates:     map[reportAggregateKey]model.ReportRunDailyAggregate{},
 		nextViewID:     1,
 		nextScheduleID: 1,
 		nextRunID:      1,
@@ -377,6 +390,9 @@ func (r *InMemorySearchAnalyticsRepository) CreateReportRun(item model.ReportRun
 	item.ID = r.nextRunID
 	r.nextRunID++
 	item.Payload = append([]byte(nil), item.Payload...)
+	if item.PayloadSizeBytes == 0 && len(item.Payload) > 0 {
+		item.PayloadSizeBytes = int64(len(item.Payload))
+	}
 	r.runs[item.ID] = item
 	return item, nil
 }
@@ -388,6 +404,9 @@ func (r *InMemorySearchAnalyticsRepository) CompleteReportRun(item model.ReportR
 		return model.ReportRun{}, ErrReportRunNotFound
 	}
 	item.Payload = append([]byte(nil), item.Payload...)
+	if len(item.Payload) > 0 {
+		item.PayloadSizeBytes = int64(len(item.Payload))
+	}
 	r.runs[item.ID] = item
 	return item, nil
 }
@@ -408,6 +427,144 @@ func (r *InMemorySearchAnalyticsRepository) ListReportRuns(workspaceID, userID i
 		items = items[:limit]
 	}
 	return items, nil
+}
+
+func (r *InMemorySearchAnalyticsRepository) PurgeReportRunPayloads(before time.Time, limit int, now time.Time) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]int64, 0)
+	for id, run := range r.runs {
+		if !terminalReportRun(run.Status) || !run.CreatedAt.Before(before) || len(run.Payload) == 0 {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		left, right := r.runs[ids[i]], r.runs[ids[j]]
+		if left.CreatedAt.Equal(right.CreatedAt) {
+			return ids[i] < ids[j]
+		}
+		return left.CreatedAt.Before(right.CreatedAt)
+	})
+	if limit > 0 && len(ids) > limit {
+		ids = ids[:limit]
+	}
+	for _, id := range ids {
+		run := r.runs[id]
+		if run.PayloadSizeBytes == 0 {
+			run.PayloadSizeBytes = int64(len(run.Payload))
+		}
+		run.Payload = nil
+		stamp := now
+		run.PayloadPurgedAt = &stamp
+		r.runs[id] = run
+	}
+	return int64(len(ids)), nil
+}
+
+func (r *InMemorySearchAnalyticsRepository) AggregateReportRuns(before time.Time, limit int, now time.Time) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]int64, 0)
+	for id, run := range r.runs {
+		if !terminalReportRun(run.Status) || !run.CreatedAt.Before(before) || run.AggregatedAt != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		left, right := r.runs[ids[i]], r.runs[ids[j]]
+		if left.CreatedAt.Equal(right.CreatedAt) {
+			return ids[i] < ids[j]
+		}
+		return left.CreatedAt.Before(right.CreatedAt)
+	})
+	if limit > 0 && len(ids) > limit {
+		ids = ids[:limit]
+	}
+	for _, id := range ids {
+		run := r.runs[id]
+		day := time.Date(run.CreatedAt.UTC().Year(), run.CreatedAt.UTC().Month(), run.CreatedAt.UTC().Day(), 0, 0, 0, 0, time.UTC)
+		key := reportAggregateKey{
+			WorkspaceID: run.WorkspaceID,
+			Day:         day.Format("2006-01-02"),
+			Format:      run.Format,
+			Status:      run.Status,
+		}
+		aggregate := r.aggregates[key]
+		aggregate.WorkspaceID = run.WorkspaceID
+		aggregate.Day = day
+		aggregate.Format = run.Format
+		aggregate.Status = run.Status
+		aggregate.RunCount++
+		aggregate.TotalRowCount += int64(run.RowCount)
+		aggregate.PayloadSizeBytes += run.PayloadSizeBytes
+		if run.Status == model.ReportRunFailed {
+			aggregate.ErrorCount++
+		}
+		if run.FinishedAt != nil && !run.FinishedAt.Before(run.StartedAt) {
+			aggregate.DurationMillis += run.FinishedAt.Sub(run.StartedAt).Milliseconds()
+		}
+		aggregate.UpdatedAt = now
+		r.aggregates[key] = aggregate
+		stamp := now
+		run.AggregatedAt = &stamp
+		r.runs[id] = run
+	}
+	return int64(len(ids)), nil
+}
+
+func (r *InMemorySearchAnalyticsRepository) DeleteAggregatedReportRuns(before time.Time, limit int) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]int64, 0)
+	for id, run := range r.runs {
+		if !terminalReportRun(run.Status) || !run.CreatedAt.Before(before) || run.AggregatedAt == nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		left, right := r.runs[ids[i]], r.runs[ids[j]]
+		if left.CreatedAt.Equal(right.CreatedAt) {
+			return ids[i] < ids[j]
+		}
+		return left.CreatedAt.Before(right.CreatedAt)
+	})
+	if limit > 0 && len(ids) > limit {
+		ids = ids[:limit]
+	}
+	for _, id := range ids {
+		delete(r.runs, id)
+	}
+	return int64(len(ids)), nil
+}
+
+func (r *InMemorySearchAnalyticsRepository) ListReportRunAggregates(workspaceID int64, fromDay time.Time) ([]model.ReportRunDailyAggregate, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cutoff := time.Date(fromDay.UTC().Year(), fromDay.UTC().Month(), fromDay.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	items := make([]model.ReportRunDailyAggregate, 0)
+	for _, aggregate := range r.aggregates {
+		if aggregate.WorkspaceID != workspaceID || aggregate.Day.Before(cutoff) {
+			continue
+		}
+		items = append(items, aggregate)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Day.Equal(items[j].Day) {
+			if items[i].Format == items[j].Format {
+				return items[i].Status < items[j].Status
+			}
+			return items[i].Format < items[j].Format
+		}
+		return items[i].Day.Before(items[j].Day)
+	})
+	return items, nil
+}
+
+func terminalReportRun(status string) bool {
+	return status == model.ReportRunSucceeded || status == model.ReportRunFailed
 }
 
 func cloneAnalyticsMap(value map[string]any) map[string]any {
