@@ -1097,7 +1097,8 @@ jobs:
 
           notification_workspace="$(curl --fail --silent -X POST http://localhost:8080/api/workspaces -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"name":"CI Notification Workspace"}')"
           notification_workspace_id="$(printf '%s' "$notification_workspace" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')"
-          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workspaces" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "{"workspace_id":$notification_workspace_id}" >/dev/null
+          attach_workspace_payload="$(python3 -c 'import json,sys; print(json.dumps({"workspace_id":int(sys.argv[1])}))' "$notification_workspace_id")"
+          curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/workspaces" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$attach_workspace_payload" >/dev/null
 
           suppression_rule="$(curl --fail --silent -X POST "http://localhost:8080/api/organizations/$organization_id/notification-suppression-rules" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{"event_type":"task.assigned","channel":"webhook","reason":"CI notification suppression smoke"}')"
           suppression_rule_id="$(printf '%s' "$suppression_rule" | python3 -c 'import json,sys; r=json.load(sys.stdin)["data"]; assert r["event_type"]=="task.assigned"; assert r["channel"]=="webhook"; assert r["active"] is True; print(r["id"])')"
