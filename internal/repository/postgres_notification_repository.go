@@ -337,6 +337,328 @@ func (r *PostgresNotificationRepository) GetPublishedTemplate(organizationID *in
 	return item, err
 }
 
+type notificationSuppressionRuleScanner interface {
+	Scan(...any) error
+}
+
+func scanNotificationSuppressionRule(scanner notificationSuppressionRuleScanner) (model.NotificationSuppressionRule, error) {
+	var item model.NotificationSuppressionRule
+	err := scanner.Scan(
+		&item.ID, &item.OrganizationID, &item.EventType, &item.Channel, &item.Reason,
+		&item.Active, &item.StartsAt, &item.EndsAt, &item.CreatedByUserID,
+		&item.CreatedAt, &item.UpdatedAt,
+	)
+	return item, err
+}
+
+func (r *PostgresNotificationRepository) CreateSuppressionRule(item model.NotificationSuppressionRule) (model.NotificationSuppressionRule, error) {
+	return scanNotificationSuppressionRule(r.db.QueryRow(`
+		INSERT INTO notification_suppression_rules (
+			organization_id,event_type,channel,reason,active,starts_at,ends_at,
+			created_by_user_id,created_at,updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		RETURNING id,organization_id,event_type,channel,reason,active,starts_at,ends_at,
+			created_by_user_id,created_at,updated_at
+	`, item.OrganizationID, item.EventType, item.Channel, item.Reason, item.Active,
+		item.StartsAt, item.EndsAt, item.CreatedByUserID, item.CreatedAt, item.UpdatedAt))
+}
+
+func (r *PostgresNotificationRepository) ListSuppressionRules(organizationID int64) ([]model.NotificationSuppressionRule, error) {
+	rows, err := r.db.Query(`
+		SELECT id,organization_id,event_type,channel,reason,active,starts_at,ends_at,
+			created_by_user_id,created_at,updated_at
+		FROM notification_suppression_rules
+		WHERE organization_id=$1
+		ORDER BY active DESC,id
+	`, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.NotificationSuppressionRule, 0)
+	for rows.Next() {
+		item, err := scanNotificationSuppressionRule(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *PostgresNotificationRepository) DeleteSuppressionRule(organizationID, ruleID int64, at time.Time) error {
+	result, err := r.db.Exec(`
+		UPDATE notification_suppression_rules
+		SET active=FALSE,updated_at=$3
+		WHERE organization_id=$1 AND id=$2 AND active=TRUE
+	`, organizationID, ruleID, at)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrNotificationSuppressionRuleNotFound
+	}
+	return nil
+}
+
+func (r *PostgresNotificationRepository) ListActiveSuppressionRules(organizationID int64, eventType string, now time.Time) ([]model.NotificationSuppressionRule, error) {
+	rows, err := r.db.Query(`
+		SELECT id,organization_id,event_type,channel,reason,active,starts_at,ends_at,
+			created_by_user_id,created_at,updated_at
+		FROM notification_suppression_rules
+		WHERE organization_id=$1
+		  AND active=TRUE
+		  AND event_type IN ('*',$2)
+		  AND (starts_at IS NULL OR starts_at <= $3)
+		  AND (ends_at IS NULL OR ends_at > $3)
+		ORDER BY CASE WHEN event_type=$2 THEN 0 ELSE 1 END,id
+	`, organizationID, eventType, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.NotificationSuppressionRule, 0)
+	for rows.Next() {
+		item, err := scanNotificationSuppressionRule(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *PostgresNotificationRepository) RecordSuppression(item model.NotificationSuppressionEvent) error {
+	_, err := r.db.Exec(`
+		INSERT INTO notification_suppression_events (
+			organization_id,workspace_id,user_id,notification_id,rule_id,event_type,channel,
+			reason,dedupe_key,created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		ON CONFLICT (organization_id,dedupe_key) DO NOTHING
+	`, item.OrganizationID, item.WorkspaceID, item.UserID, item.NotificationID, item.RuleID,
+		item.EventType, item.Channel, item.Reason, item.DedupeKey, item.CreatedAt)
+	return err
+}
+
+func (r *PostgresNotificationRepository) NotificationAnalytics(organizationID int64, since, now time.Time) (model.NotificationAnalyticsDashboard, error) {
+	result := model.NotificationAnalyticsDashboard{
+		OrganizationID: organizationID,
+		ByEvent:        []model.NotificationEventAnalytics{},
+		ByChannel:      []model.NotificationChannelAnalytics{},
+		Daily:          []model.NotificationDailyAnalytics{},
+		GeneratedAt:    now,
+	}
+	if err := r.db.QueryRow(`
+		SELECT COUNT(*),
+			COUNT(*) FILTER (WHERE read_at IS NOT NULL),
+			COUNT(*) FILTER (WHERE read_at IS NULL)
+		FROM notifications
+		WHERE organization_id=$1 AND created_at >= $2 AND created_at <= $3
+	`, organizationID, since, now).Scan(
+		&result.Summary.Generated, &result.Summary.Read, &result.Summary.Unread,
+	); err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	if err := r.db.QueryRow(`
+		SELECT COUNT(*),
+			COUNT(*) FILTER (WHERE d.status='sent'),
+			COUNT(*) FILTER (WHERE d.status='retry'),
+			COUNT(*) FILTER (WHERE d.status='dead_letter'),
+			COALESCE(SUM(d.attempts),0)
+		FROM notification_deliveries d
+		JOIN notifications n ON n.id=d.notification_id
+		WHERE n.organization_id=$1 AND d.created_at >= $2 AND d.created_at <= $3
+	`, organizationID, since, now).Scan(
+		&result.Summary.Deliveries, &result.Summary.Sent, &result.Summary.Retrying,
+		&result.Summary.DeadLetter, &result.Summary.DeliveryAttempts,
+	); err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	if err := r.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM notification_suppression_events
+		WHERE organization_id=$1 AND created_at >= $2 AND created_at <= $3
+	`, organizationID, since, now).Scan(&result.Summary.Suppressed); err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	if result.Summary.Deliveries > 0 {
+		result.Summary.DeliverySuccessRate = float64(result.Summary.Sent) / float64(result.Summary.Deliveries)
+	}
+
+	eventRows, err := r.db.Query(`
+		WITH generated AS (
+			SELECT event_type,COUNT(*) AS generated,
+				COUNT(*) FILTER (WHERE read_at IS NOT NULL) AS read
+			FROM notifications
+			WHERE organization_id=$1 AND created_at >= $2 AND created_at <= $3
+			GROUP BY event_type
+		), suppressed AS (
+			SELECT event_type,COUNT(*) AS suppressed
+			FROM notification_suppression_events
+			WHERE organization_id=$1 AND created_at >= $2 AND created_at <= $3
+			GROUP BY event_type
+		)
+		SELECT COALESCE(g.event_type,s.event_type),
+			COALESCE(g.generated,0),COALESCE(g.read,0),COALESCE(s.suppressed,0)
+		FROM generated g
+		FULL OUTER JOIN suppressed s ON s.event_type=g.event_type
+		ORDER BY COALESCE(g.event_type,s.event_type)
+	`, organizationID, since, now)
+	if err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	for eventRows.Next() {
+		var item model.NotificationEventAnalytics
+		if err := eventRows.Scan(&item.EventType, &item.Generated, &item.Read, &item.Suppressed); err != nil {
+			eventRows.Close()
+			return model.NotificationAnalyticsDashboard{}, err
+		}
+		result.ByEvent = append(result.ByEvent, item)
+	}
+	if err := eventRows.Close(); err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+
+	channelRows, err := r.db.Query(`
+		WITH delivery AS (
+			SELECT d.channel,COUNT(*) AS deliveries,
+				COUNT(*) FILTER (WHERE d.status='sent') AS sent,
+				COUNT(*) FILTER (WHERE d.status='retry') AS retrying,
+				COUNT(*) FILTER (WHERE d.status='dead_letter') AS dead_letter,
+				COALESCE(SUM(d.attempts),0) AS attempts
+			FROM notification_deliveries d
+			JOIN notifications n ON n.id=d.notification_id
+			WHERE n.organization_id=$1 AND d.created_at >= $2 AND d.created_at <= $3
+			GROUP BY d.channel
+		), suppressed AS (
+			SELECT channel,COUNT(*) AS suppressed
+			FROM notification_suppression_events
+			WHERE organization_id=$1 AND created_at >= $2 AND created_at <= $3
+			GROUP BY channel
+		)
+		SELECT COALESCE(d.channel,s.channel),COALESCE(d.deliveries,0),COALESCE(d.sent,0),
+			COALESCE(d.retrying,0),COALESCE(d.dead_letter,0),COALESCE(d.attempts,0),
+			COALESCE(s.suppressed,0)
+		FROM delivery d
+		FULL OUTER JOIN suppressed s ON s.channel=d.channel
+		ORDER BY COALESCE(d.channel,s.channel)
+	`, organizationID, since, now)
+	if err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	for channelRows.Next() {
+		var item model.NotificationChannelAnalytics
+		if err := channelRows.Scan(
+			&item.Channel, &item.Deliveries, &item.Sent, &item.Retrying,
+			&item.DeadLetter, &item.Attempts, &item.Suppressed,
+		); err != nil {
+			channelRows.Close()
+			return model.NotificationAnalyticsDashboard{}, err
+		}
+		result.ByChannel = append(result.ByChannel, item)
+	}
+	if err := channelRows.Close(); err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+
+	startDay := time.Date(since.UTC().Year(), since.UTC().Month(), since.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	endDay := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	daily := map[string]*model.NotificationDailyAnalytics{}
+	for day := startDay; !day.After(endDay); day = day.AddDate(0, 0, 1) {
+		key := day.Format("2006-01-02")
+		daily[key] = &model.NotificationDailyAnalytics{Date: key}
+	}
+	generatedRows, err := r.db.Query(`
+		SELECT (created_at AT TIME ZONE 'UTC')::date::text,COUNT(*),
+			COUNT(*) FILTER (WHERE read_at IS NOT NULL)
+		FROM notifications
+		WHERE organization_id=$1 AND created_at >= $2 AND created_at <= $3
+		GROUP BY 1 ORDER BY 1
+	`, organizationID, since, now)
+	if err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	for generatedRows.Next() {
+		var day string
+		var generated, read int64
+		if err := generatedRows.Scan(&day, &generated, &read); err != nil {
+			generatedRows.Close()
+			return model.NotificationAnalyticsDashboard{}, err
+		}
+		if item := daily[day]; item != nil {
+			item.Generated = generated
+			item.Read = read
+		}
+	}
+	if err := generatedRows.Close(); err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	suppressedRows, err := r.db.Query(`
+		SELECT (created_at AT TIME ZONE 'UTC')::date::text,COUNT(*)
+		FROM notification_suppression_events
+		WHERE organization_id=$1 AND created_at >= $2 AND created_at <= $3
+		GROUP BY 1 ORDER BY 1
+	`, organizationID, since, now)
+	if err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	for suppressedRows.Next() {
+		var day string
+		var count int64
+		if err := suppressedRows.Scan(&day, &count); err != nil {
+			suppressedRows.Close()
+			return model.NotificationAnalyticsDashboard{}, err
+		}
+		if item := daily[day]; item != nil {
+			item.Suppressed = count
+		}
+	}
+	if err := suppressedRows.Close(); err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	deliveryRows, err := r.db.Query(`
+		SELECT bucket,COALESCE(SUM(sent),0),COALESCE(SUM(dead_letter),0)
+		FROM (
+			SELECT (d.sent_at AT TIME ZONE 'UTC')::date::text AS bucket,1::bigint AS sent,0::bigint AS dead_letter
+			FROM notification_deliveries d
+			JOIN notifications n ON n.id=d.notification_id
+			WHERE n.organization_id=$1 AND d.sent_at >= $2 AND d.sent_at <= $3
+			UNION ALL
+			SELECT (d.updated_at AT TIME ZONE 'UTC')::date::text AS bucket,0::bigint,1::bigint
+			FROM notification_deliveries d
+			JOIN notifications n ON n.id=d.notification_id
+			WHERE n.organization_id=$1 AND d.status='dead_letter' AND d.updated_at >= $2 AND d.updated_at <= $3
+		) points
+		GROUP BY bucket ORDER BY bucket
+	`, organizationID, since, now)
+	if err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	for deliveryRows.Next() {
+		var day string
+		var sent, dead int64
+		if err := deliveryRows.Scan(&day, &sent, &dead); err != nil {
+			deliveryRows.Close()
+			return model.NotificationAnalyticsDashboard{}, err
+		}
+		if item := daily[day]; item != nil {
+			item.Sent = sent
+			item.DeadLetter = dead
+		}
+	}
+	if err := deliveryRows.Close(); err != nil {
+		return model.NotificationAnalyticsDashboard{}, err
+	}
+	for day := startDay; !day.After(endDay); day = day.AddDate(0, 0, 1) {
+		result.Daily = append(result.Daily, *daily[day.Format("2006-01-02")])
+	}
+	return result, nil
+}
+
 func (r *PostgresNotificationRepository) CreateNotification(item model.Notification) (model.Notification, bool, error) {
 	data, err := json.Marshal(item.Data)
 	if err != nil {
