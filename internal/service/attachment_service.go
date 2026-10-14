@@ -694,6 +694,27 @@ func (s *AttachmentService) audit(actorUserID, workspaceID int64, action string,
 	})
 }
 
+func newAttachmentVersionGroupID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return "av-" + hex.EncodeToString(raw[:]), nil
+}
+
+func attachmentAdmin(access model.WorkspaceAccess) bool {
+	return access.Role == model.WorkspaceRoleOwner || access.Role == model.WorkspaceRoleAdmin
+}
+
+func previewableAttachmentMIME(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf":
+		return true
+	default:
+		return false
+	}
+}
+
 func validSHA256(value string) bool {
 	if len(value) != 64 {
 		return false
