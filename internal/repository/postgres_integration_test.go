@@ -432,6 +432,7 @@ func resetDatabase(db *sql.DB) error {
 		"DROP TABLE IF EXISTS task_projects CASCADE",
 		"DROP TABLE IF EXISTS integration_inbound_events CASCADE",
 		"DROP TABLE IF EXISTS integration_deliveries CASCADE",
+		"DROP TABLE IF EXISTS integration_credential_policies CASCADE",
 		"DROP TABLE IF EXISTS integration_connections CASCADE",
 		"DROP TABLE IF EXISTS automation_executions CASCADE",
 		"DROP TABLE IF EXISTS automation_policies CASCADE",
@@ -514,6 +515,7 @@ func applyMigrations(t *testing.T, db *sql.DB) {
 		"031_attachment_versioning_preview_quarantine.sql",
 		"032_report_retention_aggregation.sql",
 		"033_notification_analytics_suppression.sql",
+		"034_connector_rotation_scope_governance.sql",
 	} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		if err != nil {

@@ -110,10 +110,20 @@ func (s *IntegrationService) CreateConnection(actorUserID, organizationID int64,
 		CreatedAt:           now,
 		UpdatedAt:           now,
 	}, encrypted)
-	if err == nil {
-		s.audit(organizationID, actorUserID, "integration.connection.created", "integration_connection", fmt.Sprint(item.ID), map[string]any{"provider": item.Provider, "auth_type": item.AuthType})
+	if err != nil {
+		return model.IntegrationConnection{}, err
 	}
-	return item, err
+	if s.credentialProvider != nil && req.Credentials != nil {
+		if err := s.credentialProvider.StoreCredentialsForConnection(context.Background(), item, actorUserID, req.Credentials); err != nil {
+			return model.IntegrationConnection{}, err
+		}
+		item, err = s.repo.GetIntegrationConnection(organizationID, item.ID)
+		if err != nil {
+			return model.IntegrationConnection{}, err
+		}
+	}
+	s.audit(organizationID, actorUserID, "integration.connection.created", "integration_connection", fmt.Sprint(item.ID), map[string]any{"provider": item.Provider, "auth_type": item.AuthType})
+	return item, nil
 }
 
 func (s *IntegrationService) UpdateConnection(actorUserID, organizationID, connectionID int64, req model.UpdateIntegrationConnectionRequest) (model.IntegrationConnection, error) {

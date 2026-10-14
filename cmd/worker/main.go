@@ -84,6 +84,16 @@ func main() {
 		logger.Error("connector_oauth_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	connectorRotationPoll, err := durationEnv("CONNECTOR_SECRET_ROTATION_POLL_INTERVAL", 15*time.Minute)
+	if err != nil {
+		logger.Error("connector_rotation_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	connectorRotationBatch, err := intEnv("CONNECTOR_SECRET_ROTATION_BATCH_SIZE", 25)
+	if err != nil {
+		logger.Error("connector_rotation_worker_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	notificationPoll, err := durationEnv("NOTIFICATION_POLL_INTERVAL", 2*time.Second)
 	if err != nil {
 		logger.Error("notification_worker_configuration_failed", "error", err)
@@ -364,6 +374,7 @@ func main() {
 	integrationService.SetCredentialProvider(connectorSecurityService)
 	go runIntegrationDeliveries(ctx, integrationService, workerID+"-integration", integrationPoll, integrationBatch, logger)
 	go runConnectorCredentialRefresh(ctx, connectorSecurityService, connectorOAuthPoll, connectorOAuthBatch, logger)
+	go runConnectorCredentialRotation(ctx, connectorSecurityService, connectorRotationPoll, connectorRotationBatch, logger)
 
 	logger.Info("event_worker_started", "worker_id", workerID, "batch_size", batch, "poll_interval", poll)
 	if err := worker.Run(ctx); err != nil && ctx.Err() == nil {
@@ -732,6 +743,40 @@ func runConnectorCredentialRefresh(ctx context.Context, connectors *service.Conn
 		select {
 		case <-ctx.Done():
 			logger.Info("connector_oauth_worker_stopped")
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
+func runConnectorCredentialRotation(ctx context.Context, connectors *service.ConnectorSecurityService, poll time.Duration, batch int, logger *slog.Logger) {
+	run := func() {
+		items, err := connectors.RotateDueSystem(batch)
+		if err != nil {
+			logger.Error("connector_rotation_failed", "error", err)
+			return
+		}
+		for _, item := range items {
+			logger.Info(
+				"connector_credential_auto_rotated",
+				"organization_id", item.OrganizationID,
+				"connection_id", item.ConnectionID,
+				"credential_version", item.CredentialVersion,
+				"key_version", item.KeyVersion,
+				"rotation_due_at", item.RotationDueAt,
+			)
+		}
+	}
+
+	logger.Info("connector_rotation_worker_started", "poll_interval", poll, "batch_size", batch)
+	run()
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("connector_rotation_worker_stopped")
 			return
 		case <-ticker.C:
 			run()

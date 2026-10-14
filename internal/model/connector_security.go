@@ -42,8 +42,28 @@ type ConnectorCredentialMetadata struct {
 	LastRefreshAt     *time.Time `json:"last_refresh_at,omitempty"`
 	LastValidatedAt   *time.Time `json:"last_validated_at,omitempty"`
 	RotatedAt         *time.Time `json:"rotated_at,omitempty"`
+	RotationDueAt     *time.Time `json:"rotation_due_at,omitempty"`
 	RevokedAt         *time.Time `json:"revoked_at,omitempty"`
 	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+type ConnectorCredentialPolicy struct {
+	OrganizationID              int64     `json:"organization_id"`
+	RotationEnabled             bool      `json:"rotation_enabled"`
+	AutoRotate                  bool      `json:"auto_rotate"`
+	RotationIntervalDays        int       `json:"rotation_interval_days"`
+	EnforceLeastPrivilegeScopes bool      `json:"enforce_least_privilege_scopes"`
+	CreatedByUserID             *int64    `json:"created_by_user_id,omitempty"`
+	UpdatedByUserID             *int64    `json:"updated_by_user_id,omitempty"`
+	CreatedAt                   time.Time `json:"created_at"`
+	UpdatedAt                   time.Time `json:"updated_at"`
+}
+
+type UpdateConnectorCredentialPolicyRequest struct {
+	RotationEnabled             bool `json:"rotation_enabled"`
+	AutoRotate                  bool `json:"auto_rotate"`
+	RotationIntervalDays        int  `json:"rotation_interval_days"`
+	EnforceLeastPrivilegeScopes bool `json:"enforce_least_privilege_scopes"`
 }
 
 type ConnectorCredentialAccess struct {
@@ -74,12 +94,17 @@ type RotateConnectorCredentialRequest struct {
 }
 
 type ConnectorConnectionTest struct {
-	ConnectionID int64     `json:"connection_id"`
-	Healthy      bool      `json:"healthy"`
-	HTTPStatus   int       `json:"http_status,omitempty"`
-	ScopesValid  bool      `json:"scopes_valid"`
-	CheckedAt    time.Time `json:"checked_at"`
-	Message      string    `json:"message,omitempty"`
+	ConnectionID        int64     `json:"connection_id"`
+	Healthy             bool      `json:"healthy"`
+	HTTPStatus          int       `json:"http_status,omitempty"`
+	ScopesValid         bool      `json:"scopes_valid"`
+	LeastPrivilegeValid bool      `json:"least_privilege_valid"`
+	RequiredScopes      []string  `json:"required_scopes"`
+	GrantedScopes       []string  `json:"granted_scopes"`
+	MissingScopes       []string  `json:"missing_scopes"`
+	ExcessScopes        []string  `json:"excess_scopes"`
+	CheckedAt           time.Time `json:"checked_at"`
+	Message             string    `json:"message,omitempty"`
 }
 
 type ConnectorSecretBackend struct {

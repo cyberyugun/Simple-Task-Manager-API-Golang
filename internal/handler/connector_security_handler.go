@@ -27,6 +27,37 @@ func (h *ConnectorSecurityHandler) Backends(w http.ResponseWriter, r *http.Reque
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: h.service.SecretBackends()})
 }
 
+func (h *ConnectorSecurityHandler) CredentialPolicy(w http.ResponseWriter, r *http.Request) {
+	userID, organizationID, ok := organizationScope(w, r)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		item, err := h.service.CredentialPolicy(userID, organizationID)
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
+		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: item})
+	case http.MethodPut:
+		defer r.Body.Close()
+		var req model.UpdateConnectorCredentialPolicyRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			badJSON(w)
+			return
+		}
+		item, err := h.service.UpdateCredentialPolicy(userID, organizationID, req)
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
+		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: item})
+	default:
+		methodNotAllowed(w)
+	}
+}
+
 func (h *ConnectorSecurityHandler) BeginOAuth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -181,7 +212,9 @@ func (h *ConnectorSecurityHandler) handleError(w http.ResponseWriter, err error)
 		errors.Is(err, service.ErrConnectorOAuthState),
 		errors.Is(err, service.ErrConnectorOAuthExchange),
 		errors.Is(err, service.ErrConnectorScopeMismatch),
+		errors.Is(err, service.ErrConnectorScopeExcess),
 		errors.Is(err, service.ErrConnectorCredentialRotation),
+		errors.Is(err, service.ErrConnectorCredentialPolicy),
 		errors.Is(err, service.ErrConnectorSecretBackendUnavailable):
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrConnectorCredentialRevoked),

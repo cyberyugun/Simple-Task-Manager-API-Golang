@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	ErrConnectorOAuthSessionNotFound = errors.New("connector oauth session not found")
-	ErrConnectorCredentialNotFound   = errors.New("connector credential metadata not found")
+	ErrConnectorOAuthSessionNotFound     = errors.New("connector oauth session not found")
+	ErrConnectorCredentialNotFound       = errors.New("connector credential metadata not found")
+	ErrConnectorCredentialPolicyNotFound = errors.New("connector credential policy not found")
 )
 
 type ConnectorSecurityRepository interface {
@@ -21,6 +22,9 @@ type ConnectorSecurityRepository interface {
 	UpsertCredentialMetadata(item model.ConnectorCredentialMetadata) (model.ConnectorCredentialMetadata, error)
 	GetCredentialMetadata(organizationID, connectionID int64) (model.ConnectorCredentialMetadata, error)
 	ListCredentialsDue(before time.Time, limit int) ([]model.ConnectorCredentialMetadata, error)
+	GetCredentialPolicy(organizationID int64) (model.ConnectorCredentialPolicy, error)
+	UpsertCredentialPolicy(item model.ConnectorCredentialPolicy) (model.ConnectorCredentialPolicy, error)
+	ListCredentialsDueForRotation(now time.Time, limit int) ([]model.ConnectorCredentialMetadata, error)
 
 	RecordCredentialAccess(item model.ConnectorCredentialAccess) error
 	ListCredentialAccess(organizationID, connectionID int64, limit int) ([]model.ConnectorCredentialAccess, error)
@@ -31,6 +35,7 @@ type InMemoryConnectorSecurityRepository struct {
 	sessions    map[int64]model.ConnectorOAuthSession
 	stateIndex  map[string]int64
 	credentials map[int64]model.ConnectorCredentialMetadata
+	policies    map[int64]model.ConnectorCredentialPolicy
 	access      []model.ConnectorCredentialAccess
 	nextSession int64
 	nextAccess  int64
@@ -39,7 +44,8 @@ type InMemoryConnectorSecurityRepository struct {
 func NewInMemoryConnectorSecurityRepository() *InMemoryConnectorSecurityRepository {
 	return &InMemoryConnectorSecurityRepository{
 		sessions: make(map[int64]model.ConnectorOAuthSession), stateIndex: make(map[string]int64),
-		credentials: make(map[int64]model.ConnectorCredentialMetadata), nextSession: 1, nextAccess: 1,
+		credentials: make(map[int64]model.ConnectorCredentialMetadata), policies: make(map[int64]model.ConnectorCredentialPolicy),
+		nextSession: 1, nextAccess: 1,
 	}
 }
 
@@ -120,6 +126,68 @@ func (r *InMemoryConnectorSecurityRepository) ListCredentialsDue(before time.Tim
 	})
 	if limit > 0 && len(items) > limit {
 		items = items[:limit]
+	}
+	return items, nil
+}
+
+func (r *InMemoryConnectorSecurityRepository) GetCredentialPolicy(organizationID int64) (model.ConnectorCredentialPolicy, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item, ok := r.policies[organizationID]
+	if !ok {
+		return model.ConnectorCredentialPolicy{}, ErrConnectorCredentialPolicyNotFound
+	}
+	return item, nil
+}
+
+func (r *InMemoryConnectorSecurityRepository) UpsertCredentialPolicy(item model.ConnectorCredentialPolicy) (model.ConnectorCredentialPolicy, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if previous, ok := r.policies[item.OrganizationID]; ok {
+		item.CreatedAt = previous.CreatedAt
+		item.CreatedByUserID = previous.CreatedByUserID
+	}
+	r.policies[item.OrganizationID] = item
+	return item, nil
+}
+
+func (r *InMemoryConnectorSecurityRepository) ListCredentialsDueForRotation(now time.Time, limit int) ([]model.ConnectorCredentialMetadata, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	type candidate struct {
+		item model.ConnectorCredentialMetadata
+		due  time.Time
+	}
+	candidates := make([]candidate, 0)
+	for _, item := range r.credentials {
+		policy, ok := r.policies[item.OrganizationID]
+		if !ok || !policy.RotationEnabled || !policy.AutoRotate || item.Status != model.ConnectorCredentialActive {
+			continue
+		}
+		baseline := item.UpdatedAt
+		if item.RotatedAt != nil {
+			baseline = item.RotatedAt.UTC()
+		}
+		due := baseline.AddDate(0, 0, policy.RotationIntervalDays)
+		if due.After(now) {
+			continue
+		}
+		copyItem := item
+		copyItem.GrantedScopes = append([]string(nil), item.GrantedScopes...)
+		candidates = append(candidates, candidate{item: copyItem, due: due})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].due.Equal(candidates[j].due) {
+			return candidates[i].item.ConnectionID < candidates[j].item.ConnectionID
+		}
+		return candidates[i].due.Before(candidates[j].due)
+	})
+	if limit > 0 && len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	items := make([]model.ConnectorCredentialMetadata, 0, len(candidates))
+	for _, candidate := range candidates {
+		items = append(items, candidate.item)
 	}
 	return items, nil
 }

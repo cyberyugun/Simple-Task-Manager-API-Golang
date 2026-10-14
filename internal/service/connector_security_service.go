@@ -25,9 +25,11 @@ var (
 	ErrConnectorOAuthState         = errors.New("invalid or expired connector oauth state")
 	ErrConnectorOAuthExchange      = errors.New("connector oauth token exchange failed")
 	ErrConnectorScopeMismatch      = errors.New("connector oauth scopes do not satisfy required scopes")
+	ErrConnectorScopeExcess        = errors.New("connector oauth granted scopes exceed the configured least-privilege scope set")
 	ErrConnectorCredentialRevoked  = errors.New("connector credential is revoked")
 	ErrConnectorCredentialExpired  = errors.New("connector credential is expired")
 	ErrConnectorCredentialRotation = errors.New("invalid connector credential rotation")
+	ErrConnectorCredentialPolicy   = errors.New("invalid connector credential policy")
 )
 
 type ConnectorSecurityService struct {
@@ -155,6 +157,49 @@ func (s *ConnectorSecurityService) BeginOAuth(actorUserID, organizationID, conne
 	return model.ConnectorOAuthStart{AuthorizationURL: parsed.String(), State: state, ExpiresAt: expires}, nil
 }
 
+func (s *ConnectorSecurityService) CredentialPolicy(actorUserID, organizationID int64) (model.ConnectorCredentialPolicy, error) {
+	if _, err := s.requireAdmin(actorUserID, organizationID); err != nil {
+		return model.ConnectorCredentialPolicy{}, err
+	}
+	return s.credentialPolicy(organizationID)
+}
+
+func (s *ConnectorSecurityService) UpdateCredentialPolicy(actorUserID, organizationID int64, req model.UpdateConnectorCredentialPolicyRequest) (model.ConnectorCredentialPolicy, error) {
+	if _, err := s.requireAdmin(actorUserID, organizationID); err != nil {
+		return model.ConnectorCredentialPolicy{}, err
+	}
+	intervalDays := req.RotationIntervalDays
+	if intervalDays == 0 {
+		intervalDays = 90
+	}
+	if intervalDays < 1 || intervalDays > 3650 || (req.AutoRotate && !req.RotationEnabled) {
+		return model.ConnectorCredentialPolicy{}, ErrConnectorCredentialPolicy
+	}
+	now := time.Now().UTC()
+	actor := actorUserID
+	item, err := s.repo.UpsertCredentialPolicy(model.ConnectorCredentialPolicy{
+		OrganizationID:              organizationID,
+		RotationEnabled:             req.RotationEnabled,
+		AutoRotate:                  req.AutoRotate,
+		RotationIntervalDays:        intervalDays,
+		EnforceLeastPrivilegeScopes: req.EnforceLeastPrivilegeScopes,
+		CreatedByUserID:             &actor,
+		UpdatedByUserID:             &actor,
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	})
+	if err != nil {
+		return model.ConnectorCredentialPolicy{}, err
+	}
+	s.audit(organizationID, actorUserID, "integration.credential_policy.updated", "integration_credential_policy", fmt.Sprint(organizationID), map[string]any{
+		"rotation_enabled":               item.RotationEnabled,
+		"auto_rotate":                    item.AutoRotate,
+		"rotation_interval_days":         item.RotationIntervalDays,
+		"enforce_least_privilege_scopes": item.EnforceLeastPrivilegeScopes,
+	})
+	return item, nil
+}
+
 func (s *ConnectorSecurityService) CompleteOAuth(actorUserID, organizationID, connectionID int64, req model.CompleteConnectorOAuthRequest) (model.ConnectorCredentialMetadata, error) {
 	if _, err := s.requireAdmin(actorUserID, organizationID); err != nil {
 		return model.ConnectorCredentialMetadata{}, err
@@ -183,7 +228,8 @@ func (s *ConnectorSecurityService) CompleteOAuth(actorUserID, organizationID, co
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	existing, err := s.readCredentials(connectionID)
+	actor := actorUserID
+	existing, err := s.readCredentialsWithAccess(context.Background(), connectionID, &actor, "oauth_exchange_read")
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
@@ -200,9 +246,21 @@ func (s *ConnectorSecurityService) CompleteOAuth(actorUserID, organizationID, co
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	granted := tokenScopes(token, session.RequestedScopes)
-	if !containsAllScopes(granted, session.RequestedScopes) {
+	granted := normalizedScopes(tokenScopes(token, session.RequestedScopes))
+	required := normalizedScopes(session.RequestedScopes)
+	missing, excess := scopeDiff(granted, required)
+	if len(missing) > 0 {
 		return model.ConnectorCredentialMetadata{}, ErrConnectorScopeMismatch
+	}
+	policy, err := s.credentialPolicy(organizationID)
+	if err != nil {
+		return model.ConnectorCredentialMetadata{}, err
+	}
+	if policy.EnforceLeastPrivilegeScopes && len(excess) > 0 {
+		s.audit(organizationID, actorUserID, "integration.oauth.scope_rejected", "integration_connection", fmt.Sprint(connectionID), map[string]any{
+			"required_scopes": required, "granted_scopes": granted, "excess_scopes": excess,
+		})
+		return model.ConnectorCredentialMetadata{}, ErrConnectorScopeExcess
 	}
 	credentials := mergeCredentials(existing, token)
 	now := time.Now().UTC()
@@ -217,7 +275,15 @@ func (s *ConnectorSecurityService) Credential(actorUserID, organizationID, conne
 	if _, err := s.requireAdmin(actorUserID, organizationID); err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	return s.repo.GetCredentialMetadata(organizationID, connectionID)
+	meta, err := s.repo.GetCredentialMetadata(organizationID, connectionID)
+	if err != nil {
+		return model.ConnectorCredentialMetadata{}, err
+	}
+	policy, err := s.credentialPolicy(organizationID)
+	if err != nil {
+		return model.ConnectorCredentialMetadata{}, err
+	}
+	return applyCredentialRotationDue(meta, policy), nil
 }
 
 func (s *ConnectorSecurityService) AccessAudit(actorUserID, organizationID, connectionID int64) ([]model.ConnectorCredentialAccess, error) {
@@ -235,7 +301,8 @@ func (s *ConnectorSecurityService) Rotate(actorUserID, organizationID, connectio
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	credentials, err := s.readCredentials(connectionID)
+	actor := actorUserID
+	credentials, err := s.readCredentialsWithAccess(context.Background(), connectionID, &actor, "rotate_read")
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
@@ -318,7 +385,8 @@ func (s *ConnectorSecurityService) Revoke(actorUserID, organizationID, connectio
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	credentials, err := s.readCredentials(connectionID)
+	actor := actorUserID
+	credentials, err := s.readCredentialsWithAccess(context.Background(), connectionID, &actor, "revoke_read")
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
@@ -388,11 +456,31 @@ func (s *ConnectorSecurityService) TestConnection(actorUserID, organizationID, c
 	if meta.ExpiresAt != nil && !meta.ExpiresAt.After(now) {
 		return model.ConnectorConnectionTest{}, ErrConnectorCredentialExpired
 	}
-	required := integrationConfigStrings(connection.Config, "scopes")
-	scopesValid := containsAllScopes(meta.GrantedScopes, required)
-	result := model.ConnectorConnectionTest{ConnectionID: connectionID, ScopesValid: scopesValid, CheckedAt: now}
-	if !scopesValid {
+	required := normalizedScopes(integrationConfigStrings(connection.Config, "scopes"))
+	granted := normalizedScopes(meta.GrantedScopes)
+	missing, excess := scopeDiff(granted, required)
+	policy, err := s.credentialPolicy(organizationID)
+	if err != nil {
+		return model.ConnectorConnectionTest{}, err
+	}
+	leastPrivilegeValid := len(excess) == 0
+	scopesValid := len(missing) == 0 && (!policy.EnforceLeastPrivilegeScopes || leastPrivilegeValid)
+	result := model.ConnectorConnectionTest{
+		ConnectionID:        connectionID,
+		ScopesValid:         scopesValid,
+		LeastPrivilegeValid: leastPrivilegeValid,
+		RequiredScopes:      required,
+		GrantedScopes:       granted,
+		MissingScopes:       missing,
+		ExcessScopes:        excess,
+		CheckedAt:           now,
+	}
+	if len(missing) > 0 {
 		result.Message = ErrConnectorScopeMismatch.Error()
+		return result, nil
+	}
+	if policy.EnforceLeastPrivilegeScopes && len(excess) > 0 {
+		result.Message = ErrConnectorScopeExcess.Error()
 		return result, nil
 	}
 	healthURL := integrationConfigString(connection.Config, "health_url")
@@ -407,7 +495,8 @@ func (s *ConnectorSecurityService) TestConnection(actorUserID, organizationID, c
 	if err := s.validateOAuthURL(healthURL); err != nil {
 		return model.ConnectorConnectionTest{}, err
 	}
-	credentials, err := s.readCredentials(connectionID)
+	actor := actorUserID
+	credentials, err := s.readCredentialsWithAccess(context.Background(), connectionID, &actor, "connection_test_read")
 	if err != nil {
 		return model.ConnectorConnectionTest{}, err
 	}
@@ -466,12 +555,98 @@ func (s *ConnectorSecurityService) RefreshDueSystem(limit int) ([]model.Connecto
 	return out, nil
 }
 
+func (s *ConnectorSecurityService) RotateDueSystem(limit int) ([]model.ConnectorCredentialMetadata, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+	now := time.Now().UTC()
+	items, err := s.repo.ListCredentialsDueForRotation(now, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.ConnectorCredentialMetadata, 0, len(items))
+	for _, item := range items {
+		rotated, rotateErr := s.rotateOneSystem(context.Background(), item)
+		if rotateErr != nil {
+			s.recordAccess(item, nil, "automatic_rotate_failed")
+			s.audit(item.OrganizationID, 0, "integration.credential.auto_rotation_failed", "integration_connection", fmt.Sprint(item.ConnectionID), map[string]any{
+				"backend": item.SecretBackend,
+				"error":   rotateErr.Error(),
+			})
+			continue
+		}
+		out = append(out, rotated)
+	}
+	return out, nil
+}
+
+func (s *ConnectorSecurityService) rotateOneSystem(ctx context.Context, meta model.ConnectorCredentialMetadata) (model.ConnectorCredentialMetadata, error) {
+	connection, err := s.integrations.GetIntegrationConnection(meta.OrganizationID, meta.ConnectionID)
+	if err != nil {
+		return meta, err
+	}
+	credentials, err := s.readCredentialsWithAccess(ctx, meta.ConnectionID, nil, "automatic_rotate_read")
+	if err != nil {
+		return meta, err
+	}
+	raw, err := json.Marshal(credentials)
+	if err != nil {
+		return meta, err
+	}
+	if !s.backendConfigured(meta.SecretBackend) {
+		return meta, ErrConnectorSecretBackendUnavailable
+	}
+	now := time.Now().UTC()
+	connection.UpdatedAt = now
+	ref := strings.TrimSpace(meta.SecretRef)
+	if ref == "" {
+		ref = connectorSecretRef(meta.OrganizationID, meta.ConnectionID)
+	}
+	version, err := s.writeCredentialPayload(ctx, connection, meta.SecretBackend, ref, raw)
+	if err != nil {
+		return meta, err
+	}
+	if meta.SecretBackend != model.ConnectorSecretBackendDatabase {
+		empty := ""
+		if _, err := s.integrations.UpdateIntegrationConnection(connection, &empty); err != nil {
+			return meta, err
+		}
+	}
+	meta.SecretRef = ref
+	if version > 0 {
+		meta.KeyVersion = version
+	} else {
+		meta.KeyVersion++
+		if meta.KeyVersion <= 0 {
+			meta.KeyVersion = 1
+		}
+	}
+	meta.CredentialVersion++
+	meta.RotatedAt = &now
+	meta.UpdatedAt = now
+	meta, err = s.repo.UpsertCredentialMetadata(meta)
+	if err != nil {
+		return model.ConnectorCredentialMetadata{}, err
+	}
+	s.recordAccess(meta, nil, "automatic_rotate")
+	s.audit(meta.OrganizationID, 0, "integration.credential.auto_rotated", "integration_connection", fmt.Sprint(meta.ConnectionID), map[string]any{
+		"backend":            meta.SecretBackend,
+		"key_version":        meta.KeyVersion,
+		"credential_version": meta.CredentialVersion,
+	})
+	policy, policyErr := s.credentialPolicy(meta.OrganizationID)
+	if policyErr == nil {
+		meta = applyCredentialRotationDue(meta, policy)
+	}
+	return meta, nil
+}
+
 func (s *ConnectorSecurityService) refreshOne(ctx context.Context, meta model.ConnectorCredentialMetadata) (model.ConnectorCredentialMetadata, error) {
 	connection, err := s.integrations.GetIntegrationConnection(meta.OrganizationID, meta.ConnectionID)
 	if err != nil {
 		return meta, err
 	}
-	credentials, err := s.readCredentials(meta.ConnectionID)
+	credentials, err := s.readCredentialsWithAccess(ctx, meta.ConnectionID, nil, "automatic_refresh_read")
 	if err != nil {
 		return meta, err
 	}
@@ -491,10 +666,18 @@ func (s *ConnectorSecurityService) refreshOne(ctx context.Context, meta model.Co
 		return meta, err
 	}
 	merged := mergeCredentials(credentials, token)
-	granted := tokenScopes(token, meta.GrantedScopes)
-	required := integrationConfigStrings(connection.Config, "scopes")
-	if !containsAllScopes(granted, required) {
+	granted := normalizedScopes(tokenScopes(token, meta.GrantedScopes))
+	required := normalizedScopes(integrationConfigStrings(connection.Config, "scopes"))
+	missing, excess := scopeDiff(granted, required)
+	if len(missing) > 0 {
 		return meta, ErrConnectorScopeMismatch
+	}
+	policy, err := s.credentialPolicy(meta.OrganizationID)
+	if err != nil {
+		return meta, err
+	}
+	if policy.EnforceLeastPrivilegeScopes && len(excess) > 0 {
+		return meta, ErrConnectorScopeExcess
 	}
 	now := time.Now().UTC()
 	meta, err = s.persistCredential(connection, 0, merged, granted, tokenExpiry(token, now), true)
@@ -546,6 +729,9 @@ func (s *ConnectorSecurityService) persistCredential(connection model.Integratio
 	meta.GrantedScopes = append([]string(nil), scopes...)
 	meta.ExpiresAt = expiresAt
 	meta.CredentialVersion++
+	if meta.RotatedAt == nil {
+		meta.RotatedAt = &now
+	}
 	meta.UpdatedAt = now
 	meta.RevokedAt = nil
 	if refreshed {
@@ -591,6 +777,9 @@ func (s *ConnectorSecurityService) StoreCredentialsForConnection(ctx context.Con
 	}
 	meta.CredentialVersion++
 	meta.Status = model.ConnectorCredentialActive
+	if meta.RotatedAt == nil {
+		meta.RotatedAt = &now
+	}
 	meta.UpdatedAt = now
 	meta, err = s.repo.UpsertCredentialMetadata(meta)
 	if err != nil {
@@ -614,29 +803,79 @@ func (s *ConnectorSecurityService) StoreCredentialsForConnection(ctx context.Con
 }
 
 func (s *ConnectorSecurityService) CredentialsForConnection(ctx context.Context, connectionID int64) (map[string]any, error) {
+	return s.readCredentialsWithAccess(ctx, connectionID, nil, "runtime_read")
+}
+
+func (s *ConnectorSecurityService) readCredentials(connectionID int64) (map[string]any, error) {
+	return s.readCredentialsWithAccess(context.Background(), connectionID, nil, "system_read")
+}
+
+func (s *ConnectorSecurityService) readCredentialsWithAccess(ctx context.Context, connectionID int64, actor *int64, action string) (map[string]any, error) {
 	secretRow, err := s.integrations.GetIntegrationConnectionSecret(connectionID)
 	if err != nil {
 		return nil, err
 	}
 	meta, metaErr := s.repo.GetCredentialMetadata(secretRow.OrganizationID, connectionID)
-	if errors.Is(metaErr, repository.ErrConnectorCredentialNotFound) || meta.SecretBackend == "" ||
-		meta.SecretBackend == model.ConnectorSecretBackendDatabase {
-		return s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+	if errors.Is(metaErr, repository.ErrConnectorCredentialNotFound) {
+		meta = model.ConnectorCredentialMetadata{
+			ConnectionID:   connectionID,
+			OrganizationID: secretRow.OrganizationID,
+			SecretBackend:  model.ConnectorSecretBackendDatabase,
+			SecretRef:      connectorSecretRef(secretRow.OrganizationID, connectionID),
+		}
+		credentials, readErr := s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+		if readErr != nil {
+			s.recordAccess(meta, actor, action+"_failed")
+			return nil, readErr
+		}
+		s.recordAccess(meta, actor, action)
+		return credentials, nil
 	}
 	if metaErr != nil {
 		return nil, metaErr
 	}
+	if meta.SecretBackend == "" || meta.SecretBackend == model.ConnectorSecretBackendDatabase {
+		if meta.SecretBackend == "" {
+			meta.SecretBackend = model.ConnectorSecretBackendDatabase
+		}
+		if meta.SecretRef == "" {
+			meta.SecretRef = connectorSecretRef(secretRow.OrganizationID, connectionID)
+		}
+		credentials, readErr := s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+		if readErr != nil {
+			s.recordAccess(meta, actor, action+"_failed")
+			return nil, readErr
+		}
+		s.recordAccess(meta, actor, action)
+		return credentials, nil
+	}
 	store, ok := s.secretStores[meta.SecretBackend]
 	if !ok {
+		s.recordAccess(meta, actor, action+"_failed")
 		if strings.TrimSpace(secretRow.EncryptedCredentials) != "" {
-			return s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+			fallback := meta
+			fallback.SecretBackend = model.ConnectorSecretBackendDatabase
+			fallback.SecretRef = connectorSecretRef(secretRow.OrganizationID, connectionID)
+			credentials, readErr := s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+			if readErr == nil {
+				s.recordAccess(fallback, actor, action+"_fallback_database")
+			}
+			return credentials, readErr
 		}
 		return nil, ErrConnectorSecretBackendUnavailable
 	}
 	raw, version, err := store.Get(ctx, meta.SecretRef)
 	if err != nil {
+		s.recordAccess(meta, actor, action+"_failed")
 		if strings.TrimSpace(secretRow.EncryptedCredentials) != "" {
-			return s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+			fallback := meta
+			fallback.SecretBackend = model.ConnectorSecretBackendDatabase
+			fallback.SecretRef = connectorSecretRef(secretRow.OrganizationID, connectionID)
+			credentials, readErr := s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
+			if readErr == nil {
+				s.recordAccess(fallback, actor, action+"_fallback_database")
+			}
+			return credentials, readErr
 		}
 		return nil, err
 	}
@@ -647,13 +886,11 @@ func (s *ConnectorSecurityService) CredentialsForConnection(ctx context.Context,
 	}
 	var credentials map[string]any
 	if err := json.Unmarshal(raw, &credentials); err != nil {
+		s.recordAccess(meta, actor, action+"_failed")
 		return nil, fmt.Errorf("%w: invalid connector credential payload", ErrConnectorSecretStore)
 	}
+	s.recordAccess(meta, actor, action)
 	return credentials, nil
-}
-
-func (s *ConnectorSecurityService) readCredentials(connectionID int64) (map[string]any, error) {
-	return s.CredentialsForConnection(context.Background(), connectionID)
 }
 
 func (s *ConnectorSecurityService) decryptDatabaseCredentials(encrypted string) (map[string]any, error) {
@@ -746,13 +983,45 @@ func (s *ConnectorSecurityService) validateOAuthURL(raw string) error {
 }
 
 func defaultCredentialMetadata(connection model.IntegrationConnection) model.ConnectorCredentialMetadata {
+	now := time.Now().UTC()
 	return model.ConnectorCredentialMetadata{
 		ConnectionID: connection.ID, OrganizationID: connection.OrganizationID,
 		SecretBackend: model.ConnectorSecretBackendDatabase,
 		SecretRef:     fmt.Sprintf("org/%d/integration/%d", connection.OrganizationID, connection.ID),
 		KeyVersion:    1, CredentialVersion: 0, Status: model.ConnectorCredentialActive,
-		GrantedScopes: []string{}, UpdatedAt: time.Now().UTC(),
+		GrantedScopes: []string{}, RotatedAt: &now, UpdatedAt: now,
 	}
+}
+
+func (s *ConnectorSecurityService) credentialPolicy(organizationID int64) (model.ConnectorCredentialPolicy, error) {
+	item, err := s.repo.GetCredentialPolicy(organizationID)
+	if errors.Is(err, repository.ErrConnectorCredentialPolicyNotFound) {
+		now := time.Now().UTC()
+		return model.ConnectorCredentialPolicy{
+			OrganizationID:              organizationID,
+			RotationEnabled:             false,
+			AutoRotate:                  false,
+			RotationIntervalDays:        90,
+			EnforceLeastPrivilegeScopes: false,
+			CreatedAt:                   now,
+			UpdatedAt:                   now,
+		}, nil
+	}
+	return item, err
+}
+
+func applyCredentialRotationDue(meta model.ConnectorCredentialMetadata, policy model.ConnectorCredentialPolicy) model.ConnectorCredentialMetadata {
+	meta.RotationDueAt = nil
+	if !policy.RotationEnabled || policy.RotationIntervalDays <= 0 {
+		return meta
+	}
+	baseline := meta.UpdatedAt
+	if meta.RotatedAt != nil {
+		baseline = meta.RotatedAt.UTC()
+	}
+	due := baseline.AddDate(0, 0, policy.RotationIntervalDays)
+	meta.RotationDueAt = &due
+	return meta
 }
 
 func (s *ConnectorSecurityService) recordAccess(meta model.ConnectorCredentialMetadata, actor *int64, action string) {
@@ -823,6 +1092,43 @@ func integrationConfigStrings(config map[string]any, key string) []string {
 	default:
 		return nil
 	}
+}
+
+func normalizedScopes(scopes []string) []string {
+	seen := make(map[string]struct{}, len(scopes))
+	out := make([]string, 0, len(scopes))
+	for _, raw := range scopes {
+		scope := strings.TrimSpace(raw)
+		if scope == "" {
+			continue
+		}
+		if _, exists := seen[scope]; exists {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, scope)
+	}
+	return out
+}
+
+func scopeDiff(granted, required []string) (missing, excess []string) {
+	grantedSet := make(map[string]struct{}, len(granted))
+	for _, scope := range normalizedScopes(granted) {
+		grantedSet[scope] = struct{}{}
+	}
+	requiredSet := make(map[string]struct{}, len(required))
+	for _, scope := range normalizedScopes(required) {
+		requiredSet[scope] = struct{}{}
+		if _, ok := grantedSet[scope]; !ok {
+			missing = append(missing, scope)
+		}
+	}
+	for _, scope := range normalizedScopes(granted) {
+		if _, ok := requiredSet[scope]; !ok {
+			excess = append(excess, scope)
+		}
+	}
+	return missing, excess
 }
 
 func containsAllScopes(granted, required []string) bool {

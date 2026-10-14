@@ -632,6 +632,7 @@ func main() {
 	mux.Handle("/api/organizations/{id}/notification-suppression-rules", protectedFirstParty(notificationHandler.SuppressionRules))
 	mux.Handle("/api/organizations/{id}/notification-suppression-rules/{rule_id}", protectedFirstParty(notificationHandler.SuppressionRuleByID))
 	mux.Handle("/api/organizations/{id}/notification-analytics", protectedFirstParty(notificationHandler.Analytics))
+	mux.Handle("/api/organizations/{id}/integrations/credential-policy", protectedFirstParty(connectorSecurityHandler.CredentialPolicy))
 	mux.Handle("/api/organizations/{id}/integrations/connections", protectedFirstParty(integrationHandler.Connections))
 	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}", protectedFirstParty(integrationHandler.ConnectionByID))
 	mux.Handle("/api/organizations/{id}/integrations/connections/{connection_id}/oauth/start", protectedFirstParty(connectorSecurityHandler.BeginOAuth))
