@@ -169,26 +169,26 @@ func (s *DeveloperPlatformService) ReviewApplication(actorUserID, workspaceID, a
 		return model.DeveloperApplication{}, err
 	}
 	review, err := s.repo.CreateApplicationReview(model.DeveloperAppReview{
-		AppID: appID,
-		WorkspaceID: workspaceID,
-		ReviewRound: app.ReviewRound,
-		Decision: decision,
-		FromStatus: app.Status,
-		ToStatus: status,
-		Note: note,
+		AppID:             appID,
+		WorkspaceID:       workspaceID,
+		ReviewRound:       app.ReviewRound,
+		Decision:          decision,
+		FromStatus:        app.Status,
+		ToStatus:          status,
+		Note:              note,
 		SubmittedByUserID: app.SubmittedByUserID,
-		ReviewedByUserID: actorUserID,
-		CreatedAt: now,
+		ReviewedByUserID:  actorUserID,
+		CreatedAt:         now,
 	})
 	if err != nil {
 		return model.DeveloperApplication{}, err
 	}
 	_ = s.audit(workspaceID, actorUserID, "developer.app.reviewed", "developer_application", strconv.FormatInt(appID, 10),
 		map[string]any{
-			"status": status,
-			"decision": decision,
-			"note": note,
-			"review_round": review.ReviewRound,
+			"status":               status,
+			"decision":             decision,
+			"note":                 note,
+			"review_round":         review.ReviewRound,
 			"submitted_by_user_id": review.SubmittedByUserID,
 		}, now)
 	return item, nil
