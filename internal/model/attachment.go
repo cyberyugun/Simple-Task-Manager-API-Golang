@@ -25,21 +25,21 @@ const (
 )
 
 type Attachment struct {
-	ID               int64      `json:"id"`
-	WorkspaceID      int64      `json:"workspace_id"`
-	TaskID           *int64     `json:"task_id,omitempty"`
-	CommentID        *int64     `json:"comment_id,omitempty"`
-	UploadedByUserID int64      `json:"uploaded_by_user_id"`
-	Provider         string     `json:"provider"`
-	Bucket           string     `json:"bucket"`
-	ObjectKey        string     `json:"object_key"`
-	FileName         string     `json:"file_name"`
-	ContentType      string     `json:"content_type"`
-	SizeBytes        int64      `json:"size_bytes"`
-	SHA256           string     `json:"sha256"`
-	Status           string     `json:"status"`
-	ScanEngine       string     `json:"scan_engine,omitempty"`
-	ScanMessage      string     `json:"scan_message,omitempty"`
+	ID                   int64      `json:"id"`
+	WorkspaceID          int64      `json:"workspace_id"`
+	TaskID               *int64     `json:"task_id,omitempty"`
+	CommentID            *int64     `json:"comment_id,omitempty"`
+	UploadedByUserID     int64      `json:"uploaded_by_user_id"`
+	Provider             string     `json:"provider"`
+	Bucket               string     `json:"bucket"`
+	ObjectKey            string     `json:"object_key"`
+	FileName             string     `json:"file_name"`
+	ContentType          string     `json:"content_type"`
+	SizeBytes            int64      `json:"size_bytes"`
+	SHA256               string     `json:"sha256"`
+	Status               string     `json:"status"`
+	ScanEngine           string     `json:"scan_engine,omitempty"`
+	ScanMessage          string     `json:"scan_message,omitempty"`
 	Encryption           string     `json:"encryption,omitempty"`
 	EncryptionKeyID      string     `json:"encryption_key_id,omitempty"`
 	Version              int        `json:"version"`
@@ -80,7 +80,6 @@ type CompleteAttachmentUploadRequest struct {
 	SHA256    string `json:"sha256"`
 }
 
-
 type AttachmentVersionUploadRequest struct {
 	FileName    string `json:"file_name"`
 	ContentType string `json:"content_type"`
@@ -115,7 +114,6 @@ type AttachmentScanResult struct {
 	Engine  string `json:"engine"`
 	Message string `json:"message,omitempty"`
 }
-
 
 type AttachmentPreviewResult struct {
 	ObjectKey   string `json:"object_key"`
