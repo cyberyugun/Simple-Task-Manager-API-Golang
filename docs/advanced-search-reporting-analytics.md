@@ -36,7 +36,14 @@ Supported filters:
 
 The migration adds a generated `tsvector` with title weight **A** and description weight **B**, plus a GIN index. Search returns rank, a highlighted description headline, and the task payload.
 
-The weighted index is the initial ranking control. Synonym dictionaries or OpenSearch analyzers can be introduced behind the repository abstraction later without changing the public API.
+The PostgreSQL weighted index remains the default ranking foundation. Post-roadmap hardening adds deployment-level relevance controls without changing the public API:
+
+- `SEARCH_TITLE_WEIGHT` tunes title matches (default `1`);
+- `SEARCH_DESCRIPTION_WEIGHT` tunes description matches (default `0.4`);
+- `SEARCH_RECENCY_WEIGHT` optionally adds a bounded recency boost with a one-week decay scale (default `0`);
+- `SEARCH_SYNONYMS_JSON` supplies bounded symmetric synonym groups, for example `{"bug":["defect","issue"],"login":["sign in"]}`.
+
+The original PostgreSQL full-text query remains authoritative and synonym terms only broaden recall. Stored task text is never rewritten. The same relevance behavior is applied by the in-memory repository so local/runtime tests preserve semantic parity. OpenSearch or Elasticsearch analyzers can still be introduced later behind the repository abstraction without changing handlers or the v1 API.
 
 ## Saved searches and views
 
