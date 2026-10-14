@@ -254,8 +254,8 @@ func TestNotificationSuppressionRulesAndAnalytics(t *testing.T) {
 
 	emailRule, err := svc.CreateSuppressionRule(owner.ID, org.ID, model.CreateNotificationSuppressionRuleRequest{
 		EventType: model.NotificationEventTaskAssigned,
-		Channel: model.NotificationChannelEmail,
-		Reason: "pause assignment email during migration",
+		Channel:   model.NotificationChannelEmail,
+		Reason:    "pause assignment email during migration",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -263,11 +263,11 @@ func TestNotificationSuppressionRulesAndAnalytics(t *testing.T) {
 	orgID := org.ID
 	created, err := svc.createNotificationWithResult(model.NotificationCreate{
 		OrganizationID: &orgID,
-		UserID: owner.ID,
-		EventType: model.NotificationEventTaskAssigned,
-		TemplateKey: "task.assigned",
-		Data: map[string]any{"task_title": "Suppressed email"},
-		DedupeKey: "suppression-assigned-1",
+		UserID:         owner.ID,
+		EventType:      model.NotificationEventTaskAssigned,
+		TemplateKey:    "task.assigned",
+		Data:           map[string]any{"task_title": "Suppressed email"},
+		DedupeKey:      "suppression-assigned-1",
 	})
 	if err != nil || !created {
 		t.Fatalf("created=%v err=%v", created, err)
@@ -279,19 +279,19 @@ func TestNotificationSuppressionRulesAndAnalytics(t *testing.T) {
 
 	allRule, err := svc.CreateSuppressionRule(owner.ID, org.ID, model.CreateNotificationSuppressionRuleRequest{
 		EventType: model.NotificationEventTaskMention,
-		Channel: model.NotificationSuppressionChannelAll,
-		Reason: "temporarily suppress mention notifications",
+		Channel:   model.NotificationSuppressionChannelAll,
+		Reason:    "temporarily suppress mention notifications",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	created, err = svc.createNotificationWithResult(model.NotificationCreate{
 		OrganizationID: &orgID,
-		UserID: owner.ID,
-		EventType: model.NotificationEventTaskMention,
-		TemplateKey: "task.mention",
-		Data: map[string]any{"task_title": "Suppressed mention", "comment_body": "hello"},
-		DedupeKey: "suppression-mention-1",
+		UserID:         owner.ID,
+		EventType:      model.NotificationEventTaskMention,
+		TemplateKey:    "task.mention",
+		Data:           map[string]any{"task_title": "Suppressed mention", "comment_body": "hello"},
+		DedupeKey:      "suppression-mention-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -329,11 +329,11 @@ func TestNotificationSuppressionRulesAndAnalytics(t *testing.T) {
 
 	created, err = svc.createNotificationWithResult(model.NotificationCreate{
 		OrganizationID: &orgID,
-		UserID: owner.ID,
-		EventType: model.NotificationEventTaskAssigned,
-		TemplateKey: "task.assigned",
-		Data: map[string]any{"task_title": "Email allowed"},
-		DedupeKey: "suppression-assigned-2",
+		UserID:         owner.ID,
+		EventType:      model.NotificationEventTaskAssigned,
+		TemplateKey:    "task.assigned",
+		Data:           map[string]any{"task_title": "Email allowed"},
+		DedupeKey:      "suppression-assigned-2",
 	})
 	if err != nil || !created {
 		t.Fatalf("created=%v err=%v", created, err)
