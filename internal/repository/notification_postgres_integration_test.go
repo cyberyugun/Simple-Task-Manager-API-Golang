@@ -217,14 +217,14 @@ func TestIntegrationPostgresNotificationRepository(t *testing.T) {
 	}
 
 	rule, err := notifications.CreateSuppressionRule(model.NotificationSuppressionRule{
-		OrganizationID: org.ID,
-		EventType: model.NotificationEventTaskAssigned,
-		Channel: model.NotificationChannelEmail,
-		Reason: "integration suppression",
-		Active: true,
+		OrganizationID:  org.ID,
+		EventType:       model.NotificationEventTaskAssigned,
+		Channel:         model.NotificationChannelEmail,
+		Reason:          "integration suppression",
+		Active:          true,
 		CreatedByUserID: owner.ID,
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	})
 	if err != nil || rule.ID == 0 {
 		t.Fatalf("suppression rule=%+v err=%v", rule, err)
@@ -238,29 +238,29 @@ func TestIntegrationPostgresNotificationRepository(t *testing.T) {
 	ruleID := rule.ID
 	if err := notifications.RecordSuppression(model.NotificationSuppressionEvent{
 		OrganizationID: org.ID,
-		WorkspaceID: &workspace.ID,
-		UserID: &userID,
+		WorkspaceID:    &workspace.ID,
+		UserID:         &userID,
 		NotificationID: &notificationID,
-		RuleID: &ruleID,
-		EventType: model.NotificationEventTaskAssigned,
-		Channel: model.NotificationChannelEmail,
-		Reason: rule.Reason,
-		DedupeKey: "integration:suppression:email",
-		CreatedAt: now.Add(7 * time.Second),
+		RuleID:         &ruleID,
+		EventType:      model.NotificationEventTaskAssigned,
+		Channel:        model.NotificationChannelEmail,
+		Reason:         rule.Reason,
+		DedupeKey:      "integration:suppression:email",
+		CreatedAt:      now.Add(7 * time.Second),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := notifications.RecordSuppression(model.NotificationSuppressionEvent{
 		OrganizationID: org.ID,
-		WorkspaceID: &workspace.ID,
-		UserID: &userID,
+		WorkspaceID:    &workspace.ID,
+		UserID:         &userID,
 		NotificationID: &notificationID,
-		RuleID: &ruleID,
-		EventType: model.NotificationEventTaskAssigned,
-		Channel: model.NotificationChannelEmail,
-		Reason: rule.Reason,
-		DedupeKey: "integration:suppression:email",
-		CreatedAt: now.Add(8 * time.Second),
+		RuleID:         &ruleID,
+		EventType:      model.NotificationEventTaskAssigned,
+		Channel:        model.NotificationChannelEmail,
+		Reason:         rule.Reason,
+		DedupeKey:      "integration:suppression:email",
+		CreatedAt:      now.Add(8 * time.Second),
 	}); err != nil {
 		t.Fatal(err)
 	}
