@@ -1,5 +1,20 @@
 # API Changelog
 
+## 1.14.0 — Phase 40 post-roadmap developer portal governance hardening
+
+Compatibility line: **v1**.
+
+Additive developer-platform hardening:
+
+- enriches developer documentation search with deterministic relevance ranking across path, method, operation ID, tags, summary and description
+- adds bounded `limit` support to documentation search while preserving the existing `q` query behavior
+- exposes OpenAPI operation IDs and tags in documentation search results
+- adds review rounds and submitter metadata to developer applications
+- appends immutable approve/reject/suspend review history with from/to status, submitter, reviewer, note and timestamp
+- adds a read-only application review-history endpoint
+- preserves the existing submit/review routes, lifecycle decisions, credential issuance rules and v1 authentication behavior
+- adds migration 036 plus unit, PostgreSQL integration and Docker smoke coverage
+
 ## 1.13.0 — Phase 39 post-roadmap event governance hardening
 
 Compatibility line: **v1**.
