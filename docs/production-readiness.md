@@ -278,7 +278,7 @@ Before enabling production progressive delivery:
 - retain the release evidence artifact for audit and incident review
 - verify the successful deployment produced a `release-attestation-<commit>` bundle and preserve its root digest in the release/change record
 - confirm the root `release-attestation.json` has GitHub artifact provenance from the production release workflow
-- periodically run **Release Attestation Dashboard** with `require_provenance=true` after the rollout period to re-verify both retained bundle integrity and repository provenance
+- review the daily **Release Attestation Dashboard**; set `RELEASE_ATTESTATION_COVERAGE_START_AT` to the first release expected to emit a bundle, then enable `RELEASE_ATTESTATION_REQUIRE_PROVENANCE=true` and `RELEASE_ATTESTATION_REQUIRE_COMPLETE=true` after the rollout scope is clean
 - exercise `scripts/rollback-drill.sh` in staging before relying on emergency rollback procedures
 
 See `docs/release-engineering.md` and `docs/production-release-checklist.md`.
