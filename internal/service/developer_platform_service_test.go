@@ -29,7 +29,7 @@ func TestDeveloperPlatformLifecycleCredentialSandboxQuotaAndPortal(t *testing.T)
 	identityRepo := repository.NewInMemoryEnterpriseIdentityRepository()
 	identity := NewEnterpriseIdentityService(identityRepo, workspaces, users, auth.NewTokenManager("developer-platform-test-secret", 15*time.Minute))
 	repo := repository.NewInMemoryDeveloperPlatformRepository()
-	svc := NewDeveloperPlatformService(repo, workspaces, identity, false, []byte("paths:\n  /api/tasks:\n    get:\n      summary: List tasks\n"))
+	svc := NewDeveloperPlatformService(repo, workspaces, identity, false, []byte("paths:\n  /api/tasks:\n    get:\n      tags: [Tasks]\n      summary: List tasks\n      description: Return tasks visible in the selected workspace.\n      operationId: listTasks\n  /api/tasks/{id}:\n    get:\n      tags: [Tasks]\n      summary: Get task\n      operationId: getTask\n"))
 
 	app, err := svc.CreateApplication(user.ID, access.ID, model.CreateDeveloperApplicationRequest{
 		Name: "Task Companion", AllowedScopes: []string{model.ScopeTasksRead, model.ScopeTasksWrite},
@@ -74,9 +74,22 @@ func TestDeveloperPlatformLifecycleCredentialSandboxQuotaAndPortal(t *testing.T)
 	if err != nil || submitted.Status != model.DeveloperAppStatusSubmitted {
 		t.Fatalf("submitted=%+v err=%v", submitted, err)
 	}
+	if submitted.ReviewRound != 1 || submitted.SubmittedByUserID == nil || *submitted.SubmittedByUserID != user.ID {
+		t.Fatalf("submission governance metadata=%+v", submitted)
+	}
 	approved, err := svc.ReviewApplication(user.ID, access.ID, app.ID, model.ReviewDeveloperApplicationRequest{Decision: "approve"})
 	if err != nil || approved.Status != model.DeveloperAppStatusApproved {
 		t.Fatalf("approved=%+v err=%v", approved, err)
+	}
+	reviews, err := svc.Reviews(user.ID, access.ID, app.ID)
+	if err != nil || len(reviews) != 1 {
+		t.Fatalf("reviews=%+v err=%v", reviews, err)
+	}
+	if reviews[0].Decision != "approve" || reviews[0].FromStatus != model.DeveloperAppStatusSubmitted ||
+		reviews[0].ToStatus != model.DeveloperAppStatusApproved || reviews[0].ReviewRound != 1 ||
+		reviews[0].SubmittedByUserID == nil || *reviews[0].SubmittedByUserID != user.ID ||
+		reviews[0].ReviewedByUserID != user.ID {
+		t.Fatalf("unexpected review history: %+v", reviews[0])
 	}
 
 	production, err := svc.CreateCredential(user.ID, access.ID, app.ID, model.CreateDeveloperCredentialRequest{
@@ -104,9 +117,18 @@ func TestDeveloperPlatformLifecycleCredentialSandboxQuotaAndPortal(t *testing.T)
 		t.Fatalf("rotated credential was not revoked: %+v", credentials)
 	}
 
-	docs := svc.SearchDocs("list tasks")
-	if len(docs) != 1 || docs[0].Path != "/api/tasks" || docs[0].Method != http.MethodGet {
+	docs := svc.SearchDocs("list tasks", 10)
+	if len(docs) != 1 || docs[0].Path != "/api/tasks" || docs[0].Method != http.MethodGet ||
+		docs[0].OperationID != "listTasks" || len(docs[0].Tags) != 1 || docs[0].Tags[0] != "Tasks" {
 		t.Fatalf("unexpected docs: %+v", docs)
+	}
+	operationDocs := svc.SearchDocs("listtasks", 1)
+	if len(operationDocs) != 1 || operationDocs[0].OperationID != "listTasks" {
+		t.Fatalf("operation search=%+v", operationDocs)
+	}
+	tagDocs := svc.SearchDocs("tasks get", 10)
+	if len(tagDocs) != 2 {
+		t.Fatalf("tag/token search=%+v", tagDocs)
 	}
 	if len(svc.SDKs()) != 5 {
 		t.Fatalf("expected five SDK targets")
