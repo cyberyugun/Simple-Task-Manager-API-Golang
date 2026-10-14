@@ -168,7 +168,7 @@ All endpoints are workspace-scoped through the existing workspace middleware and
 
 ## Worker
 
-The worker processes malware scan and retention queues.
+The worker processes malware scan, preview-generation and retention queues.
 
 Environment:
 
@@ -210,13 +210,18 @@ A response with \`clean:false\` marks the attachment infected. HTTP errors, time
 
 ## Persistence
 
-Migration \`021_file_attachment_platform.sql\` adds the base \`attachments\` table. Post-roadmap migration \`031_attachment_versioning_preview_quarantine.sql\` adds version-chain, reviewed-quarantine and preview lifecycle metadata.\n\nIndexes cover:
+Migration \`021_file_attachment_platform.sql\` adds the base \`attachments\` table. Post-roadmap migration \`031_attachment_versioning_preview_quarantine.sql\` adds version-chain, reviewed-quarantine and preview lifecycle metadata.
+
+Indexes cover:
 
 - workspace/task listing;
 - workspace/comment listing;
 - scan queue processing;
 - retention processing;
-- SHA-256 deduplication.
+- SHA-256 deduplication;
+- version-group ordering and uniqueness;
+- preview queue processing;
+- quarantined attachment review.
 
 ## Definition of done
 
