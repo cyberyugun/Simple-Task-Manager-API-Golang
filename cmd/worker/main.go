@@ -232,6 +232,10 @@ func main() {
 		ScannerBearerToken:   strings.TrimSpace(os.Getenv("ATTACHMENT_SCANNER_BEARER_TOKEN")),
 		ScannerSigningSecret: strings.TrimSpace(os.Getenv("ATTACHMENT_SCANNER_SIGNING_SECRET")),
 		ScannerRequired:      strings.EqualFold(strings.TrimSpace(os.Getenv("ATTACHMENT_SCANNER_REQUIRED")), "true"),
+		PreviewURL:           strings.TrimSpace(os.Getenv("ATTACHMENT_PREVIEW_URL")),
+		PreviewBearerToken:   strings.TrimSpace(os.Getenv("ATTACHMENT_PREVIEW_BEARER_TOKEN")),
+		PreviewSigningSecret: strings.TrimSpace(os.Getenv("ATTACHMENT_PREVIEW_SIGNING_SECRET")),
+		PreviewRequired:      strings.EqualFold(strings.TrimSpace(os.Getenv("ATTACHMENT_PREVIEW_REQUIRED")), "true"),
 	}
 	if attachmentConfig.SigningSecret == "" {
 		attachmentConfig.SigningSecret = strings.TrimSpace(os.Getenv("JWT_SECRET"))
@@ -246,6 +250,11 @@ func main() {
 		logger.Error("attachment_scanner_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	attachmentPreviewer, err := service.NewAttachmentPreviewer(attachmentConfig)
+	if err != nil {
+		logger.Error("attachment_preview_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	attachmentService := service.NewAttachmentService(
 		repository.NewPostgresAttachmentRepository(db),
 		repository.NewPostgresTaskRepository(db),
@@ -255,6 +264,7 @@ func main() {
 		attachmentScanner,
 		attachmentConfig,
 	)
+	attachmentService.SetPreviewer(attachmentPreviewer)
 	go runAttachmentPlatform(ctx, attachmentService, attachmentPoll, attachmentRetentionPoll, attachmentBatch, logger)
 
 	searchRelevance, err := service.NewSearchRelevanceOptionsFromEnv()
@@ -544,6 +554,14 @@ func runAttachmentPlatform(ctx context.Context, attachments *service.AttachmentS
 		}
 		for _, item := range items {
 			logger.Info("attachment_scan_completed", "workspace_id", item.WorkspaceID, "attachment_id", item.ID, "status", item.Status, "engine", item.ScanEngine)
+		}
+		previews, err := attachments.ProcessPendingPreviews(batch)
+		if err != nil {
+			logger.Error("attachment_preview_batch_failed", "error", err)
+			return
+		}
+		for _, item := range previews {
+			logger.Info("attachment_preview_processed", "workspace_id", item.WorkspaceID, "attachment_id", item.ID, "preview_status", item.PreviewStatus, "engine", item.PreviewEngine)
 		}
 	}
 	runRetention := func() {
