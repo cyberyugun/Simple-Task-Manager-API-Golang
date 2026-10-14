@@ -118,7 +118,24 @@ Migration `022_search_reporting_analytics.sql` adds:
 
 `tests/performance/search-api.js` provides a k6 search/dashboard regression workload.
 
-Report-run retention is intentionally policy-driven rather than hard-coded in this phase. The `report_runs.created_at` index makes later retention/aggregation automation safe to add through the existing lifecycle/governance platform.
+Post-roadmap hardening closes the retention/aggregation recommendation with an opt-in policy. It is disabled by default so a deployment must explicitly approve destructive retention.
+
+```text
+REPORT_RUN_RETENTION_ENABLED=false
+REPORT_RUN_PAYLOAD_RETENTION_DAYS=30
+REPORT_RUN_DETAIL_RETENTION_DAYS=365
+REPORT_RUN_RETENTION_POLL_INTERVAL=1h
+REPORT_RUN_RETENTION_BATCH_SIZE=500
+```
+
+When enabled, the worker applies two bounded retention tiers:
+
+1. terminal report payload bytes are purged after the payload-retention window while row-count, status, timing and original payload-size metadata remain;
+2. terminal detailed report-run rows older than the detail-retention window are first rolled into UTC daily aggregates and only then deleted.
+
+Migration `032_report_retention_aggregation.sql` adds retention timestamps, durable original payload-size metadata, retention queue indexes and `report_run_daily_aggregates`. Aggregates preserve workspace/day/format/status run count, total row count, error count, original payload bytes and total execution duration. The aggregation step marks source rows before deletion, so retries are idempotent and a crash between aggregation and deletion cannot double-count historical runs.
+
+Only terminal `succeeded` and `failed` runs are eligible. Pending/running executions are never purged or aggregated. PostgreSQL uses `FOR UPDATE SKIP LOCKED` candidates so multiple workers cannot process the same run concurrently.
 
 ## Security
 
@@ -134,6 +151,7 @@ Phase 37 is considered complete when:
 - dashboard/workload/trend analytics are available;
 - CSV and JSON exports work;
 - scheduled reports execute from the worker and create run history;
+- opt-in payload/detail retention aggregates historical terminal runs before detail deletion;
 - PostgreSQL integration coverage passes;
 - OpenAPI governance passes;
 - Docker runtime smoke exercises search, analytics, export, and scheduling;
