@@ -20,7 +20,8 @@ SET version_group_id = 'legacy-' || id::text
 WHERE version_group_id = '';
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_attachments_version_group_version
-    ON attachments (workspace_id, version_group_id, version);
+    ON attachments (workspace_id, version_group_id, version)
+    WHERE version_group_id <> '';
 
 CREATE INDEX IF NOT EXISTS idx_attachments_version_group
     ON attachments (workspace_id, version_group_id, version DESC, id DESC);
