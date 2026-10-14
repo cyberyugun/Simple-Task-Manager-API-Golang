@@ -37,6 +37,7 @@
 - [ ] `release-attestation-<commit>` artifact uploaded after successful telemetry verification
 - [ ] `release-attestation.json` verifies against the production commit, image digest, workflow run, and component hashes
 - [ ] GitHub artifact provenance exists for `release-attestation.json` and `gh attestation verify` succeeds for the repository
+- [ ] Release Attestation Dashboard coverage reports this successful production deploy as exactly one matching attestation with the same workflow run ID and commit
 - [ ] provider registry cells include `evidence_sha256` for selected live-provider evidence when the provider gate is active
 - [ ] release attestation root digest recorded in the change/release record
 

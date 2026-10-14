@@ -418,18 +418,67 @@ jobs:
             "subject_file": "release-attestation.json"
           }
           EOF
+          cat > "$evidence_dir/expected-successful-deploy-runs.json" <<EOF
+          {
+            "schema_version": 1,
+            "generated_at": "2026-10-10T00:07:00Z",
+            "repository": "$GITHUB_REPOSITORY",
+            "workflow": "deploy.yml",
+            "lookback_days": 180,
+            "coverage_start_at": null,
+            "runs": [
+              {
+                "run_id": "$GITHUB_RUN_ID",
+                "run_attempt": "$GITHUB_RUN_ATTEMPT",
+                "head_sha": "$GITHUB_SHA",
+                "created_at": "2026-10-10T00:00:00Z",
+                "event": "workflow_dispatch",
+                "head_branch": "main",
+                "html_url": "https://github.com/example/repo/actions/runs/$GITHUB_RUN_ID"
+              }
+            ]
+          }
+          EOF
           python3 scripts/release-attestation-bundle.py dashboard \
             --input-dir "$evidence_dir/attestation-dashboard-input" \
+            --expected-runs-json "$evidence_dir/expected-successful-deploy-runs.json" \
             --output-json "$evidence_dir/release-attestation-dashboard.json" \
             --output-markdown "$evidence_dir/release-attestation-dashboard.md" \
             --require-valid \
-            --require-provenance
+            --require-provenance \
+            --require-complete
           grep -q '"integrity": "valid"' "$evidence_dir/release-attestation-dashboard.json"
           grep -q '"provenance": "verified"' "$evidence_dir/release-attestation-dashboard.json"
+          grep -q '"coverage_status": "complete"' "$evidence_dir/release-attestation-dashboard.json"
+          grep -q '"coverage_gap_count": 0' "$evidence_dir/release-attestation-dashboard.json"
+
+          python3 - "$evidence_dir/expected-successful-deploy-runs.json" "$evidence_dir/expected-successful-deploy-runs-missing.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          source = pathlib.Path(sys.argv[1])
+          destination = pathlib.Path(sys.argv[2])
+          payload = json.loads(source.read_text(encoding="utf-8"))
+          payload["runs"][0]["run_id"] = "999999999999"
+          destination.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+          PY
+          if python3 scripts/release-attestation-bundle.py dashboard \
+            --input-dir "$evidence_dir/attestation-dashboard-input" \
+            --expected-runs-json "$evidence_dir/expected-successful-deploy-runs-missing.json" \
+            --output-json "$evidence_dir/release-attestation-dashboard-missing-coverage.json" \
+            --output-markdown "$evidence_dir/release-attestation-dashboard-missing-coverage.md" \
+            --require-complete; then
+            echo "missing successful-deploy attestation unexpectedly passed coverage policy"
+            exit 1
+          fi
+          grep -q '"coverage_status": "incomplete"' "$evidence_dir/release-attestation-dashboard-missing-coverage.json"
+          grep -q '"status": "missing_attestation"' "$evidence_dir/release-attestation-dashboard-missing-coverage.json"
 
           rm "$evidence_dir/attestation-dashboard-input/run-1/release-attestation-provenance.json"
           if python3 scripts/release-attestation-bundle.py dashboard \
             --input-dir "$evidence_dir/attestation-dashboard-input" \
+            --expected-runs-json "$evidence_dir/expected-successful-deploy-runs.json" \
             --output-json "$evidence_dir/release-attestation-dashboard-missing-provenance.json" \
             --output-markdown "$evidence_dir/release-attestation-dashboard-missing-provenance.md" \
             --require-provenance; then

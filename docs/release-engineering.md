@@ -157,7 +157,7 @@ The release evidence artifact records:
 
 The legacy release evidence artifact is retained for 90 days. After a successful release, the workflow also creates a 180-day `release-attestation-<commit>` bundle that binds the production release evidence, exact staging promotion evidence, provider registry/policy when enabled, and the operational-evidence expiry snapshot when required.
 
-The bundle stores SHA-256 hashes for every bound component and a canonical root digest. The production workflow then creates GitHub artifact provenance for the root `release-attestation.json` using the workflow's OIDC-backed attestation identity. A read-only **Release Attestation Dashboard** can later re-download retained bundles, recompute component/root hashes, and independently run `gh attestation verify` against the repository attestation store without requiring cluster or provider credentials.
+The bundle stores SHA-256 hashes for every bound component and a canonical root digest. The production workflow then creates GitHub artifact provenance for the root `release-attestation.json` using the workflow's OIDC-backed attestation identity. A read-only **Release Attestation Dashboard** later re-downloads retained bundles, recomputes component/root hashes, independently runs `gh attestation verify`, and compares retained attestations with successful `deploy.yml` workflow runs. This catches omission gaps where a production deploy succeeded but no matching attestation remains.
 
 See [Production Release Attestation Bundle](release-attestation-bundle.md).
 
@@ -311,6 +311,11 @@ PROVIDER_OPERATIONAL_EVIDENCE_REQUIRE_APPROVAL=false
 PROVIDER_OPERATIONAL_EVIDENCE_ALLOWED_APPROVERS=
 PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_WARNING_DAYS=14
 PROVIDER_OPERATIONAL_EVIDENCE_EXPIRY_FAIL=false
+RELEASE_ATTESTATION_COVERAGE_LOOKBACK_DAYS=180
+RELEASE_ATTESTATION_COVERAGE_START_AT=
+RELEASE_ATTESTATION_REQUIRE_VALID=false
+RELEASE_ATTESTATION_REQUIRE_PROVENANCE=false
+RELEASE_ATTESTATION_REQUIRE_COMPLETE=false
 ```
 
 Manual dispatch values override the canary weight/observation variables.
@@ -335,6 +340,7 @@ Normal CI now validates:
 - operational evidence approval/revocation and expiry workflows remain present
 - production approval enforcement remains opt-in and fail-closed when enabled
 - final release attestation bundle creation, GitHub provenance attestation, and dashboard verification workflow remain present
+- release-attestation dashboard coverage discovery remains bound to successful production deploy runs and supports fail-closed completeness enforcement
 - `:latest` promotion remains after successful release
 
 These controls make accidental removal of the release safety model a merge-blocking change.

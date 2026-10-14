@@ -1,12 +1,29 @@
 name: Release Attestation Dashboard
 
 on:
+  schedule:
+    - cron: "23 6 * * *"
   workflow_dispatch:
     inputs:
       max_artifacts:
         description: Maximum recent release-attestation artifacts to scan
         required: true
         default: "100"
+        type: string
+      max_deploy_runs:
+        description: Maximum successful production deploy runs included in coverage
+        required: true
+        default: "100"
+        type: string
+      lookback_days:
+        description: Successful deploy coverage lookback window
+        required: true
+        default: "180"
+        type: string
+      coverage_start_at:
+        description: Optional ISO-8601 rollout boundary; successful deploys before it are excluded
+        required: false
+        default: ""
         type: string
       require_valid:
         description: Fail if any downloaded release attestation bundle has invalid integrity
@@ -15,6 +32,11 @@ on:
         type: boolean
       require_provenance:
         description: Fail if GitHub artifact provenance is missing or invalid
+        required: true
+        default: false
+        type: boolean
+      require_complete:
+        description: Fail if any successful production deploy in scope lacks exactly one matching attestation
         required: true
         default: false
         type: boolean
@@ -28,12 +50,23 @@ jobs:
   dashboard:
     name: Build release attestation dashboard
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       GH_TOKEN: ${{ github.token }}
-      MAX_ARTIFACTS: ${{ inputs.max_artifacts }}
-      REQUIRE_VALID: ${{ inputs.require_valid }}
-      REQUIRE_PROVENANCE: ${{ inputs.require_provenance }}
+      INPUT_MAX_ARTIFACTS: ${{ inputs.max_artifacts }}
+      INPUT_MAX_DEPLOY_RUNS: ${{ inputs.max_deploy_runs }}
+      INPUT_LOOKBACK_DAYS: ${{ inputs.lookback_days }}
+      INPUT_COVERAGE_START_AT: ${{ inputs.coverage_start_at }}
+      INPUT_REQUIRE_VALID: ${{ inputs.require_valid }}
+      INPUT_REQUIRE_PROVENANCE: ${{ inputs.require_provenance }}
+      INPUT_REQUIRE_COMPLETE: ${{ inputs.require_complete }}
+      DEFAULT_MAX_ARTIFACTS: ${{ vars.RELEASE_ATTESTATION_DASHBOARD_MAX_ARTIFACTS || '100' }}
+      DEFAULT_MAX_DEPLOY_RUNS: ${{ vars.RELEASE_ATTESTATION_DASHBOARD_MAX_DEPLOY_RUNS || '100' }}
+      DEFAULT_LOOKBACK_DAYS: ${{ vars.RELEASE_ATTESTATION_COVERAGE_LOOKBACK_DAYS || '180' }}
+      DEFAULT_COVERAGE_START_AT: ${{ vars.RELEASE_ATTESTATION_COVERAGE_START_AT }}
+      DEFAULT_REQUIRE_VALID: ${{ vars.RELEASE_ATTESTATION_REQUIRE_VALID || 'false' }}
+      DEFAULT_REQUIRE_PROVENANCE: ${{ vars.RELEASE_ATTESTATION_REQUIRE_PROVENANCE || 'false' }}
+      DEFAULT_REQUIRE_COMPLETE: ${{ vars.RELEASE_ATTESTATION_REQUIRE_COMPLETE || 'false' }}
 
     steps:
       - name: Checkout
@@ -41,14 +74,134 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate dashboard inputs
+      - name: Resolve dashboard policy
         run: |
           set -euo pipefail
-          printf '%s' "$MAX_ARTIFACTS" | grep -Eq '^[1-9][0-9]{0,2}$'
-          (( MAX_ARTIFACTS <= 500 )) || {
-            echo "::error::max_artifacts must be <= 500"
-            exit 1
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            max_artifacts="$INPUT_MAX_ARTIFACTS"
+            max_deploy_runs="$INPUT_MAX_DEPLOY_RUNS"
+            lookback_days="$INPUT_LOOKBACK_DAYS"
+            coverage_start_at="$INPUT_COVERAGE_START_AT"
+            require_valid="$INPUT_REQUIRE_VALID"
+            require_provenance="$INPUT_REQUIRE_PROVENANCE"
+            require_complete="$INPUT_REQUIRE_COMPLETE"
+          else
+            max_artifacts="$DEFAULT_MAX_ARTIFACTS"
+            max_deploy_runs="$DEFAULT_MAX_DEPLOY_RUNS"
+            lookback_days="$DEFAULT_LOOKBACK_DAYS"
+            coverage_start_at="$DEFAULT_COVERAGE_START_AT"
+            require_valid="$DEFAULT_REQUIRE_VALID"
+            require_provenance="$DEFAULT_REQUIRE_PROVENANCE"
+            require_complete="$DEFAULT_REQUIRE_COMPLETE"
+          fi
+
+          printf '%s' "$max_artifacts" | grep -Eq '^[1-9][0-9]{0,2}$'
+          printf '%s' "$max_deploy_runs" | grep -Eq '^[1-9][0-9]{0,2}$'
+          printf '%s' "$lookback_days" | grep -Eq '^[1-9][0-9]{0,3}$'
+          (( max_artifacts <= 500 )) || { echo "::error::max_artifacts must be <= 500"; exit 1; }
+          (( max_deploy_runs <= 500 )) || { echo "::error::max_deploy_runs must be <= 500"; exit 1; }
+          (( lookback_days <= 3650 )) || { echo "::error::lookback_days must be <= 3650"; exit 1; }
+          case "$require_valid" in true|false) ;; *) echo "::error::require_valid must be true or false"; exit 1 ;; esac
+          case "$require_provenance" in true|false) ;; *) echo "::error::require_provenance must be true or false"; exit 1 ;; esac
+          case "$require_complete" in true|false) ;; *) echo "::error::require_complete must be true or false"; exit 1 ;; esac
+
+          if [[ -n "$coverage_start_at" ]]; then
+            COVERAGE_START_AT="$coverage_start_at" python3 - <<'PY'
+          import os
+          from datetime import datetime
+
+          value = os.environ["COVERAGE_START_AT"]
+          if value.endswith("Z"):
+              value = value[:-1] + "+00:00"
+          parsed = datetime.fromisoformat(value)
+          if parsed.tzinfo is None:
+              raise SystemExit("coverage_start_at must include timezone")
+          PY
+          fi
+
+          {
+            echo "MAX_ARTIFACTS_RESOLVED=$max_artifacts"
+            echo "MAX_DEPLOY_RUNS_RESOLVED=$max_deploy_runs"
+            echo "LOOKBACK_DAYS_RESOLVED=$lookback_days"
+            echo "COVERAGE_START_AT_RESOLVED=$coverage_start_at"
+            echo "REQUIRE_VALID_RESOLVED=$require_valid"
+            echo "REQUIRE_PROVENANCE_RESOLVED=$require_provenance"
+            echo "REQUIRE_COMPLETE_RESOLVED=$require_complete"
+          } >> "$GITHUB_ENV"
+
+      - name: Discover successful production deploy runs
+        run: |
+          set -euo pipefail
+          gh api --paginate \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?status=success&per_page=100" \
+            --jq '.workflow_runs[] | [.id, .run_attempt, .head_sha, .created_at, .event, (.head_branch // ""), .html_url] | @tsv' \
+            > /tmp/successful-deploy-runs.tsv
+
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          def parse_time(raw: str) -> datetime:
+              value = raw.strip()
+              if value.endswith("Z"):
+                  value = value[:-1] + "+00:00"
+              parsed = datetime.fromisoformat(value)
+              if parsed.tzinfo is None:
+                  raise ValueError("timestamp must include timezone")
+              return parsed.astimezone(timezone.utc)
+
+          now = datetime.now(timezone.utc)
+          cutoff = now - timedelta(days=int(os.environ["LOOKBACK_DAYS_RESOLVED"]))
+          configured_start = os.environ.get("COVERAGE_START_AT_RESOLVED", "").strip()
+          if configured_start:
+              coverage_start = parse_time(configured_start)
+              if coverage_start > cutoff:
+                  cutoff = coverage_start
+
+          rows = []
+          source = Path("/tmp/successful-deploy-runs.tsv")
+          if source.exists():
+              for raw in source.read_text(encoding="utf-8").splitlines():
+                  if not raw.strip():
+                      continue
+                  parts = raw.split("\t")
+                  if len(parts) != 7:
+                      raise SystemExit(f"unexpected deploy-run row: {raw!r}")
+                  run_id, run_attempt, head_sha, created_at, event, head_branch, html_url = parts
+                  created = parse_time(created_at)
+                  if created < cutoff:
+                      continue
+                  rows.append(
+                      {
+                          "run_id": run_id,
+                          "run_attempt": run_attempt,
+                          "head_sha": head_sha.lower(),
+                          "created_at": created.isoformat().replace("+00:00", "Z"),
+                          "event": event,
+                          "head_branch": head_branch or None,
+                          "html_url": html_url,
+                      }
+                  )
+
+          rows.sort(key=lambda item: item["created_at"], reverse=True)
+          rows = rows[: int(os.environ["MAX_DEPLOY_RUNS_RESOLVED"])]
+          payload = {
+              "schema_version": 1,
+              "generated_at": now.isoformat().replace("+00:00", "Z"),
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow": "deploy.yml",
+              "lookback_days": int(os.environ["LOOKBACK_DAYS_RESOLVED"]),
+              "coverage_start_at": configured_start or None,
+              "runs": rows,
           }
+          Path("expected-successful-deploy-runs.json").write_text(
+              json.dumps(payload, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(f"Successful deploy runs in coverage scope: {len(rows)}")
+          PY
 
       - name: Discover release attestation artifacts
         run: |
@@ -59,7 +212,7 @@ jobs:
             --jq '.artifacts[] | select(.expired == false and (.name | startswith("release-attestation-")) and ((.name | startswith("release-attestation-dashboard-")) | not)) | [.workflow_run.id, .name] | @tsv' \
             > /tmp/release-attestations-all.tsv
           awk '!seen[$0]++' /tmp/release-attestations-all.tsv \
-            | head -n "$MAX_ARTIFACTS" \
+            | head -n "$MAX_ARTIFACTS_RESOLVED" \
             > /tmp/release-attestations.tsv
 
           while IFS=$'\t' read -r run_id artifact_name; do
@@ -110,15 +263,19 @@ jobs:
           args=(
             dashboard
             --input-dir release-attestations
+            --expected-runs-json expected-successful-deploy-runs.json
             --output-json release-attestation-dashboard.json
             --output-markdown release-attestation-dashboard.md
-            --max-releases "$MAX_ARTIFACTS"
+            --max-releases "$MAX_ARTIFACTS_RESOLVED"
           )
-          if [[ "$REQUIRE_VALID" == "true" ]]; then
+          if [[ "$REQUIRE_VALID_RESOLVED" == "true" ]]; then
             args+=(--require-valid)
           fi
-          if [[ "$REQUIRE_PROVENANCE" == "true" ]]; then
+          if [[ "$REQUIRE_PROVENANCE_RESOLVED" == "true" ]]; then
             args+=(--require-provenance)
+          fi
+          if [[ "$REQUIRE_COMPLETE_RESOLVED" == "true" ]]; then
+            args+=(--require-complete)
           fi
           python3 scripts/release-attestation-bundle.py "${args[@]}"
           cat release-attestation-dashboard.md >> "$GITHUB_STEP_SUMMARY"
@@ -129,6 +286,7 @@ jobs:
         with:
           name: release-attestation-dashboard-${{ github.run_id }}
           path: |
+            expected-successful-deploy-runs.json
             release-attestation-dashboard.json
             release-attestation-dashboard.md
           if-no-files-found: warn
