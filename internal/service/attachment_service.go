@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -358,7 +358,6 @@ func (s *AttachmentService) List(access model.WorkspaceAccess, taskID, commentID
 	return s.repo.ListAttachments(access.ID, taskID, commentID)
 }
 
-
 func (s *AttachmentService) Versions(access model.WorkspaceAccess, attachmentID int64) ([]model.Attachment, error) {
 	item, err := s.repo.GetAttachment(access.ID, attachmentID)
 	if err != nil {
@@ -390,7 +389,6 @@ func (s *AttachmentService) Download(actorUserID int64, access model.WorkspaceAc
 	s.audit(actorUserID, access.ID, "attachment.download_requested", item.ID, nil)
 	return model.AttachmentDownload{Attachment: item, DownloadURL: u, ExpiresAt: expires}, nil
 }
-
 
 func (s *AttachmentService) Preview(actorUserID int64, access model.WorkspaceAccess, attachmentID int64) (model.AttachmentPreviewDownload, error) {
 	item, err := s.repo.GetAttachment(access.ID, attachmentID)
