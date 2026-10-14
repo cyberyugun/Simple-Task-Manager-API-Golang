@@ -173,11 +173,63 @@ func (s *AttachmentService) SetPreviewer(previewer AttachmentPreviewer) {
 }
 
 func (s *AttachmentService) CreateUpload(actorUserID int64, access model.WorkspaceAccess, req model.AttachmentUploadRequest) (model.AttachmentUploadSession, error) {
+	groupID, err := newAttachmentVersionGroupID()
+	if err != nil {
+		return model.AttachmentUploadSession{}, err
+	}
+	return s.createUpload(actorUserID, access, req, groupID, 1, nil)
+}
+
+func (s *AttachmentService) CreateVersionUpload(actorUserID int64, access model.WorkspaceAccess, attachmentID int64, req model.AttachmentVersionUploadRequest) (model.AttachmentUploadSession, error) {
+	current, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return model.AttachmentUploadSession{}, err
+	}
+	if current.Status == model.AttachmentStatusDeleted || current.DeletedAt != nil {
+		return model.AttachmentUploadSession{}, ErrInvalidAttachment
+	}
+	if current.UploadedByUserID != actorUserID && access.Role == model.WorkspaceRoleMember {
+		return model.AttachmentUploadSession{}, ErrAttachmentGovernanceDenied
+	}
+	groupID := strings.TrimSpace(current.VersionGroupID)
+	if groupID == "" {
+		groupID, err = newAttachmentVersionGroupID()
+		if err != nil {
+			return model.AttachmentUploadSession{}, err
+		}
+		current.VersionGroupID = groupID
+		if current.Version <= 0 {
+			current.Version = 1
+		}
+		current.UpdatedAt = time.Now().UTC()
+		if _, err := s.repo.UpdateAttachment(current); err != nil {
+			return model.AttachmentUploadSession{}, err
+		}
+	}
+	versions, err := s.repo.ListAttachmentVersions(access.ID, groupID)
+	if err != nil {
+		return model.AttachmentUploadSession{}, err
+	}
+	nextVersion := current.Version + 1
+	for _, version := range versions {
+		if version.Version >= nextVersion {
+			nextVersion = version.Version + 1
+		}
+	}
+	previousID := current.ID
+	return s.createUpload(actorUserID, access, model.AttachmentUploadRequest{
+		TaskID: current.TaskID, CommentID: current.CommentID, FileName: req.FileName,
+		ContentType: req.ContentType, SizeBytes: req.SizeBytes, SHA256: req.SHA256,
+	}, groupID, nextVersion, &previousID)
+}
+
+func (s *AttachmentService) createUpload(actorUserID int64, access model.WorkspaceAccess, req model.AttachmentUploadRequest, versionGroupID string, version int, previousAttachmentID *int64) (model.AttachmentUploadSession, error) {
 	fileName := strings.TrimSpace(req.FileName)
 	contentType := strings.ToLower(strings.TrimSpace(req.ContentType))
 	hash := strings.ToLower(strings.TrimSpace(req.SHA256))
 	if req.TaskID == nil || *req.TaskID <= 0 || fileName == "" || len(fileName) > 255 ||
-		req.SizeBytes <= 0 || req.SizeBytes > s.cfg.MaxFileBytes || !validSHA256(hash) || !allowedAttachmentMIME(contentType) {
+		req.SizeBytes <= 0 || req.SizeBytes > s.cfg.MaxFileBytes || !validSHA256(hash) || !allowedAttachmentMIME(contentType) ||
+		strings.TrimSpace(versionGroupID) == "" || version <= 0 {
 		return model.AttachmentUploadSession{}, ErrInvalidAttachment
 	}
 	if _, err := s.tasks.FindByID(access.ID, *req.TaskID); err != nil {
@@ -218,7 +270,26 @@ func (s *AttachmentService) CreateUpload(actorUserID int64, access model.Workspa
 			item.CommentID = req.CommentID
 			item.UploadedByUserID = actorUserID
 			item.FileName = fileName
-			item.Version++
+			item.ContentType = contentType
+			item.Version = version
+			item.VersionGroupID = versionGroupID
+			item.PreviousAttachmentID = previousAttachmentID
+			item.QuarantineReason = ""
+			item.ReleasedByUserID = nil
+			item.ReleasedAt = nil
+			item.ReleaseNote = ""
+			item.PreviewObjectKey = ""
+			item.PreviewContentType = ""
+			item.PreviewWidth = 0
+			item.PreviewHeight = 0
+			item.PreviewEngine = ""
+			item.PreviewMessage = ""
+			item.PreviewCreatedAt = nil
+			item.PreviewStatus = model.AttachmentPreviewStatusNone
+			if s.previewer.Enabled() && previewableAttachmentMIME(contentType) {
+				item.PreviewStatus = model.AttachmentPreviewStatusPending
+			}
+			item.DeletedAt = nil
 			item.CreatedAt = now
 			item.UpdatedAt = now
 			item.UploadedAt = &now
@@ -227,7 +298,9 @@ func (s *AttachmentService) CreateUpload(actorUserID int64, access model.Workspa
 			if err != nil {
 				return model.AttachmentUploadSession{}, err
 			}
-			s.audit(actorUserID, access.ID, "attachment.deduplicated", item.ID, map[string]any{"source_attachment_id": existing.ID})
+			s.audit(actorUserID, access.ID, "attachment.deduplicated", item.ID, map[string]any{
+				"source_attachment_id": existing.ID, "version": version, "version_group_id": versionGroupID,
+			})
 			return model.AttachmentUploadSession{Attachment: item, Method: "DEDUPLICATED", ExpiresAt: now}, nil
 		}
 	}
@@ -236,8 +309,9 @@ func (s *AttachmentService) CreateUpload(actorUserID int64, access model.Workspa
 		WorkspaceID: access.ID, TaskID: req.TaskID, CommentID: req.CommentID, UploadedByUserID: actorUserID,
 		Provider: s.cfg.Provider, Bucket: s.cfg.Bucket, ObjectKey: objectKey, FileName: fileName,
 		ContentType: contentType, SizeBytes: req.SizeBytes, SHA256: hash, Status: model.AttachmentStatusPending,
-		Encryption: s.cfg.Encryption, EncryptionKeyID: s.cfg.EncryptionKeyID, Version: 1,
-		CreatedAt: now, UpdatedAt: now,
+		Encryption: s.cfg.Encryption, EncryptionKeyID: s.cfg.EncryptionKeyID, Version: version,
+		VersionGroupID: versionGroupID, PreviousAttachmentID: previousAttachmentID,
+		PreviewStatus: model.AttachmentPreviewStatusNone, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		return model.AttachmentUploadSession{}, err
@@ -247,7 +321,9 @@ func (s *AttachmentService) CreateUpload(actorUserID int64, access model.Workspa
 	if err != nil {
 		return model.AttachmentUploadSession{}, err
 	}
-	s.audit(actorUserID, access.ID, "attachment.upload_requested", item.ID, map[string]any{"size_bytes": req.SizeBytes, "content_type": contentType})
+	s.audit(actorUserID, access.ID, "attachment.upload_requested", item.ID, map[string]any{
+		"size_bytes": req.SizeBytes, "content_type": contentType, "version": version, "version_group_id": versionGroupID,
+	})
 	return model.AttachmentUploadSession{Attachment: item, UploadURL: uploadURL, Method: "PUT", Headers: headers, ExpiresAt: expires}, nil
 }
 
