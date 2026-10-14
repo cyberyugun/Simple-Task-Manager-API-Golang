@@ -130,6 +130,9 @@ func TestDeveloperPlatformLifecycleCredentialSandboxQuotaAndPortal(t *testing.T)
 	if len(tagDocs) != 2 {
 		t.Fatalf("tag/token search=%+v", tagDocs)
 	}
+	if limited := svc.SearchDocs("", 1); len(limited) != 1 {
+		t.Fatalf("expected documentation search limit to be enforced: %+v", limited)
+	}
 	if len(svc.SDKs()) != 5 {
 		t.Fatalf("expected five SDK targets")
 	}
