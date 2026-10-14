@@ -466,14 +466,14 @@ func (s *ConnectorSecurityService) TestConnection(actorUserID, organizationID, c
 	leastPrivilegeValid := len(excess) == 0
 	scopesValid := len(missing) == 0 && (!policy.EnforceLeastPrivilegeScopes || leastPrivilegeValid)
 	result := model.ConnectorConnectionTest{
-		ConnectionID: connectionID,
-		ScopesValid: scopesValid,
+		ConnectionID:        connectionID,
+		ScopesValid:         scopesValid,
 		LeastPrivilegeValid: leastPrivilegeValid,
-		RequiredScopes: required,
-		GrantedScopes: granted,
-		MissingScopes: missing,
-		ExcessScopes: excess,
-		CheckedAt: now,
+		RequiredScopes:      required,
+		GrantedScopes:       granted,
+		MissingScopes:       missing,
+		ExcessScopes:        excess,
+		CheckedAt:           now,
 	}
 	if len(missing) > 0 {
 		result.Message = ErrConnectorScopeMismatch.Error()
@@ -818,10 +818,10 @@ func (s *ConnectorSecurityService) readCredentialsWithAccess(ctx context.Context
 	meta, metaErr := s.repo.GetCredentialMetadata(secretRow.OrganizationID, connectionID)
 	if errors.Is(metaErr, repository.ErrConnectorCredentialNotFound) {
 		meta = model.ConnectorCredentialMetadata{
-			ConnectionID: connectionID,
+			ConnectionID:   connectionID,
 			OrganizationID: secretRow.OrganizationID,
-			SecretBackend: model.ConnectorSecretBackendDatabase,
-			SecretRef: connectorSecretRef(secretRow.OrganizationID, connectionID),
+			SecretBackend:  model.ConnectorSecretBackendDatabase,
+			SecretRef:      connectorSecretRef(secretRow.OrganizationID, connectionID),
 		}
 		credentials, readErr := s.decryptDatabaseCredentials(secretRow.EncryptedCredentials)
 		if readErr != nil {
@@ -998,13 +998,13 @@ func (s *ConnectorSecurityService) credentialPolicy(organizationID int64) (model
 	if errors.Is(err, repository.ErrConnectorCredentialPolicyNotFound) {
 		now := time.Now().UTC()
 		return model.ConnectorCredentialPolicy{
-			OrganizationID: organizationID,
-			RotationEnabled: false,
-			AutoRotate: false,
-			RotationIntervalDays: 90,
+			OrganizationID:              organizationID,
+			RotationEnabled:             false,
+			AutoRotate:                  false,
+			RotationIntervalDays:        90,
 			EnforceLeastPrivilegeScopes: false,
-			CreatedAt: now,
-			UpdatedAt: now,
+			CreatedAt:                   now,
+			UpdatedAt:                   now,
 		}, nil
 	}
 	return item, err
