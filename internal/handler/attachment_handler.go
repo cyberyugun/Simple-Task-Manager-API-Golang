@@ -90,6 +90,36 @@ func (h *AttachmentHandler) AttachmentByID(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+func (h *AttachmentHandler) Versions(w http.ResponseWriter, r *http.Request) {
+	if !requireTaskScope(w, r) {
+		return
+	}
+	userID, access, ok := requestScope(w, r)
+	if !ok {
+		return
+	}
+	attachmentID, ok := attachmentPathID(w, r.PathValue("attachment_id"))
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		items, err := h.service.Versions(access, attachmentID)
+		h.write(w, items, err, http.StatusOK)
+	case http.MethodPost:
+		defer r.Body.Close()
+		var req model.AttachmentVersionUploadRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			badJSON(w)
+			return
+		}
+		item, err := h.service.CreateVersionUpload(userID, access, attachmentID, req)
+		h.write(w, item, err, http.StatusCreated)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
 func (h *AttachmentHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost || !requireTaskScope(w, r) {
 		if r.Method != http.MethodPost {
@@ -131,6 +161,75 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := h.service.Download(userID, access, attachmentID)
+	h.write(w, item, err, http.StatusOK)
+}
+
+func (h *AttachmentHandler) Preview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !requireTaskScope(w, r) {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+		}
+		return
+	}
+	userID, access, ok := requestScope(w, r)
+	if !ok {
+		return
+	}
+	attachmentID, ok := attachmentPathID(w, r.PathValue("attachment_id"))
+	if !ok {
+		return
+	}
+	item, err := h.service.Preview(userID, access, attachmentID)
+	h.write(w, item, err, http.StatusOK)
+}
+
+func (h *AttachmentHandler) Quarantine(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !requireTaskScope(w, r) {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+		}
+		return
+	}
+	userID, access, ok := requestScope(w, r)
+	if !ok {
+		return
+	}
+	attachmentID, ok := attachmentPathID(w, r.PathValue("attachment_id"))
+	if !ok {
+		return
+	}
+	defer r.Body.Close()
+	var req model.AttachmentQuarantineRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		badJSON(w)
+		return
+	}
+	item, err := h.service.Quarantine(userID, access, attachmentID, req)
+	h.write(w, item, err, http.StatusOK)
+}
+
+func (h *AttachmentHandler) ReleaseQuarantine(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !requireTaskScope(w, r) {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+		}
+		return
+	}
+	userID, access, ok := requestScope(w, r)
+	if !ok {
+		return
+	}
+	attachmentID, ok := attachmentPathID(w, r.PathValue("attachment_id"))
+	if !ok {
+		return
+	}
+	defer r.Body.Close()
+	var req model.AttachmentReleaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		badJSON(w)
+		return
+	}
+	item, err := h.service.ReleaseQuarantine(userID, access, attachmentID, req)
 	h.write(w, item, err, http.StatusOK)
 }
 
@@ -184,6 +283,7 @@ func (h *AttachmentHandler) write(w http.ResponseWriter, data any, err error, su
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrAttachmentQuotaExceeded),
 		errors.Is(err, service.ErrAttachmentNotReady),
+		errors.Is(err, service.ErrAttachmentPreviewNotReady),
 		errors.Is(err, service.ErrAttachmentBlocked),
 		errors.Is(err, service.ErrAttachmentGovernanceDenied):
 		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: err.Error()})
