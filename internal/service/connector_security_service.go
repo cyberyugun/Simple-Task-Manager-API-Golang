@@ -228,7 +228,8 @@ func (s *ConnectorSecurityService) CompleteOAuth(actorUserID, organizationID, co
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	existing, err := s.readCredentials(connectionID)
+	actor := actorUserID
+	existing, err := s.readCredentialsWithAccess(context.Background(), connectionID, &actor, "oauth_exchange_read")
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
@@ -245,9 +246,21 @@ func (s *ConnectorSecurityService) CompleteOAuth(actorUserID, organizationID, co
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	granted := tokenScopes(token, session.RequestedScopes)
-	if !containsAllScopes(granted, session.RequestedScopes) {
+	granted := normalizedScopes(tokenScopes(token, session.RequestedScopes))
+	required := normalizedScopes(session.RequestedScopes)
+	missing, excess := scopeDiff(granted, required)
+	if len(missing) > 0 {
 		return model.ConnectorCredentialMetadata{}, ErrConnectorScopeMismatch
+	}
+	policy, err := s.credentialPolicy(organizationID)
+	if err != nil {
+		return model.ConnectorCredentialMetadata{}, err
+	}
+	if policy.EnforceLeastPrivilegeScopes && len(excess) > 0 {
+		s.audit(organizationID, actorUserID, "integration.oauth.scope_rejected", "integration_connection", fmt.Sprint(connectionID), map[string]any{
+			"required_scopes": required, "granted_scopes": granted, "excess_scopes": excess,
+		})
+		return model.ConnectorCredentialMetadata{}, ErrConnectorScopeExcess
 	}
 	credentials := mergeCredentials(existing, token)
 	now := time.Now().UTC()
@@ -262,7 +275,15 @@ func (s *ConnectorSecurityService) Credential(actorUserID, organizationID, conne
 	if _, err := s.requireAdmin(actorUserID, organizationID); err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	return s.repo.GetCredentialMetadata(organizationID, connectionID)
+	meta, err := s.repo.GetCredentialMetadata(organizationID, connectionID)
+	if err != nil {
+		return model.ConnectorCredentialMetadata{}, err
+	}
+	policy, err := s.credentialPolicy(organizationID)
+	if err != nil {
+		return model.ConnectorCredentialMetadata{}, err
+	}
+	return applyCredentialRotationDue(meta, policy), nil
 }
 
 func (s *ConnectorSecurityService) AccessAudit(actorUserID, organizationID, connectionID int64) ([]model.ConnectorCredentialAccess, error) {
@@ -280,7 +301,8 @@ func (s *ConnectorSecurityService) Rotate(actorUserID, organizationID, connectio
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	credentials, err := s.readCredentials(connectionID)
+	actor := actorUserID
+	credentials, err := s.readCredentialsWithAccess(context.Background(), connectionID, &actor, "rotate_read")
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
@@ -363,7 +385,8 @@ func (s *ConnectorSecurityService) Revoke(actorUserID, organizationID, connectio
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
-	credentials, err := s.readCredentials(connectionID)
+	actor := actorUserID
+	credentials, err := s.readCredentialsWithAccess(context.Background(), connectionID, &actor, "revoke_read")
 	if err != nil {
 		return model.ConnectorCredentialMetadata{}, err
 	}
@@ -433,11 +456,31 @@ func (s *ConnectorSecurityService) TestConnection(actorUserID, organizationID, c
 	if meta.ExpiresAt != nil && !meta.ExpiresAt.After(now) {
 		return model.ConnectorConnectionTest{}, ErrConnectorCredentialExpired
 	}
-	required := integrationConfigStrings(connection.Config, "scopes")
-	scopesValid := containsAllScopes(meta.GrantedScopes, required)
-	result := model.ConnectorConnectionTest{ConnectionID: connectionID, ScopesValid: scopesValid, CheckedAt: now}
-	if !scopesValid {
+	required := normalizedScopes(integrationConfigStrings(connection.Config, "scopes"))
+	granted := normalizedScopes(meta.GrantedScopes)
+	missing, excess := scopeDiff(granted, required)
+	policy, err := s.credentialPolicy(organizationID)
+	if err != nil {
+		return model.ConnectorConnectionTest{}, err
+	}
+	leastPrivilegeValid := len(excess) == 0
+	scopesValid := len(missing) == 0 && (!policy.EnforceLeastPrivilegeScopes || leastPrivilegeValid)
+	result := model.ConnectorConnectionTest{
+		ConnectionID: connectionID,
+		ScopesValid: scopesValid,
+		LeastPrivilegeValid: leastPrivilegeValid,
+		RequiredScopes: required,
+		GrantedScopes: granted,
+		MissingScopes: missing,
+		ExcessScopes: excess,
+		CheckedAt: now,
+	}
+	if len(missing) > 0 {
 		result.Message = ErrConnectorScopeMismatch.Error()
+		return result, nil
+	}
+	if policy.EnforceLeastPrivilegeScopes && len(excess) > 0 {
+		result.Message = ErrConnectorScopeExcess.Error()
 		return result, nil
 	}
 	healthURL := integrationConfigString(connection.Config, "health_url")
@@ -452,7 +495,8 @@ func (s *ConnectorSecurityService) TestConnection(actorUserID, organizationID, c
 	if err := s.validateOAuthURL(healthURL); err != nil {
 		return model.ConnectorConnectionTest{}, err
 	}
-	credentials, err := s.readCredentials(connectionID)
+	actor := actorUserID
+	credentials, err := s.readCredentialsWithAccess(context.Background(), connectionID, &actor, "connection_test_read")
 	if err != nil {
 		return model.ConnectorConnectionTest{}, err
 	}
@@ -516,7 +560,7 @@ func (s *ConnectorSecurityService) refreshOne(ctx context.Context, meta model.Co
 	if err != nil {
 		return meta, err
 	}
-	credentials, err := s.readCredentials(meta.ConnectionID)
+	credentials, err := s.readCredentialsWithAccess(ctx, meta.ConnectionID, nil, "automatic_refresh_read")
 	if err != nil {
 		return meta, err
 	}
@@ -536,10 +580,18 @@ func (s *ConnectorSecurityService) refreshOne(ctx context.Context, meta model.Co
 		return meta, err
 	}
 	merged := mergeCredentials(credentials, token)
-	granted := tokenScopes(token, meta.GrantedScopes)
-	required := integrationConfigStrings(connection.Config, "scopes")
-	if !containsAllScopes(granted, required) {
+	granted := normalizedScopes(tokenScopes(token, meta.GrantedScopes))
+	required := normalizedScopes(integrationConfigStrings(connection.Config, "scopes"))
+	missing, excess := scopeDiff(granted, required)
+	if len(missing) > 0 {
 		return meta, ErrConnectorScopeMismatch
+	}
+	policy, err := s.credentialPolicy(meta.OrganizationID)
+	if err != nil {
+		return meta, err
+	}
+	if policy.EnforceLeastPrivilegeScopes && len(excess) > 0 {
+		return meta, ErrConnectorScopeExcess
 	}
 	now := time.Now().UTC()
 	meta, err = s.persistCredential(connection, 0, merged, granted, tokenExpiry(token, now), true)
@@ -591,6 +643,9 @@ func (s *ConnectorSecurityService) persistCredential(connection model.Integratio
 	meta.GrantedScopes = append([]string(nil), scopes...)
 	meta.ExpiresAt = expiresAt
 	meta.CredentialVersion++
+	if meta.RotatedAt == nil {
+		meta.RotatedAt = &now
+	}
 	meta.UpdatedAt = now
 	meta.RevokedAt = nil
 	if refreshed {
@@ -636,6 +691,9 @@ func (s *ConnectorSecurityService) StoreCredentialsForConnection(ctx context.Con
 	}
 	meta.CredentialVersion++
 	meta.Status = model.ConnectorCredentialActive
+	if meta.RotatedAt == nil {
+		meta.RotatedAt = &now
+	}
 	meta.UpdatedAt = now
 	meta, err = s.repo.UpsertCredentialMetadata(meta)
 	if err != nil {
