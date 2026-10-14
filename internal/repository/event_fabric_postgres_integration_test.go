@@ -55,6 +55,7 @@ func TestIntegrationPostgresEventFabricSchemaRegistry(t *testing.T) {
 
 	schema, compatibility, err := fabric.CreateSchema(owner.ID, access.ID, model.CreateEventSchemaRequest{
 		EventType: model.EventTaskCreated, Compatibility: model.EventSchemaCompatibilityBackward, Owner: "tasks",
+		OwnerService: "task-api", OwnerContact: "tasks@example.com",
 		Schema: map[string]any{
 			"required": []any{"id", "title"},
 			"properties": map[string]any{
@@ -65,6 +66,38 @@ func TestIntegrationPostgresEventFabricSchemaRegistry(t *testing.T) {
 	})
 	if err != nil || schema.Version != 1 || !compatibility.Compatible {
 		t.Fatalf("schema=%+v compatibility=%+v err=%v", schema, compatibility, err)
+	}
+	if schema.OwnerService != "task-api" || schema.OwnerContact != "tasks@example.com" {
+		t.Fatalf("schema ownership=%+v", schema)
+	}
+	replacement, compatibility, err := fabric.CreateSchema(owner.ID, access.ID, model.CreateEventSchemaRequest{
+		EventType: model.EventTaskCreated, Compatibility: model.EventSchemaCompatibilityBackward, Owner: "tasks",
+		OwnerService: "task-api-v2", OwnerContact: "tasks-oncall@example.com",
+		Schema: map[string]any{
+			"required": []any{"id", "title"},
+			"properties": map[string]any{
+				"id": map[string]any{"type": "integer"},
+				"title": map[string]any{"type": "string"},
+				"description": map[string]any{"type": "string"},
+			},
+		},
+	})
+	if err != nil || replacement.Version != 2 || !compatibility.Compatible {
+		t.Fatalf("replacement=%+v compatibility=%+v err=%v", replacement, compatibility, err)
+	}
+	deprecated, err := fabric.DeprecateSchema(owner.ID, access.ID, schema.ID, model.DeprecateEventSchemaRequest{
+		Reason: "superseded in integration test", ReplacementSchemaID: replacement.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deprecated.Status != model.EventSchemaStatusDeprecated || deprecated.ReplacementSchemaID == nil ||
+		*deprecated.ReplacementSchemaID != replacement.ID || deprecated.DeprecationReason == "" {
+		t.Fatalf("deprecated schema=%+v", deprecated)
+	}
+	stored, err := fabricRepo.GetSchema(access.ID, schema.ID)
+	if err != nil || stored.DeprecatedByUserID == nil || *stored.DeprecatedByUserID != owner.ID {
+		t.Fatalf("stored deprecated schema=%+v err=%v", stored, err)
 	}
 
 	subscription, err := fabric.CreateSubscription(owner.ID, access.ID, model.CreateEventFabricSubscriptionRequest{
