@@ -271,18 +271,99 @@ func (h *NotificationHandler) PublishTemplate(w http.ResponseWriter, r *http.Req
 	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: item})
 }
 
+func (h *NotificationHandler) SuppressionRules(w http.ResponseWriter, r *http.Request) {
+	userID, organizationID, ok := organizationScope(w, r)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		items, err := h.service.SuppressionRules(userID, organizationID)
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
+		response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: items})
+	case http.MethodPost:
+		defer r.Body.Close()
+		var req model.CreateNotificationSuppressionRuleRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			badJSON(w)
+			return
+		}
+		item, err := h.service.CreateSuppressionRule(userID, organizationID, req)
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
+		response.JSON(w, http.StatusCreated, response.Envelope{Success: true, Data: item})
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (h *NotificationHandler) SuppressionRuleByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		methodNotAllowed(w)
+		return
+	}
+	userID, organizationID, ok := organizationScope(w, r)
+	if !ok {
+		return
+	}
+	ruleID, err := strconv.ParseInt(r.PathValue("rule_id"), 10, 64)
+	if err != nil || ruleID <= 0 {
+		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: "invalid notification suppression rule id"})
+		return
+	}
+	if err := h.service.DeleteSuppressionRule(userID, organizationID, ruleID); err != nil {
+		h.handleError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Message: "notification suppression rule disabled"})
+}
+
+func (h *NotificationHandler) Analytics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	userID, organizationID, ok := organizationScope(w, r)
+	if !ok {
+		return
+	}
+	days := 30
+	if raw := r.URL.Query().Get("days"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			h.handleError(w, service.ErrInvalidNotificationAnalytics)
+			return
+		}
+		days = parsed
+	}
+	item, err := h.service.Analytics(userID, organizationID, days)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: item})
+}
+
 func (h *NotificationHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalidNotificationPreference),
 		errors.Is(err, service.ErrInvalidNotificationEndpoint),
-		errors.Is(err, service.ErrInvalidNotificationTemplate):
+		errors.Is(err, service.ErrInvalidNotificationTemplate),
+		errors.Is(err, service.ErrInvalidNotificationSuppression),
+		errors.Is(err, service.ErrInvalidNotificationAnalytics):
 		response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, service.ErrNotificationForbidden):
 		response.JSON(w, http.StatusForbidden, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, repository.ErrNotificationNotFound),
 		errors.Is(err, repository.ErrNotificationEndpointNotFound),
 		errors.Is(err, repository.ErrNotificationTemplateNotFound),
-		errors.Is(err, repository.ErrNotificationDeliveryNotFound):
+		errors.Is(err, repository.ErrNotificationDeliveryNotFound),
+		errors.Is(err, repository.ErrNotificationSuppressionRuleNotFound):
 		response.JSON(w, http.StatusNotFound, response.Envelope{Success: false, Message: err.Error()})
 	case errors.Is(err, repository.ErrTaskRelationExists):
 		response.JSON(w, http.StatusConflict, response.Envelope{Success: false, Message: "notification endpoint already exists"})
