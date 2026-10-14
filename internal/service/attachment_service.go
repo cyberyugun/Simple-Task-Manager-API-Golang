@@ -424,7 +424,7 @@ func (s *AttachmentService) Delete(actorUserID int64, access model.WorkspaceAcce
 	if item.UploadedByUserID != actorUserID && access.Role == model.WorkspaceRoleMember {
 		return model.Attachment{}, ErrAttachmentGovernanceDenied
 	}
-	if err := s.store.Delete(context.Background(), item.ObjectKey); err != nil {
+	if err := s.deleteAttachmentObjects(item); err != nil {
 		return model.Attachment{}, err
 	}
 	now := time.Now().UTC()
@@ -551,10 +551,17 @@ func (s *AttachmentService) ProcessPendingScans(limit int) ([]model.Attachment, 
 		if scanErr != nil {
 			item.Status = model.AttachmentStatusQuarantine
 			item.ScanMessage = strings.TrimSpace(result.Message + " " + scanErr.Error())
+			item.QuarantineReason = "automatic quarantine after scanner failure"
 		} else if result.Clean {
 			item.Status = model.AttachmentStatusClean
+			item.QuarantineReason = ""
+			if s.previewer.Enabled() && previewableAttachmentMIME(item.ContentType) && item.PreviewStatus != model.AttachmentPreviewStatusReady {
+				item.PreviewStatus = model.AttachmentPreviewStatusPending
+				item.PreviewMessage = ""
+			}
 		} else {
 			item.Status = model.AttachmentStatusInfected
+			item.QuarantineReason = "malware scanner reported infected content"
 		}
 		item.UpdatedAt = now
 		item, err = s.repo.UpdateAttachment(item)
@@ -562,6 +569,71 @@ func (s *AttachmentService) ProcessPendingScans(limit int) ([]model.Attachment, 
 			return nil, err
 		}
 		s.audit(0, item.WorkspaceID, "attachment.scan_completed", item.ID, map[string]any{"status": item.Status, "engine": item.ScanEngine})
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *AttachmentService) ProcessPendingPreviews(limit int) ([]model.Attachment, error) {
+	if !s.previewer.Enabled() {
+		return []model.Attachment{}, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	items, err := s.repo.ListPendingPreviews(limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Attachment, 0, len(items))
+	for _, item := range items {
+		if !previewableAttachmentMIME(item.ContentType) {
+			item.PreviewStatus = model.AttachmentPreviewStatusNone
+			item.PreviewMessage = "preview is not supported for this content type"
+			item.UpdatedAt = time.Now().UTC()
+			item, err = s.repo.UpdateAttachment(item)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, item)
+			continue
+		}
+		item.PreviewStatus = model.AttachmentPreviewStatusProcessing
+		item.UpdatedAt = time.Now().UTC()
+		item, err = s.repo.UpdateAttachment(item)
+		if err != nil {
+			return nil, err
+		}
+		previewObjectKey := fmt.Sprintf("workspaces/%d/previews/%d/v%d/preview", item.WorkspaceID, item.ID, item.Version)
+		result, previewErr := s.previewer.Generate(context.Background(), item, previewObjectKey)
+		now := time.Now().UTC()
+		if previewErr != nil {
+			item.PreviewStatus = model.AttachmentPreviewStatusFailed
+			item.PreviewObjectKey = ""
+			item.PreviewContentType = ""
+			item.PreviewWidth = 0
+			item.PreviewHeight = 0
+			item.PreviewEngine = strings.TrimSpace(result.Engine)
+			item.PreviewMessage = previewErr.Error()
+			item.PreviewCreatedAt = nil
+		} else {
+			item.PreviewStatus = model.AttachmentPreviewStatusReady
+			item.PreviewObjectKey = result.ObjectKey
+			item.PreviewContentType = result.ContentType
+			item.PreviewWidth = result.Width
+			item.PreviewHeight = result.Height
+			item.PreviewEngine = result.Engine
+			item.PreviewMessage = result.Message
+			item.PreviewCreatedAt = &now
+		}
+		item.UpdatedAt = now
+		item, err = s.repo.UpdateAttachment(item)
+		if err != nil {
+			return nil, err
+		}
+		s.audit(0, item.WorkspaceID, "attachment.preview_processed", item.ID, map[string]any{
+			"preview_status": item.PreviewStatus, "engine": item.PreviewEngine,
+		})
 		out = append(out, item)
 	}
 	return out, nil
@@ -577,7 +649,7 @@ func (s *AttachmentService) ProcessRetention(limit int) ([]model.Attachment, err
 	}
 	out := make([]model.Attachment, 0, len(items))
 	for _, item := range items {
-		if err := s.store.Delete(context.Background(), item.ObjectKey); err != nil {
+		if err := s.deleteAttachmentObjects(item); err != nil {
 			continue
 		}
 		now := time.Now().UTC()
@@ -592,6 +664,22 @@ func (s *AttachmentService) ProcessRetention(limit int) ([]model.Attachment, err
 		out = append(out, updated)
 	}
 	return out, nil
+}
+
+func (s *AttachmentService) deleteAttachmentObjects(item model.Attachment) error {
+	if strings.TrimSpace(item.PreviewObjectKey) != "" {
+		if err := s.store.Delete(context.Background(), item.PreviewObjectKey); err != nil {
+			return err
+		}
+	}
+	references, err := s.repo.CountObjectReferences(item.WorkspaceID, item.ObjectKey, item.ID)
+	if err != nil {
+		return err
+	}
+	if references == 0 {
+		return s.store.Delete(context.Background(), item.ObjectKey)
+	}
+	return nil
 }
 
 func (s *AttachmentService) audit(actorUserID, workspaceID int64, action string, attachmentID int64, metadata map[string]any) {
