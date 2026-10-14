@@ -160,4 +160,21 @@ func TestIntegrationPostgresSearchReportingAnalytics(t *testing.T) {
 	if err != nil || len(runs) != 1 || runs[0].Status != model.ReportRunSucceeded || runs[0].RowCount != 1 {
 		t.Fatalf("runs=%+v err=%v", runs, err)
 	}
+
+	if _, err := tasks.Create(model.Task{
+		WorkspaceID: access.ID, UserID: owner.ID, Title: "Provider defect investigation",
+		Description: "synonym-only search target", Status: model.TaskStatusTodo,
+		Priority: model.TaskPriorityMedium, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	relevance := model.DefaultSearchRelevanceOptions()
+	synonymSearch, err := analytics.SearchTasks(access.ID, model.SearchQuery{
+		Query: "bug", Page: 1, Limit: 20, Relevance: relevance, SynonymTerms: []string{"defect"},
+	})
+	if err != nil || synonymSearch.Pagination.Total != 1 ||
+		len(synonymSearch.Items) != 1 || synonymSearch.Items[0].Task.Title != "Provider defect investigation" ||
+		synonymSearch.Items[0].Rank <= 0 {
+		t.Fatalf("synonym search=%+v err=%v", synonymSearch, err)
+	}
 }
