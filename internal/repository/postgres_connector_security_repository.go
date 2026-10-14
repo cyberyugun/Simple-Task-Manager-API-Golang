@@ -142,6 +142,94 @@ func (r *PostgresConnectorSecurityRepository) ListCredentialsDue(before time.Tim
 	return items, rows.Err()
 }
 
+type connectorCredentialPolicyScanner interface {
+	Scan(...any) error
+}
+
+func scanConnectorCredentialPolicy(scanner connectorCredentialPolicyScanner) (model.ConnectorCredentialPolicy, error) {
+	var item model.ConnectorCredentialPolicy
+	err := scanner.Scan(
+		&item.OrganizationID,
+		&item.RotationEnabled,
+		&item.AutoRotate,
+		&item.RotationIntervalDays,
+		&item.EnforceLeastPrivilegeScopes,
+		&item.CreatedByUserID,
+		&item.UpdatedByUserID,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	return item, err
+}
+
+func (r *PostgresConnectorSecurityRepository) GetCredentialPolicy(organizationID int64) (model.ConnectorCredentialPolicy, error) {
+	item, err := scanConnectorCredentialPolicy(r.db.QueryRow(`
+		SELECT organization_id,rotation_enabled,auto_rotate,rotation_interval_days,
+			enforce_least_privilege_scopes,created_by_user_id,updated_by_user_id,created_at,updated_at
+		FROM integration_credential_policies
+		WHERE organization_id=$1
+	`, organizationID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.ConnectorCredentialPolicy{}, ErrConnectorCredentialPolicyNotFound
+	}
+	return item, err
+}
+
+func (r *PostgresConnectorSecurityRepository) UpsertCredentialPolicy(item model.ConnectorCredentialPolicy) (model.ConnectorCredentialPolicy, error) {
+	return scanConnectorCredentialPolicy(r.db.QueryRow(`
+		INSERT INTO integration_credential_policies (
+			organization_id,rotation_enabled,auto_rotate,rotation_interval_days,
+			enforce_least_privilege_scopes,created_by_user_id,updated_by_user_id,created_at,updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		ON CONFLICT (organization_id) DO UPDATE SET
+			rotation_enabled=EXCLUDED.rotation_enabled,
+			auto_rotate=EXCLUDED.auto_rotate,
+			rotation_interval_days=EXCLUDED.rotation_interval_days,
+			enforce_least_privilege_scopes=EXCLUDED.enforce_least_privilege_scopes,
+			updated_by_user_id=EXCLUDED.updated_by_user_id,
+			updated_at=EXCLUDED.updated_at
+		RETURNING organization_id,rotation_enabled,auto_rotate,rotation_interval_days,
+			enforce_least_privilege_scopes,created_by_user_id,updated_by_user_id,created_at,updated_at
+	`, item.OrganizationID, item.RotationEnabled, item.AutoRotate, item.RotationIntervalDays,
+		item.EnforceLeastPrivilegeScopes, item.CreatedByUserID, item.UpdatedByUserID, item.CreatedAt, item.UpdatedAt))
+}
+
+func (r *PostgresConnectorSecurityRepository) ListCredentialsDueForRotation(now time.Time, limit int) ([]model.ConnectorCredentialMetadata, error) {
+	rows, err := r.db.Query(`
+		SELECT m.connection_id,m.organization_id,m.secret_backend,m.secret_ref,m.key_version,m.credential_version,m.status,
+			m.granted_scopes,m.expires_at,m.last_refresh_at,m.last_validated_at,m.rotated_at,m.revoked_at,m.updated_at
+		FROM integration_credential_metadata m
+		JOIN integration_credential_policies p ON p.organization_id=m.organization_id
+		WHERE p.rotation_enabled=TRUE
+		  AND p.auto_rotate=TRUE
+		  AND m.status='active'
+		  AND COALESCE(m.rotated_at,m.updated_at) + (p.rotation_interval_days * INTERVAL '1 day') <= $1
+		ORDER BY COALESCE(m.rotated_at,m.updated_at) + (p.rotation_interval_days * INTERVAL '1 day'),m.connection_id
+		LIMIT $2
+	`, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.ConnectorCredentialMetadata, 0)
+	for rows.Next() {
+		var item model.ConnectorCredentialMetadata
+		var raw []byte
+		if err := rows.Scan(
+			&item.ConnectionID, &item.OrganizationID, &item.SecretBackend, &item.SecretRef,
+			&item.KeyVersion, &item.CredentialVersion, &item.Status, &raw, &item.ExpiresAt,
+			&item.LastRefreshAt, &item.LastValidatedAt, &item.RotatedAt, &item.RevokedAt, &item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(raw, &item.GrantedScopes); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *PostgresConnectorSecurityRepository) RecordCredentialAccess(item model.ConnectorCredentialAccess) error {
 	_, err := r.db.Exec(`
 		INSERT INTO integration_credential_access_audit
