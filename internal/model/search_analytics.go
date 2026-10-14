@@ -152,17 +152,45 @@ type CreateScheduledReportRequest struct {
 }
 
 type ReportRun struct {
-	ID          int64      `json:"id"`
-	ScheduleID  int64      `json:"schedule_id"`
-	WorkspaceID int64      `json:"workspace_id"`
-	Status      string     `json:"status"`
-	Format      string     `json:"format"`
-	RowCount    int        `json:"row_count"`
-	Payload     []byte     `json:"-"`
-	Error       string     `json:"error,omitempty"`
-	StartedAt   time.Time  `json:"started_at"`
-	FinishedAt  *time.Time `json:"finished_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID               int64      `json:"id"`
+	ScheduleID       int64      `json:"schedule_id"`
+	WorkspaceID      int64      `json:"workspace_id"`
+	Status           string     `json:"status"`
+	Format           string     `json:"format"`
+	RowCount         int        `json:"row_count"`
+	Payload          []byte     `json:"-"`
+	PayloadSizeBytes int64      `json:"-"`
+	PayloadPurgedAt  *time.Time `json:"-"`
+	AggregatedAt     *time.Time `json:"-"`
+	Error            string     `json:"error,omitempty"`
+	StartedAt        time.Time  `json:"started_at"`
+	FinishedAt       *time.Time `json:"finished_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+}
+
+type ReportRunDailyAggregate struct {
+	WorkspaceID      int64     `json:"workspace_id"`
+	Day              time.Time `json:"day"`
+	Format           string    `json:"format"`
+	Status           string    `json:"status"`
+	RunCount         int64     `json:"run_count"`
+	TotalRowCount    int64     `json:"total_row_count"`
+	ErrorCount       int64     `json:"error_count"`
+	PayloadSizeBytes int64     `json:"payload_size_bytes"`
+	DurationMillis   int64     `json:"duration_millis"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type ReportRetentionPolicy struct {
+	Enabled              bool
+	PayloadRetentionDays int
+	DetailRetentionDays  int
+}
+
+type ReportRetentionResult struct {
+	PayloadsPurged int64 `json:"payloads_purged"`
+	RunsAggregated int64 `json:"runs_aggregated"`
+	RunsDeleted    int64 `json:"runs_deleted"`
 }
 
 type ReportRunSummary struct {

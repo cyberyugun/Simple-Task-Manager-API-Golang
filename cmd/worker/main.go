@@ -134,6 +134,21 @@ func main() {
 		logger.Error("report_worker_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	reportRetentionPoll, err := durationEnv("REPORT_RUN_RETENTION_POLL_INTERVAL", time.Hour)
+	if err != nil {
+		logger.Error("report_retention_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	reportRetentionBatch, err := intEnv("REPORT_RUN_RETENTION_BATCH_SIZE", 500)
+	if err != nil {
+		logger.Error("report_retention_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	reportRetentionPolicy, err := service.NewReportRetentionPolicyFromEnv()
+	if err != nil {
+		logger.Error("report_retention_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	eventFabricPoll, err := durationEnv("EVENT_FABRIC_POLL_INTERVAL", 2*time.Second)
 	if err != nil {
 		logger.Error("event_fabric_worker_configuration_failed", "error", err)
@@ -277,7 +292,14 @@ func main() {
 		repository.NewPostgresWorkspaceRepository(db),
 		searchRelevance,
 	)
+	if err := searchAnalyticsService.SetReportRetentionPolicy(reportRetentionPolicy); err != nil {
+		logger.Error("report_retention_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	go runScheduledReports(ctx, searchAnalyticsService, reportPoll, reportBatch, logger)
+	if reportRetentionPolicy.Enabled {
+		go runReportRetention(ctx, searchAnalyticsService, reportRetentionPoll, reportRetentionBatch, logger)
+	}
 	go runEventFabricPlatform(
 		ctx,
 		eventFabricService,
@@ -615,6 +637,35 @@ func runScheduledReports(ctx context.Context, reports *service.SearchAnalyticsSe
 		select {
 		case <-ctx.Done():
 			logger.Info("report_worker_stopped")
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
+func runReportRetention(ctx context.Context, reports *service.SearchAnalyticsService, poll time.Duration, batch int, logger *slog.Logger) {
+	run := func() {
+		result, err := reports.ProcessReportRetention(batch, time.Now().UTC())
+		if err != nil {
+			logger.Error("report_retention_failed", "error", err)
+			return
+		}
+		logger.Info(
+			"report_retention_completed",
+			"payloads_purged", result.PayloadsPurged,
+			"runs_aggregated", result.RunsAggregated,
+			"runs_deleted", result.RunsDeleted,
+		)
+	}
+	logger.Info("report_retention_worker_started", "poll_interval", poll, "batch_size", batch)
+	run()
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("report_retention_worker_stopped")
 			return
 		case <-ticker.C:
 			run()

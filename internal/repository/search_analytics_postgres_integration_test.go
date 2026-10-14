@@ -161,6 +161,82 @@ func TestIntegrationPostgresSearchReportingAnalytics(t *testing.T) {
 		t.Fatalf("runs=%+v err=%v", runs, err)
 	}
 
+	oldStarted := now.AddDate(0, 0, -400)
+	oldFinished := oldStarted.Add(1500 * time.Millisecond)
+	oldSuccess, err := analytics.CreateReportRun(model.ReportRun{
+		ScheduleID: schedule.ID, WorkspaceID: access.ID, Status: model.ReportRunSucceeded,
+		Format: model.ReportFormatJSON, RowCount: 4, Payload: []byte("archived-success"),
+		StartedAt: oldStarted, FinishedAt: &oldFinished, CreatedAt: oldStarted,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedStarted := oldStarted.Add(time.Hour)
+	failedFinished := failedStarted.Add(750 * time.Millisecond)
+	oldFailed, err := analytics.CreateReportRun(model.ReportRun{
+		ScheduleID: schedule.ID, WorkspaceID: access.ID, Status: model.ReportRunFailed,
+		Format: model.ReportFormatJSON, RowCount: 0, Payload: []byte("archived-failure"), Error: "provider timeout",
+		StartedAt: failedStarted, FinishedAt: &failedFinished, CreatedAt: failedStarted,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	purged, err := analytics.PurgeReportRunPayloads(now.AddDate(0, 0, -30), 100, now)
+	if err != nil || purged != 2 {
+		t.Fatalf("payload purge=%d err=%v", purged, err)
+	}
+	var payloadNull, purgeStamped bool
+	var payloadSize int64
+	if err := db.QueryRow(
+		"SELECT payload IS NULL, payload_size_bytes, payload_purged_at IS NOT NULL FROM report_runs WHERE id=$1",
+		oldSuccess.ID,
+	).Scan(&payloadNull, &payloadSize, &purgeStamped); err != nil {
+		t.Fatal(err)
+	}
+	if !payloadNull || !purgeStamped || payloadSize != int64(len("archived-success")) {
+		t.Fatalf("payloadNull=%v purgeStamped=%v payloadSize=%d", payloadNull, purgeStamped, payloadSize)
+	}
+
+	aggregated, err := analytics.AggregateReportRuns(now.AddDate(0, 0, -365), 100, now)
+	if err != nil || aggregated != 2 {
+		t.Fatalf("aggregated=%d err=%v", aggregated, err)
+	}
+	aggregates, err := analytics.ListReportRunAggregates(access.ID, now.AddDate(0, 0, -500))
+	if err != nil || len(aggregates) != 2 {
+		t.Fatalf("aggregates=%+v err=%v", aggregates, err)
+	}
+	var successAggregate, failedAggregate model.ReportRunDailyAggregate
+	for _, aggregate := range aggregates {
+		switch aggregate.Status {
+		case model.ReportRunSucceeded:
+			successAggregate = aggregate
+		case model.ReportRunFailed:
+			failedAggregate = aggregate
+		}
+	}
+	if successAggregate.RunCount != 1 || successAggregate.TotalRowCount != 4 ||
+		successAggregate.PayloadSizeBytes != int64(len("archived-success")) || successAggregate.DurationMillis != 1500 {
+		t.Fatalf("success aggregate=%+v", successAggregate)
+	}
+	if failedAggregate.RunCount != 1 || failedAggregate.ErrorCount != 1 ||
+		failedAggregate.PayloadSizeBytes != int64(len("archived-failure")) || failedAggregate.DurationMillis != 750 {
+		t.Fatalf("failed aggregate=%+v", failedAggregate)
+	}
+	deleted, err := analytics.DeleteAggregatedReportRuns(now.AddDate(0, 0, -365), 100)
+	if err != nil || deleted != 2 {
+		t.Fatalf("deleted=%d err=%v", deleted, err)
+	}
+	for _, id := range []int64{oldSuccess.ID, oldFailed.ID} {
+		var exists bool
+		if err := db.QueryRow("SELECT EXISTS (SELECT 1 FROM report_runs WHERE id=$1)", id).Scan(&exists); err != nil {
+			t.Fatal(err)
+		}
+		if exists {
+			t.Fatalf("retained detail run %d after aggregation", id)
+		}
+	}
+
 	if _, err := tasks.Create(model.Task{
 		WorkspaceID: access.ID, UserID: owner.ID, Title: "Provider defect investigation",
 		Description: "synonym-only search target", Status: model.TaskStatusTodo,

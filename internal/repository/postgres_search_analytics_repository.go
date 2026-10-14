@@ -512,23 +512,30 @@ func (r *PostgresSearchAnalyticsRepository) UpdateScheduledReport(item model.Sch
 }
 
 func (r *PostgresSearchAnalyticsRepository) CreateReportRun(item model.ReportRun) (model.ReportRun, error) {
+	if item.PayloadSizeBytes == 0 && len(item.Payload) > 0 {
+		item.PayloadSizeBytes = int64(len(item.Payload))
+	}
 	err := r.db.QueryRow(`
 		INSERT INTO report_runs (
-			schedule_id, workspace_id, status, format, row_count, payload, error,
-			started_at, finished_at, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			schedule_id, workspace_id, status, format, row_count, payload, payload_size_bytes,
+			payload_purged_at, aggregated_at, error, started_at, finished_at, created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING id
 	`, item.ScheduleID, item.WorkspaceID, item.Status, item.Format, item.RowCount,
-		item.Payload, item.Error, item.StartedAt, item.FinishedAt, item.CreatedAt).Scan(&item.ID)
+		item.Payload, item.PayloadSizeBytes, item.PayloadPurgedAt, item.AggregatedAt, item.Error,
+		item.StartedAt, item.FinishedAt, item.CreatedAt).Scan(&item.ID)
 	return item, err
 }
 
 func (r *PostgresSearchAnalyticsRepository) CompleteReportRun(item model.ReportRun) (model.ReportRun, error) {
+	if len(item.Payload) > 0 {
+		item.PayloadSizeBytes = int64(len(item.Payload))
+	}
 	result, err := r.db.Exec(`
 		UPDATE report_runs
-		SET status=$2, row_count=$3, payload=$4, error=$5, finished_at=$6
+		SET status=$2, row_count=$3, payload=$4, payload_size_bytes=$5, error=$6, finished_at=$7
 		WHERE id=$1
-	`, item.ID, item.Status, item.RowCount, item.Payload, item.Error, item.FinishedAt)
+	`, item.ID, item.Status, item.RowCount, item.Payload, item.PayloadSizeBytes, item.Error, item.FinishedAt)
 	if err != nil {
 		return model.ReportRun{}, err
 	}
@@ -562,6 +569,128 @@ func (r *PostgresSearchAnalyticsRepository) ListReportRuns(workspaceID, userID i
 		if err := rows.Scan(
 			&item.ID, &item.ScheduleID, &item.WorkspaceID, &item.Status, &item.Format,
 			&item.RowCount, &item.Error, &item.StartedAt, &item.FinishedAt, &item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *PostgresSearchAnalyticsRepository) PurgeReportRunPayloads(before time.Time, limit int, now time.Time) (int64, error) {
+	var count int64
+	err := r.db.QueryRow(`
+		WITH candidates AS MATERIALIZED (
+			SELECT id
+			FROM report_runs
+			WHERE created_at < $1
+			  AND payload IS NOT NULL
+			  AND status IN ('succeeded','failed')
+			ORDER BY created_at, id
+			FOR UPDATE SKIP LOCKED
+			LIMIT $2
+		), purged AS (
+			UPDATE report_runs rr
+			SET payload = NULL, payload_purged_at = $3
+			FROM candidates c
+			WHERE rr.id = c.id
+			RETURNING rr.id
+		)
+		SELECT COUNT(*) FROM purged
+	`, before, limit, now).Scan(&count)
+	return count, err
+}
+
+func (r *PostgresSearchAnalyticsRepository) AggregateReportRuns(before time.Time, limit int, now time.Time) (int64, error) {
+	var count int64
+	err := r.db.QueryRow(`
+		WITH candidates AS MATERIALIZED (
+			SELECT id, workspace_id, (created_at AT TIME ZONE 'UTC')::date AS day,
+				format, status, row_count, payload_size_bytes,
+				CASE WHEN status = 'failed' THEN 1 ELSE 0 END AS error_count,
+				CASE
+					WHEN finished_at IS NULL OR finished_at < started_at THEN 0
+					ELSE GREATEST(0, (EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)::bigint)
+				END AS duration_millis
+			FROM report_runs
+			WHERE created_at < $1
+			  AND aggregated_at IS NULL
+			  AND status IN ('succeeded','failed')
+			ORDER BY created_at, id
+			FOR UPDATE SKIP LOCKED
+			LIMIT $2
+		), upserted AS (
+			INSERT INTO report_run_daily_aggregates (
+				workspace_id, day, format, status, run_count, total_row_count,
+				error_count, payload_size_bytes, duration_millis, updated_at
+			)
+			SELECT workspace_id, day, format, status, COUNT(*), COALESCE(SUM(row_count),0),
+				COALESCE(SUM(error_count),0), COALESCE(SUM(payload_size_bytes),0),
+				COALESCE(SUM(duration_millis),0), $3
+			FROM candidates
+			GROUP BY workspace_id, day, format, status
+			ON CONFLICT (workspace_id, day, format, status) DO UPDATE SET
+				run_count = report_run_daily_aggregates.run_count + EXCLUDED.run_count,
+				total_row_count = report_run_daily_aggregates.total_row_count + EXCLUDED.total_row_count,
+				error_count = report_run_daily_aggregates.error_count + EXCLUDED.error_count,
+				payload_size_bytes = report_run_daily_aggregates.payload_size_bytes + EXCLUDED.payload_size_bytes,
+				duration_millis = report_run_daily_aggregates.duration_millis + EXCLUDED.duration_millis,
+				updated_at = EXCLUDED.updated_at
+			RETURNING workspace_id
+		), marked AS (
+			UPDATE report_runs rr
+			SET aggregated_at = $3
+			FROM candidates c
+			WHERE rr.id = c.id
+			RETURNING rr.id
+		)
+		SELECT COUNT(*) FROM marked
+	`, before, limit, now).Scan(&count)
+	return count, err
+}
+
+func (r *PostgresSearchAnalyticsRepository) DeleteAggregatedReportRuns(before time.Time, limit int) (int64, error) {
+	var count int64
+	err := r.db.QueryRow(`
+		WITH candidates AS MATERIALIZED (
+			SELECT id
+			FROM report_runs
+			WHERE created_at < $1
+			  AND aggregated_at IS NOT NULL
+			  AND status IN ('succeeded','failed')
+			ORDER BY created_at, id
+			FOR UPDATE SKIP LOCKED
+			LIMIT $2
+		), deleted AS (
+			DELETE FROM report_runs rr
+			USING candidates c
+			WHERE rr.id = c.id
+			RETURNING rr.id
+		)
+		SELECT COUNT(*) FROM deleted
+	`, before, limit).Scan(&count)
+	return count, err
+}
+
+func (r *PostgresSearchAnalyticsRepository) ListReportRunAggregates(workspaceID int64, fromDay time.Time) ([]model.ReportRunDailyAggregate, error) {
+	rows, err := r.db.Query(`
+		SELECT workspace_id, day, format, status, run_count, total_row_count,
+			error_count, payload_size_bytes, duration_millis, updated_at
+		FROM report_run_daily_aggregates
+		WHERE workspace_id = $1 AND day >= $2::date
+		ORDER BY day, format, status
+	`, workspaceID, fromDay.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []model.ReportRunDailyAggregate{}
+	for rows.Next() {
+		var item model.ReportRunDailyAggregate
+		if err := rows.Scan(
+			&item.WorkspaceID, &item.Day, &item.Format, &item.Status, &item.RunCount,
+			&item.TotalRowCount, &item.ErrorCount, &item.PayloadSizeBytes,
+			&item.DurationMillis, &item.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
