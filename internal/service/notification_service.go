@@ -21,9 +21,9 @@ import (
 )
 
 var (
-	ErrInvalidNotificationPreference = errors.New("invalid notification preference")
-	ErrInvalidNotificationEndpoint   = errors.New("invalid notification endpoint")
-	ErrInvalidNotificationTemplate   = errors.New("invalid notification template")
+	ErrInvalidNotificationPreference  = errors.New("invalid notification preference")
+	ErrInvalidNotificationEndpoint    = errors.New("invalid notification endpoint")
+	ErrInvalidNotificationTemplate    = errors.New("invalid notification template")
 	ErrInvalidNotificationSuppression = errors.New("invalid notification suppression rule")
 	ErrInvalidNotificationAnalytics   = errors.New("invalid notification analytics request")
 	ErrNotificationForbidden          = errors.New("notification action is forbidden")
@@ -332,16 +332,16 @@ func (s *NotificationService) CreateSuppressionRule(actorUserID, organizationID 
 	}
 	now := time.Now().UTC()
 	item, err := s.repo.CreateSuppressionRule(model.NotificationSuppressionRule{
-		OrganizationID: organizationID,
-		EventType: eventType,
-		Channel: channel,
-		Reason: reason,
-		Active: true,
-		StartsAt: startsAt,
-		EndsAt: endsAt,
+		OrganizationID:  organizationID,
+		EventType:       eventType,
+		Channel:         channel,
+		Reason:          reason,
+		Active:          true,
+		StartsAt:        startsAt,
+		EndsAt:          endsAt,
 		CreatedByUserID: actorUserID,
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	})
 	if err != nil {
 		return model.NotificationSuppressionRule{}, err
@@ -349,12 +349,12 @@ func (s *NotificationService) CreateSuppressionRule(actorUserID, organizationID 
 	actor := actorUserID
 	if err := s.orgs.RecordAudit(model.OrganizationAuditEvent{
 		OrganizationID: organizationID,
-		ActorUserID: &actor,
-		Action: "notification.suppression_rule.created",
-		ResourceType: "notification_suppression_rule",
-		ResourceID: strconv.FormatInt(item.ID, 10),
-		Metadata: map[string]any{"event_type": item.EventType, "channel": item.Channel, "reason": item.Reason},
-		CreatedAt: now,
+		ActorUserID:    &actor,
+		Action:         "notification.suppression_rule.created",
+		ResourceType:   "notification_suppression_rule",
+		ResourceID:     strconv.FormatInt(item.ID, 10),
+		Metadata:       map[string]any{"event_type": item.EventType, "channel": item.Channel, "reason": item.Reason},
+		CreatedAt:      now,
 	}); err != nil {
 		return model.NotificationSuppressionRule{}, err
 	}
@@ -375,11 +375,11 @@ func (s *NotificationService) DeleteSuppressionRule(actorUserID, organizationID,
 	actor := actorUserID
 	return s.orgs.RecordAudit(model.OrganizationAuditEvent{
 		OrganizationID: organizationID,
-		ActorUserID: &actor,
-		Action: "notification.suppression_rule.deleted",
-		ResourceType: "notification_suppression_rule",
-		ResourceID: strconv.FormatInt(ruleID, 10),
-		CreatedAt: now,
+		ActorUserID:    &actor,
+		Action:         "notification.suppression_rule.deleted",
+		ResourceType:   "notification_suppression_rule",
+		ResourceID:     strconv.FormatInt(ruleID, 10),
+		CreatedAt:      now,
 	})
 }
 
@@ -782,15 +782,15 @@ func (s *NotificationService) recordNotificationChannelSuppression(notification 
 	ruleID := rule.ID
 	return s.repo.RecordSuppression(model.NotificationSuppressionEvent{
 		OrganizationID: *notification.OrganizationID,
-		WorkspaceID: workspaceID,
-		UserID: &userID,
+		WorkspaceID:    workspaceID,
+		UserID:         &userID,
 		NotificationID: &notificationID,
-		RuleID: &ruleID,
-		EventType: notification.EventType,
-		Channel: channel,
-		Reason: rule.Reason,
-		DedupeKey: fmt.Sprintf("notification:%d:channel:%s:rule:%d", notification.ID, channel, rule.ID),
-		CreatedAt: now,
+		RuleID:         &ruleID,
+		EventType:      notification.EventType,
+		Channel:        channel,
+		Reason:         rule.Reason,
+		DedupeKey:      fmt.Sprintf("notification:%d:channel:%s:rule:%d", notification.ID, channel, rule.ID),
+		CreatedAt:      now,
 	})
 }
 
@@ -806,15 +806,15 @@ func (s *NotificationService) recordSuppression(input model.NotificationCreate, 
 	}
 	return s.repo.RecordSuppression(model.NotificationSuppressionEvent{
 		OrganizationID: *input.OrganizationID,
-		WorkspaceID: input.WorkspaceID,
-		UserID: &userID,
+		WorkspaceID:    input.WorkspaceID,
+		UserID:         &userID,
 		NotificationID: notificationID,
-		RuleID: ruleID,
-		EventType: input.EventType,
-		Channel: channel,
-		Reason: reason,
-		DedupeKey: fmt.Sprintf("event:%s:%s:%s", input.DedupeKey, channel, suffix),
-		CreatedAt: now,
+		RuleID:         ruleID,
+		EventType:      input.EventType,
+		Channel:        channel,
+		Reason:         reason,
+		DedupeKey:      fmt.Sprintf("event:%s:%s:%s", input.DedupeKey, channel, suffix),
+		CreatedAt:      now,
 	})
 }
 
