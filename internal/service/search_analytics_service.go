@@ -25,6 +25,7 @@ var (
 type SearchAnalyticsService struct {
 	repo       repository.SearchAnalyticsRepository
 	workspaces repository.WorkspaceRepository
+	relevance  model.SearchRelevanceOptions
 }
 
 type ReportExportResult struct {
@@ -35,7 +36,14 @@ type ReportExportResult struct {
 }
 
 func NewSearchAnalyticsService(repo repository.SearchAnalyticsRepository, workspaces repository.WorkspaceRepository) *SearchAnalyticsService {
-	return &SearchAnalyticsService{repo: repo, workspaces: workspaces}
+	return NewSearchAnalyticsServiceWithRelevance(repo, workspaces, model.DefaultSearchRelevanceOptions())
+}
+
+func NewSearchAnalyticsServiceWithRelevance(repo repository.SearchAnalyticsRepository, workspaces repository.WorkspaceRepository, relevance model.SearchRelevanceOptions) *SearchAnalyticsService {
+	if !relevance.Configured {
+		relevance = model.DefaultSearchRelevanceOptions()
+	}
+	return &SearchAnalyticsService{repo: repo, workspaces: workspaces, relevance: relevance}
 }
 
 func (s *SearchAnalyticsService) Search(workspaceID int64, query model.SearchQuery) (model.SearchPage, error) {
@@ -66,6 +74,8 @@ func (s *SearchAnalyticsService) Search(workspaceID int64, query model.SearchQue
 	if query.AssigneeID != nil && *query.AssigneeID <= 0 {
 		return model.SearchPage{}, ErrInvalidSearchQuery
 	}
+	query.Relevance = s.relevance
+	query.SynonymTerms = expandSearchSynonyms(query.Query, s.relevance.Synonyms)
 	return s.repo.SearchTasks(workspaceID, query)
 }
 
