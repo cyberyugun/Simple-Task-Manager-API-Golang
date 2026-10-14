@@ -2,8 +2,8 @@
 package generated.sdk;
 
 public final class Client {
-    public static final String OPENAPI_VERSION = "1.13.0";
-    public static final int OPENAPI_PATH_COUNT = 268;
+    public static final String OPENAPI_VERSION = "1.14.0";
+    public static final int OPENAPI_PATH_COUNT = 269;
 
     private final String baseUrl;
     private final String accessToken;
