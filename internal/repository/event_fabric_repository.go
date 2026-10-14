@@ -20,8 +20,9 @@ var (
 type EventFabricRepository interface {
 	CreateSchema(schema model.EventSchemaVersion) (model.EventSchemaVersion, error)
 	ListSchemas(workspaceID int64, eventType string) ([]model.EventSchemaVersion, error)
+	GetSchema(workspaceID, schemaID int64) (model.EventSchemaVersion, error)
 	LatestSchema(workspaceID int64, eventType string) (model.EventSchemaVersion, error)
-	DeprecateSchema(workspaceID, schemaID int64, now time.Time) error
+	DeprecateSchema(workspaceID, schemaID, deprecatedByUserID int64, reason string, replacementSchemaID *int64, now time.Time) (model.EventSchemaVersion, error)
 
 	CreateSubscription(subscription model.EventFabricSubscription) (model.EventFabricSubscription, error)
 	ListSubscriptions(workspaceID int64) ([]model.EventFabricSubscription, error)
@@ -102,6 +103,16 @@ func (r *InMemoryEventFabricRepository) ListSchemas(workspaceID int64, eventType
 	return items, nil
 }
 
+func (r *InMemoryEventFabricRepository) GetSchema(workspaceID, schemaID int64) (model.EventSchemaVersion, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item, ok := r.schemas[schemaID]
+	if !ok || item.WorkspaceID != workspaceID {
+		return model.EventSchemaVersion{}, ErrEventSchemaNotFound
+	}
+	return cloneEventSchema(item), nil
+}
+
 func (r *InMemoryEventFabricRepository) LatestSchema(workspaceID int64, eventType string) (model.EventSchemaVersion, error) {
 	items, _ := r.ListSchemas(workspaceID, eventType)
 	for _, item := range items {
@@ -112,17 +123,25 @@ func (r *InMemoryEventFabricRepository) LatestSchema(workspaceID int64, eventTyp
 	return model.EventSchemaVersion{}, ErrEventSchemaNotFound
 }
 
-func (r *InMemoryEventFabricRepository) DeprecateSchema(workspaceID, schemaID int64, now time.Time) error {
+func (r *InMemoryEventFabricRepository) DeprecateSchema(workspaceID, schemaID, deprecatedByUserID int64, reason string, replacementSchemaID *int64, now time.Time) (model.EventSchemaVersion, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	item, ok := r.schemas[schemaID]
 	if !ok || item.WorkspaceID != workspaceID {
-		return ErrEventSchemaNotFound
+		return model.EventSchemaVersion{}, ErrEventSchemaNotFound
 	}
 	item.Status = model.EventSchemaStatusDeprecated
 	item.DeprecatedAt = &now
+	item.DeprecatedByUserID = &deprecatedByUserID
+	item.DeprecationReason = reason
+	if replacementSchemaID != nil {
+		replacement := *replacementSchemaID
+		item.ReplacementSchemaID = &replacement
+	} else {
+		item.ReplacementSchemaID = nil
+	}
 	r.schemas[schemaID] = item
-	return nil
+	return cloneEventSchema(item), nil
 }
 
 func (r *InMemoryEventFabricRepository) CreateSubscription(item model.EventFabricSubscription) (model.EventFabricSubscription, error) {
