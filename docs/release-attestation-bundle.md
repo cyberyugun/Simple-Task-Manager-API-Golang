@@ -172,11 +172,43 @@ The dashboard shows:
 - provider-policy status;
 - source commit;
 - workflow run;
-- root digest.
+- root digest;
+- successful production deploy coverage.
 
 For every downloaded manifest the workflow runs `gh attestation verify <manifest> --repo <repository>` and records a release-local verification snapshot as `release-attestation-provenance.json` in the dashboard workspace.
 
-Set `require_valid=true` to fail on invalid local bundle integrity. Set `require_provenance=true` to fail when a release manifest has no valid GitHub artifact provenance. These controls are independent so historical pre-provenance bundles can still be inspected during rollout.
+The dashboard also queries successful runs of `.github/workflows/deploy.yml` using read-only Actions access and writes:
+
+```text
+expected-successful-deploy-runs.json
+```
+
+Every successful deploy run in scope must map to exactly one retained release attestation with the same workflow run ID and source commit. Coverage statuses are:
+
+- `covered` — exactly one matching attestation exists and its commit matches the successful deploy;
+- `missing_attestation` — a successful production deploy has no retained attestation;
+- `commit_mismatch` — a release attestation references the deploy run but does not bind the same head SHA;
+- `duplicate_attestation` — more than one retained attestation claims the same deploy run.
+
+This closes an omission gap that per-artifact integrity/provenance checks cannot detect: a collection can contain only valid signed manifests while still silently missing a successful production release.
+
+The coverage query is limited by `lookback_days`, `max_deploy_runs`, and optional `coverage_start_at`. Use `coverage_start_at` during rollout to exclude successful releases from before attestation coverage was introduced.
+
+Set `require_valid=true` to fail on invalid local bundle integrity. Set `require_provenance=true` to fail when a release manifest has no valid GitHub artifact provenance. Set `require_complete=true` to fail when a successful production deploy in the configured coverage scope is missing, mismatched, or duplicated.
+
+The workflow runs daily as well as by manual dispatch. Scheduled defaults can be configured with repository variables:
+
+```text
+RELEASE_ATTESTATION_DASHBOARD_MAX_ARTIFACTS=100
+RELEASE_ATTESTATION_DASHBOARD_MAX_DEPLOY_RUNS=100
+RELEASE_ATTESTATION_COVERAGE_LOOKBACK_DAYS=180
+RELEASE_ATTESTATION_COVERAGE_START_AT=
+RELEASE_ATTESTATION_REQUIRE_VALID=false
+RELEASE_ATTESTATION_REQUIRE_PROVENANCE=false
+RELEASE_ATTESTATION_REQUIRE_COMPLETE=false
+```
+
+A safe rollout is to inspect coverage first, set `RELEASE_ATTESTATION_COVERAGE_START_AT` to the first production release that was expected to emit a bundle, then enable strict completeness/provenance checks after the historical scope is clean.
 
 ## Limitations
 
