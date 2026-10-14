@@ -113,7 +113,6 @@ func TestSearchAnalyticsValidation(t *testing.T) {
 	}
 }
 
-
 func TestSearchAnalyticsSynonymsAndRankingControls(t *testing.T) {
 	t.Run("synonym expands recall", func(t *testing.T) {
 		tasks := repository.NewInMemoryTaskRepository()
