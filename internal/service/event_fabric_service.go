@@ -203,8 +203,8 @@ func (s *EventFabricService) DeprecateSchema(actorUserID, workspaceID, schemaID 
 	}
 	metadata := map[string]any{
 		"event_type": item.EventType,
-		"version": item.Version,
-		"reason": reason,
+		"version":    item.Version,
+		"reason":     reason,
 	}
 	if replacementID != nil {
 		metadata["replacement_schema_id"] = *replacementID
