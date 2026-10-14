@@ -12,10 +12,10 @@ import (
 )
 
 var (
-	ErrNotificationNotFound         = errors.New("notification not found")
-	ErrNotificationEndpointNotFound = errors.New("notification endpoint not found")
-	ErrNotificationTemplateNotFound = errors.New("notification template not found")
-	ErrNotificationDeliveryNotFound = errors.New("notification delivery not found")
+	ErrNotificationNotFound                = errors.New("notification not found")
+	ErrNotificationEndpointNotFound        = errors.New("notification endpoint not found")
+	ErrNotificationTemplateNotFound        = errors.New("notification template not found")
+	ErrNotificationDeliveryNotFound        = errors.New("notification delivery not found")
 	ErrNotificationSuppressionRuleNotFound = errors.New("notification suppression rule not found")
 )
 
@@ -66,37 +66,37 @@ type NotificationRepository interface {
 type InMemoryNotificationRepository struct {
 	mu sync.Mutex
 
-	preferences   map[int64]model.NotificationPreference
-	endpoints     map[int64]model.NotificationEndpoint
-	templates          map[int64]model.NotificationTemplate
-	suppressionRules   map[int64]model.NotificationSuppressionRule
-	suppressionEvents  map[int64]model.NotificationSuppressionEvent
-	notifications      map[int64]model.Notification
-	deliveries         map[int64]model.NotificationDelivery
+	preferences       map[int64]model.NotificationPreference
+	endpoints         map[int64]model.NotificationEndpoint
+	templates         map[int64]model.NotificationTemplate
+	suppressionRules  map[int64]model.NotificationSuppressionRule
+	suppressionEvents map[int64]model.NotificationSuppressionEvent
+	notifications     map[int64]model.Notification
+	deliveries        map[int64]model.NotificationDelivery
 
-	nextEndpointID     int64
-	nextTemplateID      int64
-	nextSuppressionRuleID int64
+	nextEndpointID         int64
+	nextTemplateID         int64
+	nextSuppressionRuleID  int64
 	nextSuppressionEventID int64
-	nextNotificationID  int64
-	nextDeliveryID      int64
+	nextNotificationID     int64
+	nextDeliveryID         int64
 }
 
 func NewInMemoryNotificationRepository() *InMemoryNotificationRepository {
 	return &InMemoryNotificationRepository{
-		preferences:        map[int64]model.NotificationPreference{},
-		endpoints:          map[int64]model.NotificationEndpoint{},
-		templates:            map[int64]model.NotificationTemplate{},
-		suppressionRules:     map[int64]model.NotificationSuppressionRule{},
-		suppressionEvents:    map[int64]model.NotificationSuppressionEvent{},
-		notifications:        map[int64]model.Notification{},
-		deliveries:           map[int64]model.NotificationDelivery{},
-		nextEndpointID:       1,
-		nextTemplateID:       1,
-		nextSuppressionRuleID: 1,
+		preferences:            map[int64]model.NotificationPreference{},
+		endpoints:              map[int64]model.NotificationEndpoint{},
+		templates:              map[int64]model.NotificationTemplate{},
+		suppressionRules:       map[int64]model.NotificationSuppressionRule{},
+		suppressionEvents:      map[int64]model.NotificationSuppressionEvent{},
+		notifications:          map[int64]model.Notification{},
+		deliveries:             map[int64]model.NotificationDelivery{},
+		nextEndpointID:         1,
+		nextTemplateID:         1,
+		nextSuppressionRuleID:  1,
 		nextSuppressionEventID: 1,
-		nextNotificationID:   1,
-		nextDeliveryID:       1,
+		nextNotificationID:     1,
+		nextDeliveryID:         1,
 	}
 }
 
@@ -373,10 +373,10 @@ func (r *InMemoryNotificationRepository) NotificationAnalytics(organizationID in
 	defer r.mu.Unlock()
 	result := model.NotificationAnalyticsDashboard{
 		OrganizationID: organizationID,
-		GeneratedAt: now,
-		ByEvent: []model.NotificationEventAnalytics{},
-		ByChannel: []model.NotificationChannelAnalytics{},
-		Daily: []model.NotificationDailyAnalytics{},
+		GeneratedAt:    now,
+		ByEvent:        []model.NotificationEventAnalytics{},
+		ByChannel:      []model.NotificationChannelAnalytics{},
+		Daily:          []model.NotificationDailyAnalytics{},
 	}
 	eventMetrics := map[string]*model.NotificationEventAnalytics{}
 	channelMetrics := map[string]*model.NotificationChannelAnalytics{}
