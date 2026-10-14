@@ -3,10 +3,10 @@ package model
 import "time"
 
 const (
-	NotificationChannelInApp   = "in_app"
-	NotificationChannelEmail   = "email"
-	NotificationChannelPush    = "push"
-	NotificationChannelWebhook = "webhook"
+	NotificationChannelInApp          = "in_app"
+	NotificationChannelEmail          = "email"
+	NotificationChannelPush           = "push"
+	NotificationChannelWebhook        = "webhook"
 	NotificationSuppressionChannelAll = "all"
 
 	NotificationDeliveryPending    = "pending"
@@ -215,16 +215,16 @@ type NotificationSuppressionEvent struct {
 }
 
 type NotificationAnalyticsSummary struct {
-	Generated            int64   `json:"generated"`
-	Read                 int64   `json:"read"`
-	Unread               int64   `json:"unread"`
-	Suppressed           int64   `json:"suppressed"`
-	Deliveries           int64   `json:"deliveries"`
-	Sent                 int64   `json:"sent"`
-	Retrying             int64   `json:"retrying"`
-	DeadLetter           int64   `json:"dead_letter"`
-	DeliveryAttempts     int64   `json:"delivery_attempts"`
-	DeliverySuccessRate  float64 `json:"delivery_success_rate"`
+	Generated           int64   `json:"generated"`
+	Read                int64   `json:"read"`
+	Unread              int64   `json:"unread"`
+	Suppressed          int64   `json:"suppressed"`
+	Deliveries          int64   `json:"deliveries"`
+	Sent                int64   `json:"sent"`
+	Retrying            int64   `json:"retrying"`
+	DeadLetter          int64   `json:"dead_letter"`
+	DeliveryAttempts    int64   `json:"delivery_attempts"`
+	DeliverySuccessRate float64 `json:"delivery_success_rate"`
 }
 
 type NotificationEventAnalytics struct {
