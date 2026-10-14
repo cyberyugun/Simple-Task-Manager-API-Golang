@@ -274,6 +274,8 @@ func (s *AttachmentService) createUpload(actorUserID int64, access model.Workspa
 			item.Version = version
 			item.VersionGroupID = versionGroupID
 			item.PreviousAttachmentID = previousAttachmentID
+			item.LegalHold = false
+			item.RetainUntil = nil
 			item.QuarantineReason = ""
 			item.ReleasedByUserID = nil
 			item.ReleasedAt = nil
@@ -470,7 +472,8 @@ func (s *AttachmentService) Quarantine(actorUserID int64, access model.Workspace
 	if err != nil {
 		return model.Attachment{}, err
 	}
-	if item.Status == model.AttachmentStatusDeleted || item.DeletedAt != nil {
+	if item.DeletedAt != nil ||
+		(item.Status != model.AttachmentStatusClean && item.Status != model.AttachmentStatusQuarantine) {
 		return model.Attachment{}, ErrInvalidAttachment
 	}
 	now := time.Now().UTC()
