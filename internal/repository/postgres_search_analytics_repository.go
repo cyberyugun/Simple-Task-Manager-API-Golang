@@ -27,14 +27,59 @@ func (r *PostgresSearchAnalyticsRepository) SearchTasks(workspaceID int64, query
 		return fmt.Sprintf(template, len(args))
 	}
 
+	relevance := query.Relevance
+	if !relevance.Configured {
+		relevance = model.DefaultSearchRelevanceOptions()
+	}
+
 	rankExpr := "0::double precision"
 	headlineExpr := "description"
-	if strings.TrimSpace(query.Query) != "" {
-		args = append(args, strings.TrimSpace(query.Query))
-		pos := len(args)
-		conditions = append(conditions, fmt.Sprintf("search_vector @@ websearch_to_tsquery('simple', $%d)", pos))
-		rankExpr = fmt.Sprintf("ts_rank_cd(search_vector, websearch_to_tsquery('simple', $%d))::double precision", pos)
-		headlineExpr = fmt.Sprintf("ts_headline('simple', description, websearch_to_tsquery('simple', $%d), 'MaxWords=24, MinWords=8, StartSel=<mark>, StopSel=</mark>')", pos)
+	if searchText := strings.TrimSpace(query.Query); searchText != "" {
+		args = append(args, searchText)
+		queryPos := len(args)
+		tsQuery := fmt.Sprintf("websearch_to_tsquery('simple', $%d)", queryPos)
+		matchConditions := []string{fmt.Sprintf("search_vector @@ %s", tsQuery)}
+		rankParts := []string{fmt.Sprintf(
+			"ts_rank_cd(ARRAY[0.05,0.10,%.6f,%.6f]::real[], search_vector, %s)::double precision",
+			relevance.DescriptionWeight,
+			relevance.TitleWeight,
+			tsQuery,
+		)}
+
+		for _, term := range query.SynonymTerms {
+			term = strings.ToLower(strings.TrimSpace(term))
+			if term == "" {
+				continue
+			}
+			args = append(args, term)
+			pos := len(args)
+			matchConditions = append(matchConditions, fmt.Sprintf(
+				"(strpos(lower(title), $%d) > 0 OR strpos(lower(description), $%d) > 0)",
+				pos,
+				pos,
+			))
+			rankParts = append(rankParts, fmt.Sprintf(
+				"(CASE WHEN strpos(lower(title), $%d) > 0 THEN %.6f ELSE 0 END + CASE WHEN strpos(lower(description), $%d) > 0 THEN %.6f ELSE 0 END)",
+				pos,
+				1.5*relevance.TitleWeight,
+				pos,
+				0.75*relevance.DescriptionWeight,
+			))
+		}
+		if relevance.RecencyWeight > 0 {
+			rankParts = append(rankParts, fmt.Sprintf(
+				"(%.6f / (1 + GREATEST(EXTRACT(EPOCH FROM (NOW() - updated_at)) / 604800.0, 0)))",
+				relevance.RecencyWeight,
+			))
+		}
+
+		conditions = append(conditions, "("+strings.Join(matchConditions, " OR ")+")")
+		rankExpr = "(" + strings.Join(rankParts, " + ") + ")::double precision"
+		headlineExpr = fmt.Sprintf(
+			"CASE WHEN search_vector @@ %s THEN ts_headline('simple', description, %s, 'MaxWords=24, MinWords=8, StartSel=<mark>, StopSel=</mark>') ELSE description END",
+			tsQuery,
+			tsQuery,
+		)
 	}
 	if query.Status != "" {
 		conditions = append(conditions, add("status = $%d", query.Status))

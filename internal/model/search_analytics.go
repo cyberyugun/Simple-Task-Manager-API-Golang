@@ -15,14 +15,34 @@ const (
 	ReportRunFailed    = "failed"
 )
 
+type SearchRelevanceOptions struct {
+	Configured        bool
+	TitleWeight       float64
+	DescriptionWeight float64
+	RecencyWeight     float64
+	Synonyms          map[string][]string
+}
+
+func DefaultSearchRelevanceOptions() SearchRelevanceOptions {
+	return SearchRelevanceOptions{
+		Configured:        true,
+		TitleWeight:       1,
+		DescriptionWeight: 0.4,
+		RecencyWeight:     0,
+		Synonyms:          map[string][]string{},
+	}
+}
+
 type SearchQuery struct {
-	Query      string `json:"query,omitempty"`
-	Status     string `json:"status,omitempty"`
-	Priority   string `json:"priority,omitempty"`
-	ProjectID  *int64 `json:"project_id,omitempty"`
-	AssigneeID *int64 `json:"assignee_id,omitempty"`
-	Page       int    `json:"page"`
-	Limit      int    `json:"limit"`
+	Query        string                 `json:"query,omitempty"`
+	Status       string                 `json:"status,omitempty"`
+	Priority     string                 `json:"priority,omitempty"`
+	ProjectID    *int64                 `json:"project_id,omitempty"`
+	AssigneeID   *int64                 `json:"assignee_id,omitempty"`
+	Page         int                    `json:"page"`
+	Limit        int                    `json:"limit"`
+	Relevance    SearchRelevanceOptions `json:"-"`
+	SynonymTerms []string               `json:"-"`
 }
 
 type SearchHit struct {

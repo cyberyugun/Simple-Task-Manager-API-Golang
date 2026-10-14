@@ -288,7 +288,12 @@ func main() {
 		os.Exit(1)
 	}
 	attachmentService := service.NewAttachmentService(attachmentRepo, taskRepo, taskCollaborationRepo, workspaceRepo, attachmentStore, attachmentScanner, attachmentConfig)
-	searchAnalyticsService := service.NewSearchAnalyticsService(searchAnalyticsRepo, workspaceRepo)
+	searchRelevance, err := service.NewSearchRelevanceOptionsFromEnv()
+	if err != nil {
+		logger.Error("search_relevance_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	searchAnalyticsService := service.NewSearchAnalyticsServiceWithRelevance(searchAnalyticsRepo, workspaceRepo, searchRelevance)
 	dataPlatformService := service.NewDataPlatformService(dataPlatformRepo, organizationRepo, searchAnalyticsRepo, governanceRepo)
 	bigQueryWarehouse, err := service.NewBigQueryWarehouseAdapterFromEnv(cfg.WebhookAllowInsecure)
 	if err != nil {

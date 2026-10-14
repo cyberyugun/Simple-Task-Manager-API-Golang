@@ -257,9 +257,15 @@ func main() {
 	)
 	go runAttachmentPlatform(ctx, attachmentService, attachmentPoll, attachmentRetentionPoll, attachmentBatch, logger)
 
-	searchAnalyticsService := service.NewSearchAnalyticsService(
+	searchRelevance, err := service.NewSearchRelevanceOptionsFromEnv()
+	if err != nil {
+		logger.Error("search_relevance_configuration_failed", "error", err)
+		os.Exit(1)
+	}
+	searchAnalyticsService := service.NewSearchAnalyticsServiceWithRelevance(
 		repository.NewPostgresSearchAnalyticsRepository(db),
 		repository.NewPostgresWorkspaceRepository(db),
+		searchRelevance,
 	)
 	go runScheduledReports(ctx, searchAnalyticsService, reportPoll, reportBatch, logger)
 	go runEventFabricPlatform(
