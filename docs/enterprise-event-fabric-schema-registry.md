@@ -32,7 +32,11 @@ Schemas are versioned per workspace and event type. The lightweight schema contr
 
 Publishing a later version performs compatibility checks against the previous version. Existing versions remain available for old outbox events until explicitly deprecated. The event worker validates an event against the exact active schema version when that event type is registered. Event types that have not yet been registered continue to flow, preserving compatibility with legacy platform events.
 
-Schema ownership metadata and explicit deprecation provide the event ownership/deprecation lifecycle recommended by the roadmap.
+`owner` remains the required logical team/domain owner for every schema version. Post-roadmap hardening adds optional `owner_service` and `owner_contact` snapshots so operators can identify both the producing service and an operational escalation point without consulting an external catalog.
+
+Deprecation now records `deprecated_by_user_id`, `deprecation_reason`, and an optional `replacement_schema_id`. If no replacement is supplied and another active version of the same event type exists, the service records the newest active sibling automatically. Replacement IDs must reference an active schema for the same event type.
+
+Deprecated versions are excluded from `LatestSchema`, but their definitions remain valid for exact-version historical validation. This prevents schema retirement from breaking already-persisted outbox events or range replay. The existing no-body deprecation request remains supported and records `operator_requested` as the reason.
 
 ## Correlation and causation
 
@@ -92,7 +96,7 @@ Workspace administrators can use:
 
 - `GET /api/workspaces/{id}/event-fabric/adapters`
 - `GET|POST /api/workspaces/{id}/event-fabric/schemas`
-- `POST /api/workspaces/{id}/event-fabric/schemas/{schema_id}/deprecate`
+- `POST /api/workspaces/{id}/event-fabric/schemas/{schema_id}/deprecate` — optional body: `reason`, `replacement_schema_id`
 - `GET|POST /api/workspaces/{id}/event-fabric/subscriptions`
 - `PATCH /api/workspaces/{id}/event-fabric/subscriptions/{subscription_id}`
 - `GET /api/workspaces/{id}/event-fabric/subscriptions/{subscription_id}/offset`
