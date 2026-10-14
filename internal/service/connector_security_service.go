@@ -192,9 +192,9 @@ func (s *ConnectorSecurityService) UpdateCredentialPolicy(actorUserID, organizat
 		return model.ConnectorCredentialPolicy{}, err
 	}
 	s.audit(organizationID, actorUserID, "integration.credential_policy.updated", "integration_credential_policy", fmt.Sprint(organizationID), map[string]any{
-		"rotation_enabled": item.RotationEnabled,
-		"auto_rotate": item.AutoRotate,
-		"rotation_interval_days": item.RotationIntervalDays,
+		"rotation_enabled":               item.RotationEnabled,
+		"auto_rotate":                    item.AutoRotate,
+		"rotation_interval_days":         item.RotationIntervalDays,
 		"enforce_least_privilege_scopes": item.EnforceLeastPrivilegeScopes,
 	})
 	return item, nil
@@ -571,7 +571,7 @@ func (s *ConnectorSecurityService) RotateDueSystem(limit int) ([]model.Connector
 			s.recordAccess(item, nil, "automatic_rotate_failed")
 			s.audit(item.OrganizationID, 0, "integration.credential.auto_rotation_failed", "integration_connection", fmt.Sprint(item.ConnectionID), map[string]any{
 				"backend": item.SecretBackend,
-				"error": rotateErr.Error(),
+				"error":   rotateErr.Error(),
 			})
 			continue
 		}
@@ -630,8 +630,8 @@ func (s *ConnectorSecurityService) rotateOneSystem(ctx context.Context, meta mod
 	}
 	s.recordAccess(meta, nil, "automatic_rotate")
 	s.audit(meta.OrganizationID, 0, "integration.credential.auto_rotated", "integration_connection", fmt.Sprint(meta.ConnectionID), map[string]any{
-		"backend": meta.SecretBackend,
-		"key_version": meta.KeyVersion,
+		"backend":            meta.SecretBackend,
+		"key_version":        meta.KeyVersion,
 		"credential_version": meta.CredentialVersion,
 	})
 	policy, policyErr := s.credentialPolicy(meta.OrganizationID)
