@@ -67,6 +67,10 @@ grep -q 'name: Release Attestation Dashboard' .github/workflows/release-attestat
 grep -q 'name: Verify GitHub artifact provenance' .github/workflows/release-attestation-dashboard.yml
 grep -q 'gh attestation verify' .github/workflows/release-attestation-dashboard.yml
 grep -q 'require_provenance' .github/workflows/release-attestation-dashboard.yml
+grep -q 'require_complete' .github/workflows/release-attestation-dashboard.yml
+grep -q 'name: Discover successful production deploy runs' .github/workflows/release-attestation-dashboard.yml
+grep -q 'expected-successful-deploy-runs.json' .github/workflows/release-attestation-dashboard.yml
+grep -q 'RELEASE_ATTESTATION_COVERAGE_LOOKBACK_DAYS' .github/workflows/release-attestation-dashboard.yml
 grep -q 'release-attestation-dashboard.json' .github/workflows/release-attestation-dashboard.yml
 grep -q 'actions: read' .github/workflows/deploy.yml
 
