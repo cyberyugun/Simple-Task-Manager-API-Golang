@@ -3922,7 +3922,7 @@ paths:
       operationId: createEventSchema
       security: [{ bearerAuth: [] }]
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
