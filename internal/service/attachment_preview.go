@@ -88,10 +88,10 @@ func NewAttachmentPreviewer(cfg AttachmentConfig) (AttachmentPreviewer, error) {
 		},
 	}
 	return &HTTPAttachmentPreviewer{
-		endpoint: endpoint,
-		bearerToken: strings.TrimSpace(cfg.PreviewBearerToken),
+		endpoint:      endpoint,
+		bearerToken:   strings.TrimSpace(cfg.PreviewBearerToken),
 		signingSecret: []byte(strings.TrimSpace(cfg.PreviewSigningSecret)),
-		client: client,
+		client:        client,
 	}, nil
 }
 
@@ -99,20 +99,20 @@ func (p *HTTPAttachmentPreviewer) Enabled() bool { return true }
 
 func (p *HTTPAttachmentPreviewer) Generate(ctx context.Context, attachment model.Attachment, previewObjectKey string) (model.AttachmentPreviewResult, error) {
 	payload, err := json.Marshal(attachmentPreviewRequest{
-		AttachmentID: attachment.ID,
-		WorkspaceID: attachment.WorkspaceID,
-		Provider: attachment.Provider,
-		Bucket: attachment.Bucket,
-		ObjectKey: attachment.ObjectKey,
+		AttachmentID:     attachment.ID,
+		WorkspaceID:      attachment.WorkspaceID,
+		Provider:         attachment.Provider,
+		Bucket:           attachment.Bucket,
+		ObjectKey:        attachment.ObjectKey,
 		PreviewObjectKey: previewObjectKey,
-		FileName: attachment.FileName,
-		ContentType: attachment.ContentType,
-		SizeBytes: attachment.SizeBytes,
-		SHA256: attachment.SHA256,
-		Encryption: attachment.Encryption,
-		EncryptionKeyID: attachment.EncryptionKeyID,
-		MaxWidth: 1600,
-		MaxHeight: 1600,
+		FileName:         attachment.FileName,
+		ContentType:      attachment.ContentType,
+		SizeBytes:        attachment.SizeBytes,
+		SHA256:           attachment.SHA256,
+		Encryption:       attachment.Encryption,
+		EncryptionKeyID:  attachment.EncryptionKeyID,
+		MaxWidth:         1600,
+		MaxHeight:        1600,
 	})
 	if err != nil {
 		return model.AttachmentPreviewResult{}, err
