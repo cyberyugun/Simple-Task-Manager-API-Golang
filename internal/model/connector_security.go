@@ -48,15 +48,15 @@ type ConnectorCredentialMetadata struct {
 }
 
 type ConnectorCredentialPolicy struct {
-	OrganizationID              int64      `json:"organization_id"`
-	RotationEnabled             bool       `json:"rotation_enabled"`
-	AutoRotate                  bool       `json:"auto_rotate"`
-	RotationIntervalDays        int        `json:"rotation_interval_days"`
-	EnforceLeastPrivilegeScopes bool       `json:"enforce_least_privilege_scopes"`
-	CreatedByUserID             *int64     `json:"created_by_user_id,omitempty"`
-	UpdatedByUserID             *int64     `json:"updated_by_user_id,omitempty"`
-	CreatedAt                   time.Time  `json:"created_at"`
-	UpdatedAt                   time.Time  `json:"updated_at"`
+	OrganizationID              int64     `json:"organization_id"`
+	RotationEnabled             bool      `json:"rotation_enabled"`
+	AutoRotate                  bool      `json:"auto_rotate"`
+	RotationIntervalDays        int       `json:"rotation_interval_days"`
+	EnforceLeastPrivilegeScopes bool      `json:"enforce_least_privilege_scopes"`
+	CreatedByUserID             *int64    `json:"created_by_user_id,omitempty"`
+	UpdatedByUserID             *int64    `json:"updated_by_user_id,omitempty"`
+	CreatedAt                   time.Time `json:"created_at"`
+	UpdatedAt                   time.Time `json:"updated_at"`
 }
 
 type UpdateConnectorCredentialPolicyRequest struct {
@@ -94,17 +94,17 @@ type RotateConnectorCredentialRequest struct {
 }
 
 type ConnectorConnectionTest struct {
-	ConnectionID          int64     `json:"connection_id"`
-	Healthy               bool      `json:"healthy"`
-	HTTPStatus            int       `json:"http_status,omitempty"`
-	ScopesValid           bool      `json:"scopes_valid"`
-	LeastPrivilegeValid   bool      `json:"least_privilege_valid"`
-	RequiredScopes        []string  `json:"required_scopes"`
-	GrantedScopes         []string  `json:"granted_scopes"`
-	MissingScopes         []string  `json:"missing_scopes"`
-	ExcessScopes          []string  `json:"excess_scopes"`
-	CheckedAt             time.Time `json:"checked_at"`
-	Message               string    `json:"message,omitempty"`
+	ConnectionID        int64     `json:"connection_id"`
+	Healthy             bool      `json:"healthy"`
+	HTTPStatus          int       `json:"http_status,omitempty"`
+	ScopesValid         bool      `json:"scopes_valid"`
+	LeastPrivilegeValid bool      `json:"least_privilege_valid"`
+	RequiredScopes      []string  `json:"required_scopes"`
+	GrantedScopes       []string  `json:"granted_scopes"`
+	MissingScopes       []string  `json:"missing_scopes"`
+	ExcessScopes        []string  `json:"excess_scopes"`
+	CheckedAt           time.Time `json:"checked_at"`
+	Message             string    `json:"message,omitempty"`
 }
 
 type ConnectorSecretBackend struct {
