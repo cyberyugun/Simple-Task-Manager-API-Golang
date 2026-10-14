@@ -64,42 +64,110 @@ func NewInMemorySearchAnalyticsRepository(tasks TaskRepository) *InMemorySearchA
 }
 
 func (r *InMemorySearchAnalyticsRepository) SearchTasks(workspaceID int64, query model.SearchQuery) (model.SearchPage, error) {
+	relevance := query.Relevance
+	if !relevance.Configured {
+		relevance = model.DefaultSearchRelevanceOptions()
+	}
+
+	needle := strings.ToLower(strings.TrimSpace(query.Query))
+	if needle == "" {
+		page, err := r.tasks.FindAll(workspaceID, model.TaskQuery{
+			Page: query.Page, Limit: query.Limit,
+			Status: query.Status, Priority: query.Priority, ProjectID: query.ProjectID,
+			AssigneeID: query.AssigneeID, Sort: "updated_at", Order: "desc",
+		})
+		if err != nil {
+			return model.SearchPage{}, err
+		}
+		hits := make([]model.SearchHit, 0, len(page.Items))
+		for _, task := range page.Items {
+			hits = append(hits, model.SearchHit{Task: task, MatchType: "filter"})
+		}
+		return model.SearchPage{Items: hits, Pagination: page.Pagination}, nil
+	}
+
 	page, err := r.tasks.FindAll(workspaceID, model.TaskQuery{
-		Page: query.Page, Limit: query.Limit, Search: query.Query,
+		Page: 1, Limit: 100000,
 		Status: query.Status, Priority: query.Priority, ProjectID: query.ProjectID,
 		AssigneeID: query.AssigneeID, Sort: "updated_at", Order: "desc",
 	})
 	if err != nil {
 		return model.SearchPage{}, err
 	}
+
+	now := time.Now().UTC()
 	hits := make([]model.SearchHit, 0, len(page.Items))
-	needle := strings.ToLower(strings.TrimSpace(query.Query))
 	for _, task := range page.Items {
+		title := strings.ToLower(task.Title)
+		description := strings.ToLower(task.Description)
+		titleMatch := strings.Contains(title, needle)
+		descriptionMatch := strings.Contains(description, needle)
+		synonymTitleMatch := false
+		synonymDescriptionMatch := false
+		for _, term := range query.SynonymTerms {
+			term = strings.ToLower(strings.TrimSpace(term))
+			if term == "" {
+				continue
+			}
+			synonymTitleMatch = synonymTitleMatch || strings.Contains(title, term)
+			synonymDescriptionMatch = synonymDescriptionMatch || strings.Contains(description, term)
+		}
+		if !titleMatch && !descriptionMatch && !synonymTitleMatch && !synonymDescriptionMatch {
+			continue
+		}
+
 		rank := 0.0
-		matchType := "filter"
-		if needle != "" {
-			title := strings.ToLower(task.Title)
-			description := strings.ToLower(task.Description)
-			if strings.Contains(title, needle) {
-				rank += 2
-				matchType = "title"
+		matchType := "synonym"
+		if titleMatch {
+			rank += 2 * relevance.TitleWeight
+			matchType = "title"
+		}
+		if descriptionMatch {
+			rank += relevance.DescriptionWeight
+			if matchType == "synonym" {
+				matchType = "description"
 			}
-			if strings.Contains(description, needle) {
-				rank++
-				if matchType == "filter" {
-					matchType = "description"
-				}
+		}
+		if synonymTitleMatch {
+			rank += 1.5 * relevance.TitleWeight
+		}
+		if synonymDescriptionMatch {
+			rank += 0.75 * relevance.DescriptionWeight
+		}
+		if relevance.RecencyWeight > 0 {
+			ageHours := now.Sub(task.UpdatedAt).Hours()
+			if ageHours < 0 {
+				ageHours = 0
 			}
+			rank += relevance.RecencyWeight / (1 + ageHours/(24*7))
 		}
 		hits = append(hits, model.SearchHit{Task: task, Rank: rank, Headline: task.Description, MatchType: matchType})
 	}
+
 	sort.SliceStable(hits, func(i, j int) bool {
 		if hits[i].Rank == hits[j].Rank {
 			return hits[i].Task.UpdatedAt.After(hits[j].Task.UpdatedAt)
 		}
 		return hits[i].Rank > hits[j].Rank
 	})
-	return model.SearchPage{Items: hits, Pagination: page.Pagination}, nil
+
+	total := int64(len(hits))
+	start := (query.Page - 1) * query.Limit
+	if start >= len(hits) {
+		hits = []model.SearchHit{}
+	} else {
+		end := start + query.Limit
+		if end > len(hits) {
+			end = len(hits)
+		}
+		hits = hits[start:end]
+	}
+	return model.SearchPage{
+		Items: hits,
+		Pagination: model.Pagination{
+			Page: query.Page, Limit: query.Limit, Total: total, TotalPages: totalPages(total, query.Limit),
+		},
+	}, nil
 }
 
 func (r *InMemorySearchAnalyticsRepository) Analytics(workspaceID int64, days int, now time.Time) (model.AnalyticsDashboard, error) {
