@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,6 +22,7 @@ var (
 	ErrAttachmentQuotaExceeded    = errors.New("attachment quota exceeded")
 	ErrAttachmentNotReady         = errors.New("attachment is not ready")
 	ErrAttachmentBlocked          = errors.New("attachment is blocked")
+	ErrAttachmentPreviewNotReady  = errors.New("attachment preview is not ready")
 	ErrAttachmentGovernanceDenied = errors.New("attachment governance action is forbidden")
 )
 
@@ -41,6 +43,11 @@ type AttachmentConfig struct {
 	ScannerSigningSecret string
 	ScannerTimeout       time.Duration
 	ScannerRequired      bool
+	PreviewURL           string
+	PreviewBearerToken   string
+	PreviewSigningSecret string
+	PreviewTimeout       time.Duration
+	PreviewRequired      bool
 }
 
 type ObjectStore interface {
@@ -124,6 +131,7 @@ type AttachmentService struct {
 	workspaces repository.WorkspaceRepository
 	store      ObjectStore
 	scanner    AttachmentScanner
+	previewer  AttachmentPreviewer
 	cfg        AttachmentConfig
 }
 
@@ -151,7 +159,17 @@ func NewAttachmentService(
 	if scanner == nil {
 		scanner = NoopAttachmentScanner{}
 	}
-	return &AttachmentService{repo: repo, tasks: tasks, collab: collab, workspaces: workspaces, store: store, scanner: scanner, cfg: cfg}
+	return &AttachmentService{
+		repo: repo, tasks: tasks, collab: collab, workspaces: workspaces,
+		store: store, scanner: scanner, previewer: NoopAttachmentPreviewer{}, cfg: cfg,
+	}
+}
+
+func (s *AttachmentService) SetPreviewer(previewer AttachmentPreviewer) {
+	if previewer == nil {
+		previewer = NoopAttachmentPreviewer{}
+	}
+	s.previewer = previewer
 }
 
 func (s *AttachmentService) CreateUpload(actorUserID int64, access model.WorkspaceAccess, req model.AttachmentUploadRequest) (model.AttachmentUploadSession, error) {
