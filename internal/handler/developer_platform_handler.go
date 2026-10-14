@@ -102,6 +102,23 @@ func (h *DeveloperPlatformHandler) Review(w http.ResponseWriter, r *http.Request
 	h.write(w, item, err, http.StatusOK)
 }
 
+func (h *DeveloperPlatformHandler) Reviews(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	userID, workspaceID, ok := developerScope(w, r)
+	if !ok {
+		return
+	}
+	appID, ok := developerPathID(w, r.PathValue("app_id"), "invalid developer application id")
+	if !ok {
+		return
+	}
+	items, err := h.service.Reviews(userID, workspaceID, appID)
+	h.write(w, items, err, http.StatusOK)
+}
+
 func (h *DeveloperPlatformHandler) Credentials(w http.ResponseWriter, r *http.Request) {
 	userID, workspaceID, ok := developerScope(w, r)
 	if !ok {
@@ -220,7 +237,16 @@ func (h *DeveloperPlatformHandler) DocsSearch(w http.ResponseWriter, r *http.Req
 		unauthorized(w)
 		return
 	}
-	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: h.service.SearchDocs(r.URL.Query().Get("q"))})
+	limit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 100 {
+			response.JSON(w, http.StatusBadRequest, response.Envelope{Success: false, Message: "invalid documentation search limit"})
+			return
+		}
+		limit = value
+	}
+	response.JSON(w, http.StatusOK, response.Envelope{Success: true, Data: h.service.SearchDocs(r.URL.Query().Get("q"), limit)})
 }
 
 func (h *DeveloperPlatformHandler) SDKs(w http.ResponseWriter, r *http.Request) {
