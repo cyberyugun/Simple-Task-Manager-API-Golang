@@ -1,5 +1,19 @@
 # API Changelog
 
+## 1.12.0 — Phase 38 post-roadmap connector credential governance
+
+Compatibility line: **v1**.
+
+Additive connector secret-governance hardening:
+
+- adds organization credential policy for rotation cadence, automatic stored-secret rotation, and strict least-privilege OAuth scope enforcement
+- adds a rotation worker that rewrites due credentials through the active database/Vault/AWS/Azure/GCP backend without changing provider-facing OAuth tokens
+- rejects OAuth completion and refresh when strict policy is enabled and the provider grants scopes outside the configured requested scope set
+- adds required/granted/missing/excess scope assessment to connection tests
+- adds next rotation due metadata without returning secret material
+- audits successful and failed credential reads, database fallbacks, writes, refreshes, rotations, revocation and connection-test access with actor attribution when available
+- preserves existing connector OAuth, secret-backend, integration connection and v1 contracts
+
 ## 1.11.0 — Phase 35 post-roadmap notification hardening
 
 Compatibility line: **v1**.
