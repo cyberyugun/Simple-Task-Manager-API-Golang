@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	ErrConnectorOAuthSessionNotFound      = errors.New("connector oauth session not found")
-	ErrConnectorCredentialNotFound        = errors.New("connector credential metadata not found")
-	ErrConnectorCredentialPolicyNotFound  = errors.New("connector credential policy not found")
+	ErrConnectorOAuthSessionNotFound     = errors.New("connector oauth session not found")
+	ErrConnectorCredentialNotFound       = errors.New("connector credential metadata not found")
+	ErrConnectorCredentialPolicyNotFound = errors.New("connector credential policy not found")
 )
 
 type ConnectorSecurityRepository interface {
