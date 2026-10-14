@@ -7,6 +7,7 @@ const (
 	NotificationChannelEmail   = "email"
 	NotificationChannelPush    = "push"
 	NotificationChannelWebhook = "webhook"
+	NotificationSuppressionChannelAll = "all"
 
 	NotificationDeliveryPending    = "pending"
 	NotificationDeliveryRetry      = "retry"
@@ -175,6 +176,91 @@ type NotificationCreate struct {
 	TemplateKey    string
 	Data           map[string]any
 	DedupeKey      string
+}
+
+type NotificationSuppressionRule struct {
+	ID              int64      `json:"id"`
+	OrganizationID  int64      `json:"organization_id"`
+	EventType       string     `json:"event_type"`
+	Channel         string     `json:"channel"`
+	Reason          string     `json:"reason"`
+	Active          bool       `json:"active"`
+	StartsAt        *time.Time `json:"starts_at,omitempty"`
+	EndsAt          *time.Time `json:"ends_at,omitempty"`
+	CreatedByUserID int64      `json:"created_by_user_id"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type CreateNotificationSuppressionRuleRequest struct {
+	EventType string     `json:"event_type"`
+	Channel   string     `json:"channel"`
+	Reason    string     `json:"reason"`
+	StartsAt  *time.Time `json:"starts_at,omitempty"`
+	EndsAt    *time.Time `json:"ends_at,omitempty"`
+}
+
+type NotificationSuppressionEvent struct {
+	ID             int64
+	OrganizationID int64
+	WorkspaceID    *int64
+	UserID         *int64
+	NotificationID *int64
+	RuleID         *int64
+	EventType      string
+	Channel        string
+	Reason         string
+	DedupeKey      string
+	CreatedAt      time.Time
+}
+
+type NotificationAnalyticsSummary struct {
+	Generated            int64   `json:"generated"`
+	Read                 int64   `json:"read"`
+	Unread               int64   `json:"unread"`
+	Suppressed           int64   `json:"suppressed"`
+	Deliveries           int64   `json:"deliveries"`
+	Sent                 int64   `json:"sent"`
+	Retrying             int64   `json:"retrying"`
+	DeadLetter           int64   `json:"dead_letter"`
+	DeliveryAttempts     int64   `json:"delivery_attempts"`
+	DeliverySuccessRate  float64 `json:"delivery_success_rate"`
+}
+
+type NotificationEventAnalytics struct {
+	EventType  string `json:"event_type"`
+	Generated  int64  `json:"generated"`
+	Read       int64  `json:"read"`
+	Suppressed int64  `json:"suppressed"`
+}
+
+type NotificationChannelAnalytics struct {
+	Channel    string `json:"channel"`
+	Deliveries int64  `json:"deliveries"`
+	Sent       int64  `json:"sent"`
+	Retrying   int64  `json:"retrying"`
+	DeadLetter int64  `json:"dead_letter"`
+	Attempts   int64  `json:"attempts"`
+	Suppressed int64  `json:"suppressed"`
+}
+
+type NotificationDailyAnalytics struct {
+	Date       string `json:"date"`
+	Generated  int64  `json:"generated"`
+	Read       int64  `json:"read"`
+	Suppressed int64  `json:"suppressed"`
+	Sent       int64  `json:"sent"`
+	DeadLetter int64  `json:"dead_letter"`
+}
+
+type NotificationAnalyticsDashboard struct {
+	OrganizationID int64                          `json:"organization_id"`
+	Days           int                            `json:"days"`
+	Summary        NotificationAnalyticsSummary   `json:"summary"`
+	ByEvent        []NotificationEventAnalytics   `json:"by_event"`
+	ByChannel      []NotificationChannelAnalytics `json:"by_channel"`
+	Daily          []NotificationDailyAnalytics   `json:"daily"`
+	GeneratedAt    time.Time                      `json:"generated_at"`
 }
 
 type RetryNotificationDeliveryRequest struct{}
