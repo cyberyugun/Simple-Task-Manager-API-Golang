@@ -983,13 +983,45 @@ func (s *ConnectorSecurityService) validateOAuthURL(raw string) error {
 }
 
 func defaultCredentialMetadata(connection model.IntegrationConnection) model.ConnectorCredentialMetadata {
+	now := time.Now().UTC()
 	return model.ConnectorCredentialMetadata{
 		ConnectionID: connection.ID, OrganizationID: connection.OrganizationID,
 		SecretBackend: model.ConnectorSecretBackendDatabase,
 		SecretRef:     fmt.Sprintf("org/%d/integration/%d", connection.OrganizationID, connection.ID),
 		KeyVersion:    1, CredentialVersion: 0, Status: model.ConnectorCredentialActive,
-		GrantedScopes: []string{}, UpdatedAt: time.Now().UTC(),
+		GrantedScopes: []string{}, RotatedAt: &now, UpdatedAt: now,
 	}
+}
+
+func (s *ConnectorSecurityService) credentialPolicy(organizationID int64) (model.ConnectorCredentialPolicy, error) {
+	item, err := s.repo.GetCredentialPolicy(organizationID)
+	if errors.Is(err, repository.ErrConnectorCredentialPolicyNotFound) {
+		now := time.Now().UTC()
+		return model.ConnectorCredentialPolicy{
+			OrganizationID: organizationID,
+			RotationEnabled: false,
+			AutoRotate: false,
+			RotationIntervalDays: 90,
+			EnforceLeastPrivilegeScopes: false,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}, nil
+	}
+	return item, err
+}
+
+func applyCredentialRotationDue(meta model.ConnectorCredentialMetadata, policy model.ConnectorCredentialPolicy) model.ConnectorCredentialMetadata {
+	meta.RotationDueAt = nil
+	if !policy.RotationEnabled || policy.RotationIntervalDays <= 0 {
+		return meta
+	}
+	baseline := meta.UpdatedAt
+	if meta.RotatedAt != nil {
+		baseline = meta.RotatedAt.UTC()
+	}
+	due := baseline.AddDate(0, 0, policy.RotationIntervalDays)
+	meta.RotationDueAt = &due
+	return meta
 }
 
 func (s *ConnectorSecurityService) recordAccess(meta model.ConnectorCredentialMetadata, actor *int64, action string) {
@@ -1060,6 +1092,43 @@ func integrationConfigStrings(config map[string]any, key string) []string {
 	default:
 		return nil
 	}
+}
+
+func normalizedScopes(scopes []string) []string {
+	seen := make(map[string]struct{}, len(scopes))
+	out := make([]string, 0, len(scopes))
+	for _, raw := range scopes {
+		scope := strings.TrimSpace(raw)
+		if scope == "" {
+			continue
+		}
+		if _, exists := seen[scope]; exists {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, scope)
+	}
+	return out
+}
+
+func scopeDiff(granted, required []string) (missing, excess []string) {
+	grantedSet := make(map[string]struct{}, len(granted))
+	for _, scope := range normalizedScopes(granted) {
+		grantedSet[scope] = struct{}{}
+	}
+	requiredSet := make(map[string]struct{}, len(required))
+	for _, scope := range normalizedScopes(required) {
+		requiredSet[scope] = struct{}{}
+		if _, ok := grantedSet[scope]; !ok {
+			missing = append(missing, scope)
+		}
+	}
+	for _, scope := range normalizedScopes(granted) {
+		if _, ok := requiredSet[scope]; !ok {
+			excess = append(excess, scope)
+		}
+	}
+	return missing, excess
 }
 
 func containsAllScopes(granted, required []string) bool {
