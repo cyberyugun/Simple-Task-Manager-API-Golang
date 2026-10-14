@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.13.0
+  version: 1.14.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -4050,13 +4050,15 @@ paths:
   /api/developer/docs/search:
     get:
       tags: [Developer Platform]
-      summary: Search public API documentation
+      summary: Search public API documentation by path method operation ID tag summary and description
       operationId: searchDeveloperDocs
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: query, name: q, required: false, schema: { type: string } }
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
       responses:
-        '200': { description: Matching API documentation entries }
+        '200': { description: Deterministically ranked API documentation entries with operation IDs and tags }
+        '400': { $ref: '#/components/responses/BadRequest' }
   /api/developer/sdks:
     get:
       tags: [Developer Platform]
@@ -4134,19 +4136,19 @@ paths:
   /api/workspaces/{id}/developer/apps/{app_id}/submit:
     post:
       tags: [Developer Platform]
-      summary: Submit a developer application for review
+      summary: Submit or resubmit a developer application for a new review round
       operationId: submitDeveloperApplication
       security: [{ bearerAuth: [] }]
       parameters:
         - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
         - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
       responses:
-        '200': { description: Developer application submitted }
+        '200': { description: Developer application submitted with review round and submitter metadata }
         '400': { $ref: '#/components/responses/BadRequest' }
   /api/workspaces/{id}/developer/apps/{app_id}/review:
     post:
       tags: [Developer Platform]
-      summary: Approve reject or suspend a developer application
+      summary: Approve reject or suspend a developer application and append immutable review history
       operationId: reviewDeveloperApplication
       security: [{ bearerAuth: [] }]
       parameters:
@@ -4155,6 +4157,18 @@ paths:
       responses:
         '200': { description: Developer application reviewed }
         '400': { $ref: '#/components/responses/BadRequest' }
+  /api/workspaces/{id}/developer/apps/{app_id}/reviews:
+    get:
+      tags: [Developer Platform]
+      summary: List immutable developer application review decisions by review round
+      operationId: listDeveloperApplicationReviews
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer, format: int64 } }
+        - { in: path, name: app_id, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200': { description: Developer application review history with submitter reviewer transition note and timestamps }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/workspaces/{id}/developer/apps/{app_id}/credentials:
     get:
       tags: [Developer Platform]

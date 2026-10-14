@@ -38,6 +38,8 @@ Applications define:
 
 Lifecycle transitions and credential actions are written to the existing workspace audit stream.
 
+Post-roadmap review governance adds a monotonically increasing `review_round` every time a draft/rejected application is submitted or resubmitted, plus `submitted_by_user_id` on the application snapshot. Each approve/reject/suspend decision also appends an immutable review record containing the review round, source/target status, submitter, reviewer, note and timestamp. This preserves review evidence across later resubmissions instead of overwriting the only reviewer/note snapshot on the application row.
+
 ## OAuth clients and API keys
 
 Two credential kinds are supported:
@@ -102,7 +104,7 @@ Dry-run is the default.
 
 ## Developer documentation search
 
-`GET /api/developer/docs/search?q=...` searches the embedded OpenAPI contract by path, method and summary. This keeps portal discovery tied to the same governed contract used by API compatibility checks.
+`GET /api/developer/docs/search?q=...&limit=25` searches the embedded OpenAPI contract with deterministic relevance ranking across path, method, operation ID, tags, summary and description. Search tokens must all be represented in an operation's indexed metadata, while exact path/operation matches and phrase matches receive higher rank. The result includes `operation_id` and `tags`, and `limit` is bounded to 1–100. This keeps portal discovery tied to the same governed contract used by API compatibility checks.
 
 ## Generated SDKs
 
@@ -130,6 +132,7 @@ Developer management:
 - `GET /api/workspaces/{id}/developer/apps/{app_id}`
 - `POST /api/workspaces/{id}/developer/apps/{app_id}/submit`
 - `POST /api/workspaces/{id}/developer/apps/{app_id}/review`
+- `GET /api/workspaces/{id}/developer/apps/{app_id}/reviews`
 - `GET|POST /api/workspaces/{id}/developer/apps/{app_id}/credentials`
 - `DELETE /api/workspaces/{id}/developer/apps/{app_id}/credentials/{credential_id}`
 - `POST /api/workspaces/{id}/developer/apps/{app_id}/credentials/{credential_id}/rotate`

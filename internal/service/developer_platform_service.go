@@ -117,7 +117,12 @@ func (s *DeveloperPlatformService) SubmitApplication(actorUserID, workspaceID, a
 		return model.DeveloperApplication{}, ErrInvalidDeveloperLifecycle
 	}
 	now := time.Now().UTC()
-	item, err := s.repo.UpdateApplicationLifecycle(workspaceID, appID, model.DeveloperAppStatusSubmitted, nil, "", &now, nil, now)
+	submitter := actorUserID
+	reviewRound := app.ReviewRound + 1
+	item, err := s.repo.UpdateApplicationLifecycle(
+		workspaceID, appID, model.DeveloperAppStatusSubmitted, nil, &submitter, reviewRound, "",
+		&now, nil, now,
+	)
 	if err == nil {
 		_ = s.audit(workspaceID, actorUserID, "developer.app.submitted", "developer_application", strconv.FormatInt(appID, 10), nil, now)
 	}
@@ -155,12 +160,45 @@ func (s *DeveloperPlatformService) ReviewApplication(actorUserID, workspaceID, a
 	}
 	now := time.Now().UTC()
 	reviewer := actorUserID
-	item, err := s.repo.UpdateApplicationLifecycle(workspaceID, appID, status, &reviewer, strings.TrimSpace(req.Note), app.SubmittedAt, &now, now)
-	if err == nil {
-		_ = s.audit(workspaceID, actorUserID, "developer.app.reviewed", "developer_application", strconv.FormatInt(appID, 10),
-			map[string]any{"status": status, "note": strings.TrimSpace(req.Note)}, now)
+	note := strings.TrimSpace(req.Note)
+	item, err := s.repo.UpdateApplicationLifecycle(
+		workspaceID, appID, status, &reviewer, app.SubmittedByUserID, app.ReviewRound, note,
+		app.SubmittedAt, &now, now,
+	)
+	if err != nil {
+		return model.DeveloperApplication{}, err
 	}
-	return item, err
+	review, err := s.repo.CreateApplicationReview(model.DeveloperAppReview{
+		AppID:             appID,
+		WorkspaceID:       workspaceID,
+		ReviewRound:       app.ReviewRound,
+		Decision:          decision,
+		FromStatus:        app.Status,
+		ToStatus:          status,
+		Note:              note,
+		SubmittedByUserID: app.SubmittedByUserID,
+		ReviewedByUserID:  actorUserID,
+		CreatedAt:         now,
+	})
+	if err != nil {
+		return model.DeveloperApplication{}, err
+	}
+	_ = s.audit(workspaceID, actorUserID, "developer.app.reviewed", "developer_application", strconv.FormatInt(appID, 10),
+		map[string]any{
+			"status":               status,
+			"decision":             decision,
+			"note":                 note,
+			"review_round":         review.ReviewRound,
+			"submitted_by_user_id": review.SubmittedByUserID,
+		}, now)
+	return item, nil
+}
+
+func (s *DeveloperPlatformService) Reviews(actorUserID, workspaceID, appID int64) ([]model.DeveloperAppReview, error) {
+	if err := s.requireAdmin(actorUserID, workspaceID); err != nil {
+		return nil, err
+	}
+	return s.repo.ListApplicationReviews(workspaceID, appID)
 }
 
 func (s *DeveloperPlatformService) Credentials(actorUserID, workspaceID, appID int64) ([]model.DeveloperCredential, error) {
@@ -480,24 +518,49 @@ func (s *DeveloperPlatformService) SandboxContext(clientID string, workspaceID i
 	}, nil
 }
 
-func (s *DeveloperPlatformService) SearchDocs(query string) []model.DeveloperDocEntry {
+func (s *DeveloperPlatformService) SearchDocs(query string, limit int) []model.DeveloperDocEntry {
 	query = strings.ToLower(strings.TrimSpace(query))
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
 	entries := buildDeveloperDocs(s.openAPISpec)
 	if query == "" {
-		if len(entries) > 50 {
-			return entries[:50]
+		if len(entries) > limit {
+			return entries[:limit]
 		}
 		return entries
 	}
-	result := make([]model.DeveloperDocEntry, 0)
+	tokens := developerSearchTokens(query)
+	type ranked struct {
+		entry model.DeveloperDocEntry
+		score int
+	}
+	matches := make([]ranked, 0)
 	for _, entry := range entries {
-		haystack := strings.ToLower(entry.Path + " " + entry.Method + " " + entry.Summary + " " + entry.Description)
-		if strings.Contains(haystack, query) {
-			result = append(result, entry)
-			if len(result) >= 50 {
-				break
-			}
+		score, ok := developerDocScore(entry, query, tokens)
+		if !ok {
+			continue
 		}
+		matches = append(matches, ranked{entry: entry, score: score})
+	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].score == matches[j].score {
+			if matches[i].entry.Path == matches[j].entry.Path {
+				return matches[i].entry.Method < matches[j].entry.Method
+			}
+			return matches[i].entry.Path < matches[j].entry.Path
+		}
+		return matches[i].score > matches[j].score
+	})
+	if len(matches) > limit {
+		matches = matches[:limit]
+	}
+	result := make([]model.DeveloperDocEntry, 0, len(matches))
+	for _, match := range matches {
+		result = append(result, match.entry)
 	}
 	return result
 }
@@ -674,12 +737,105 @@ func buildDeveloperDocs(spec []byte) []model.DeveloperDocEntry {
 			if methods[method] {
 				items = append(items, model.DeveloperDocEntry{Path: currentPath, Method: strings.ToUpper(method)})
 				currentIndex = len(items) - 1
+			} else {
+				currentIndex = -1
 			}
 			continue
 		}
-		if currentIndex >= 0 && strings.HasPrefix(trimmed, "summary:") {
-			items[currentIndex].Summary = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "summary:")), "\"'")
+		if currentIndex < 0 {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(trimmed, "summary:"):
+			items[currentIndex].Summary = developerDocScalar(strings.TrimPrefix(trimmed, "summary:"))
+		case strings.HasPrefix(trimmed, "description:"):
+			items[currentIndex].Description = developerDocScalar(strings.TrimPrefix(trimmed, "description:"))
+		case strings.HasPrefix(trimmed, "operationId:"):
+			items[currentIndex].OperationID = developerDocScalar(strings.TrimPrefix(trimmed, "operationId:"))
+		case strings.HasPrefix(trimmed, "tags:"):
+			items[currentIndex].Tags = developerDocTags(strings.TrimPrefix(trimmed, "tags:"))
 		}
 	}
 	return items
+}
+
+func developerDocScalar(value string) string {
+	return strings.Trim(strings.TrimSpace(value), "\"'")
+}
+
+func developerDocTags(value string) []string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+		value = strings.TrimSuffix(strings.TrimPrefix(value, "["), "]")
+	}
+	parts := strings.Split(value, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if item := developerDocScalar(part); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+func developerSearchTokens(query string) []string {
+	fields := strings.FieldsFunc(query, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && r != '/' && r != '_' && r != '-'
+	})
+	return developerNormalizeStrings(fields)
+}
+
+func developerDocScore(entry model.DeveloperDocEntry, query string, tokens []string) (int, bool) {
+	path := strings.ToLower(entry.Path)
+	method := strings.ToLower(entry.Method)
+	operation := strings.ToLower(entry.OperationID)
+	summary := strings.ToLower(entry.Summary)
+	description := strings.ToLower(entry.Description)
+	tags := strings.ToLower(strings.Join(entry.Tags, " "))
+	combined := strings.Join([]string{path, method, operation, summary, description, tags}, " ")
+	for _, token := range tokens {
+		if !strings.Contains(combined, token) {
+			return 0, false
+		}
+	}
+	score := 0
+	if path == query {
+		score += 1000
+	}
+	if operation == query {
+		score += 900
+	}
+	if strings.Contains(path, query) {
+		score += 500
+	}
+	if strings.Contains(operation, query) {
+		score += 450
+	}
+	if strings.Contains(summary, query) {
+		score += 400
+	}
+	if strings.Contains(tags, query) {
+		score += 250
+	}
+	if strings.Contains(description, query) {
+		score += 100
+	}
+	for _, token := range tokens {
+		if strings.Contains(path, token) {
+			score += 40
+		}
+		if strings.Contains(operation, token) {
+			score += 35
+		}
+		if strings.Contains(summary, token) {
+			score += 30
+		}
+		if strings.Contains(tags, token) {
+			score += 20
+		}
+		if strings.Contains(description, token) {
+			score += 10
+		}
+	}
+	return score, true
 }

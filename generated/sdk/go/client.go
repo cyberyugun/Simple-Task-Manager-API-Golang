@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-const OpenAPIVersion = "1.13.0"
-const OpenAPIPathCount = 268
+const OpenAPIVersion = "1.14.0"
+const OpenAPIPathCount = 269
 
 type Client struct {
 	BaseURL     string

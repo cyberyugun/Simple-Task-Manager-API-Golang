@@ -31,11 +31,27 @@ type DeveloperApplication struct {
 	SandboxEnabled      bool       `json:"sandbox_enabled"`
 	CreatedByUserID     int64      `json:"created_by_user_id"`
 	ReviewedByUserID    *int64     `json:"reviewed_by_user_id,omitempty"`
+	SubmittedByUserID   *int64     `json:"submitted_by_user_id,omitempty"`
+	ReviewRound         int        `json:"review_round"`
 	ReviewNote          string     `json:"review_note,omitempty"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
 	SubmittedAt         *time.Time `json:"submitted_at,omitempty"`
 	ReviewedAt          *time.Time `json:"reviewed_at,omitempty"`
+}
+
+type DeveloperAppReview struct {
+	ID                int64     `json:"id"`
+	AppID             int64     `json:"app_id"`
+	WorkspaceID       int64     `json:"workspace_id"`
+	ReviewRound       int       `json:"review_round"`
+	Decision          string    `json:"decision"`
+	FromStatus        string    `json:"from_status"`
+	ToStatus          string    `json:"to_status"`
+	Note              string    `json:"note,omitempty"`
+	SubmittedByUserID *int64    `json:"submitted_by_user_id,omitempty"`
+	ReviewedByUserID  int64     `json:"reviewed_by_user_id"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type DeveloperCredential struct {
@@ -110,10 +126,12 @@ type DeveloperSandboxContract struct {
 }
 
 type DeveloperDocEntry struct {
-	Path        string `json:"path"`
-	Method      string `json:"method,omitempty"`
-	Summary     string `json:"summary,omitempty"`
-	Description string `json:"description,omitempty"`
+	Path        string   `json:"path"`
+	Method      string   `json:"method,omitempty"`
+	OperationID string   `json:"operation_id,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Summary     string   `json:"summary,omitempty"`
+	Description string   `json:"description,omitempty"`
 }
 
 type DeveloperSDK struct {

@@ -52,7 +52,7 @@ func TestIntegrationPostgresDeveloperPlatform(t *testing.T) {
 		t.Fatal(err)
 	}
 	identity := service.NewEnterpriseIdentityService(identityRepo, workspaces, users, auth.NewTokenManager("postgres-developer-platform-key", 15*time.Minute))
-	platform := service.NewDeveloperPlatformService(developerRepo, workspaces, identity, false, []byte("paths:\n  /api/tasks:\n    get:\n      summary: List tasks\n"))
+	platform := service.NewDeveloperPlatformService(developerRepo, workspaces, identity, false, []byte("paths:\n  /api/tasks:\n    get:\n      tags: [Tasks]\n      summary: List tasks\n      operationId: listTasks\n"))
 
 	app, err := platform.CreateApplication(owner.ID, workspace.ID, model.CreateDeveloperApplicationRequest{
 		Name:              "Integration App",
@@ -62,12 +62,25 @@ func TestIntegrationPostgresDeveloperPlatform(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := platform.SubmitApplication(owner.ID, workspace.ID, app.ID); err != nil {
+	submitted, err := platform.SubmitApplication(owner.ID, workspace.ID, app.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	app, err = platform.ReviewApplication(owner.ID, workspace.ID, app.ID, model.ReviewDeveloperApplicationRequest{Decision: "approve"})
+	if submitted.ReviewRound != 1 || submitted.SubmittedByUserID == nil || *submitted.SubmittedByUserID != owner.ID {
+		t.Fatalf("submitted=%+v", submitted)
+	}
+	app, err = platform.ReviewApplication(owner.ID, workspace.ID, app.ID, model.ReviewDeveloperApplicationRequest{Decision: "approve", Note: "integration approval"})
 	if err != nil || app.Status != model.DeveloperAppStatusApproved {
 		t.Fatalf("app=%+v err=%v", app, err)
+	}
+	reviews, err := developerRepo.ListApplicationReviews(workspace.ID, app.ID)
+	if err != nil || len(reviews) != 1 {
+		t.Fatalf("reviews=%+v err=%v", reviews, err)
+	}
+	if reviews[0].Decision != "approve" || reviews[0].ReviewRound != 1 ||
+		reviews[0].SubmittedByUserID == nil || *reviews[0].SubmittedByUserID != owner.ID ||
+		reviews[0].ReviewedByUserID != owner.ID || reviews[0].Note != "integration approval" {
+		t.Fatalf("unexpected review=%+v", reviews[0])
 	}
 
 	credential, err := platform.CreateCredential(owner.ID, workspace.ID, app.ID, model.CreateDeveloperCredentialRequest{

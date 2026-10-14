@@ -20,7 +20,9 @@ type DeveloperPlatformRepository interface {
 	CreateApplication(model.DeveloperApplication) (model.DeveloperApplication, error)
 	ListApplications(workspaceID int64) ([]model.DeveloperApplication, error)
 	GetApplication(workspaceID, appID int64) (model.DeveloperApplication, error)
-	UpdateApplicationLifecycle(workspaceID, appID int64, status string, reviewerID *int64, note string, submittedAt, reviewedAt *time.Time, now time.Time) (model.DeveloperApplication, error)
+	UpdateApplicationLifecycle(workspaceID, appID int64, status string, reviewerID, submittedByUserID *int64, reviewRound int, note string, submittedAt, reviewedAt *time.Time, now time.Time) (model.DeveloperApplication, error)
+	CreateApplicationReview(model.DeveloperAppReview) (model.DeveloperAppReview, error)
+	ListApplicationReviews(workspaceID, appID int64) ([]model.DeveloperAppReview, error)
 
 	CreateCredential(model.DeveloperCredential) (model.DeveloperCredential, error)
 	ListCredentials(workspaceID, appID int64) ([]model.DeveloperCredential, error)
@@ -39,10 +41,12 @@ type DeveloperPlatformRepository interface {
 type InMemoryDeveloperPlatformRepository struct {
 	mu           sync.Mutex
 	apps         map[int64]model.DeveloperApplication
+	reviews      map[int64]model.DeveloperAppReview
 	credentials  map[int64]model.DeveloperCredential
 	usage        map[string]model.DeveloperUsageDaily
 	webhookTests map[int64]model.DeveloperWebhookTest
 	nextApp      int64
+	nextReview   int64
 	nextCred     int64
 	nextWebhook  int64
 }
@@ -50,10 +54,11 @@ type InMemoryDeveloperPlatformRepository struct {
 func NewInMemoryDeveloperPlatformRepository() *InMemoryDeveloperPlatformRepository {
 	return &InMemoryDeveloperPlatformRepository{
 		apps:         make(map[int64]model.DeveloperApplication),
+		reviews:      make(map[int64]model.DeveloperAppReview),
 		credentials:  make(map[int64]model.DeveloperCredential),
 		usage:        make(map[string]model.DeveloperUsageDaily),
 		webhookTests: make(map[int64]model.DeveloperWebhookTest),
-		nextApp:      1, nextCred: 1, nextWebhook: 1,
+		nextApp:      1, nextReview: 1, nextCred: 1, nextWebhook: 1,
 	}
 }
 
@@ -90,7 +95,7 @@ func (r *InMemoryDeveloperPlatformRepository) GetApplication(workspaceID, appID 
 	return cloneDeveloperApp(item), nil
 }
 
-func (r *InMemoryDeveloperPlatformRepository) UpdateApplicationLifecycle(workspaceID, appID int64, status string, reviewerID *int64, note string, submittedAt, reviewedAt *time.Time, now time.Time) (model.DeveloperApplication, error) {
+func (r *InMemoryDeveloperPlatformRepository) UpdateApplicationLifecycle(workspaceID, appID int64, status string, reviewerID, submittedByUserID *int64, reviewRound int, note string, submittedAt, reviewedAt *time.Time, now time.Time) (model.DeveloperApplication, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	item, ok := r.apps[appID]
@@ -99,12 +104,49 @@ func (r *InMemoryDeveloperPlatformRepository) UpdateApplicationLifecycle(workspa
 	}
 	item.Status = status
 	item.ReviewedByUserID = reviewerID
+	item.SubmittedByUserID = submittedByUserID
+	item.ReviewRound = reviewRound
 	item.ReviewNote = note
 	item.SubmittedAt = submittedAt
 	item.ReviewedAt = reviewedAt
 	item.UpdatedAt = now
 	r.apps[appID] = item
 	return cloneDeveloperApp(item), nil
+}
+
+func (r *InMemoryDeveloperPlatformRepository) CreateApplicationReview(item model.DeveloperAppReview) (model.DeveloperAppReview, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	app, ok := r.apps[item.AppID]
+	if !ok || app.WorkspaceID != item.WorkspaceID {
+		return model.DeveloperAppReview{}, ErrDeveloperAppNotFound
+	}
+	item.ID = r.nextReview
+	r.nextReview++
+	r.reviews[item.ID] = item
+	return item, nil
+}
+
+func (r *InMemoryDeveloperPlatformRepository) ListApplicationReviews(workspaceID, appID int64) ([]model.DeveloperAppReview, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	app, ok := r.apps[appID]
+	if !ok || app.WorkspaceID != workspaceID {
+		return nil, ErrDeveloperAppNotFound
+	}
+	items := make([]model.DeveloperAppReview, 0)
+	for _, item := range r.reviews {
+		if item.WorkspaceID == workspaceID && item.AppID == appID {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].ReviewRound == items[j].ReviewRound {
+			return items[i].ID > items[j].ID
+		}
+		return items[i].ReviewRound > items[j].ReviewRound
+	})
+	return items, nil
 }
 
 func (r *InMemoryDeveloperPlatformRepository) CreateCredential(item model.DeveloperCredential) (model.DeveloperCredential, error) {

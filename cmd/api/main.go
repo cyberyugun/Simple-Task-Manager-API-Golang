@@ -679,6 +679,7 @@ func main() {
 	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}", protectedFirstParty(developerPlatformHandler.ApplicationByID))
 	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/submit", protectedFirstParty(developerPlatformHandler.Submit))
 	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/review", protectedFirstParty(developerPlatformHandler.Review))
+	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/reviews", protectedFirstParty(developerPlatformHandler.Reviews))
 	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/credentials", protectedFirstParty(developerPlatformHandler.Credentials))
 	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/credentials/{credential_id}", protectedFirstParty(developerPlatformHandler.CredentialByID))
 	mux.Handle("/api/workspaces/{id}/developer/apps/{app_id}/credentials/{credential_id}/rotate", protectedFirstParty(developerPlatformHandler.RotateCredential))
