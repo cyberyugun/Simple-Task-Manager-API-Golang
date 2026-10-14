@@ -79,11 +79,12 @@ func TestIntegrationPostgresConnectorSecurity(t *testing.T) {
 	}
 
 	expires := now.Add(4 * time.Minute)
+	rotatedAt := now.Add(-48 * time.Hour)
 	meta, err := security.UpsertCredentialMetadata(model.ConnectorCredentialMetadata{
 		ConnectionID: connection.ID, OrganizationID: org.ID,
 		SecretBackend: model.ConnectorSecretBackendDatabase, SecretRef: "org/ref",
 		KeyVersion: 1, CredentialVersion: 1, Status: model.ConnectorCredentialActive,
-		GrantedScopes: []string{"tasks:read"}, ExpiresAt: &expires, UpdatedAt: now,
+		GrantedScopes: []string{"tasks:read"}, ExpiresAt: &expires, RotatedAt: &rotatedAt, UpdatedAt: now,
 	})
 	if err != nil || meta.ConnectionID != connection.ID {
 		t.Fatalf("metadata=%+v err=%v", meta, err)
@@ -94,6 +95,29 @@ func TestIntegrationPostgresConnectorSecurity(t *testing.T) {
 	}
 
 	actor := user.ID
+	policy, err := security.UpsertCredentialPolicy(model.ConnectorCredentialPolicy{
+		OrganizationID:              org.ID,
+		RotationEnabled:             true,
+		AutoRotate:                  true,
+		RotationIntervalDays:        1,
+		EnforceLeastPrivilegeScopes: true,
+		CreatedByUserID:             &actor,
+		UpdatedByUserID:             &actor,
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+	})
+	if err != nil || !policy.AutoRotate || !policy.EnforceLeastPrivilegeScopes {
+		t.Fatalf("policy=%+v err=%v", policy, err)
+	}
+	storedPolicy, err := security.GetCredentialPolicy(org.ID)
+	if err != nil || storedPolicy.RotationIntervalDays != 1 {
+		t.Fatalf("stored policy=%+v err=%v", storedPolicy, err)
+	}
+	rotationDue, err := security.ListCredentialsDueForRotation(now, 10)
+	if err != nil || len(rotationDue) != 1 || rotationDue[0].ConnectionID != connection.ID {
+		t.Fatalf("rotation due=%+v err=%v", rotationDue, err)
+	}
+
 	if err := security.RecordCredentialAccess(model.ConnectorCredentialAccess{
 		OrganizationID: org.ID, ConnectionID: connection.ID, ActorUserID: &actor,
 		Action: "rotate", SecretBackend: model.ConnectorSecretBackendDatabase,
