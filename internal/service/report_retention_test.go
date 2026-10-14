@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ func TestReportRetentionPolicyFromEnv(t *testing.T) {
 
 	t.Setenv("REPORT_RUN_PAYLOAD_RETENTION_DAYS", "90")
 	t.Setenv("REPORT_RUN_DETAIL_RETENTION_DAYS", "30")
-	if _, err := NewReportRetentionPolicyFromEnv(); err != ErrInvalidReportRetentionPolicy && err == nil {
+	if _, err := NewReportRetentionPolicyFromEnv(); !errors.Is(err, ErrInvalidReportRetentionPolicy) {
 		t.Fatalf("expected invalid retention policy, got %v", err)
 	}
 }
