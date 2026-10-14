@@ -356,6 +356,19 @@ func (s *AttachmentService) List(access model.WorkspaceAccess, taskID, commentID
 	return s.repo.ListAttachments(access.ID, taskID, commentID)
 }
 
+
+func (s *AttachmentService) Versions(access model.WorkspaceAccess, attachmentID int64) ([]model.Attachment, error) {
+	item, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return nil, err
+	}
+	groupID := strings.TrimSpace(item.VersionGroupID)
+	if groupID == "" {
+		return []model.Attachment{item}, nil
+	}
+	return s.repo.ListAttachmentVersions(access.ID, groupID)
+}
+
 func (s *AttachmentService) Download(actorUserID int64, access model.WorkspaceAccess, attachmentID int64) (model.AttachmentDownload, error) {
 	item, err := s.repo.GetAttachment(access.ID, attachmentID)
 	if err != nil {
@@ -374,6 +387,30 @@ func (s *AttachmentService) Download(actorUserID int64, access model.WorkspaceAc
 	}
 	s.audit(actorUserID, access.ID, "attachment.download_requested", item.ID, nil)
 	return model.AttachmentDownload{Attachment: item, DownloadURL: u, ExpiresAt: expires}, nil
+}
+
+
+func (s *AttachmentService) Preview(actorUserID int64, access model.WorkspaceAccess, attachmentID int64) (model.AttachmentPreviewDownload, error) {
+	item, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return model.AttachmentPreviewDownload{}, err
+	}
+	if item.Status != model.AttachmentStatusClean {
+		if item.Status == model.AttachmentStatusInfected || item.Status == model.AttachmentStatusQuarantine {
+			return model.AttachmentPreviewDownload{}, ErrAttachmentBlocked
+		}
+		return model.AttachmentPreviewDownload{}, ErrAttachmentNotReady
+	}
+	if item.PreviewStatus != model.AttachmentPreviewStatusReady || strings.TrimSpace(item.PreviewObjectKey) == "" {
+		return model.AttachmentPreviewDownload{}, ErrAttachmentPreviewNotReady
+	}
+	expires := time.Now().UTC().Add(s.cfg.PresignTTL)
+	u, err := s.store.PresignDownload(item.PreviewObjectKey, expires)
+	if err != nil {
+		return model.AttachmentPreviewDownload{}, err
+	}
+	s.audit(actorUserID, access.ID, "attachment.preview_requested", item.ID, nil)
+	return model.AttachmentPreviewDownload{Attachment: item, PreviewURL: u, ExpiresAt: expires}, nil
 }
 
 func (s *AttachmentService) Delete(actorUserID int64, access model.WorkspaceAccess, attachmentID int64) (model.Attachment, error) {
@@ -417,6 +454,69 @@ func (s *AttachmentService) Governance(actorUserID int64, access model.Workspace
 	updated, err := s.repo.UpdateAttachment(item)
 	if err == nil {
 		s.audit(actorUserID, access.ID, "attachment.governance_updated", item.ID, map[string]any{"legal_hold": item.LegalHold, "retain_until": item.RetainUntil})
+	}
+	return updated, err
+}
+
+func (s *AttachmentService) Quarantine(actorUserID int64, access model.WorkspaceAccess, attachmentID int64, req model.AttachmentQuarantineRequest) (model.Attachment, error) {
+	if !attachmentAdmin(access) {
+		return model.Attachment{}, ErrAttachmentGovernanceDenied
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" || len(reason) > 1000 {
+		return model.Attachment{}, ErrInvalidAttachment
+	}
+	item, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return model.Attachment{}, err
+	}
+	if item.Status == model.AttachmentStatusDeleted || item.DeletedAt != nil {
+		return model.Attachment{}, ErrInvalidAttachment
+	}
+	now := time.Now().UTC()
+	item.Status = model.AttachmentStatusQuarantine
+	item.QuarantineReason = reason
+	item.ReleasedByUserID = nil
+	item.ReleasedAt = nil
+	item.ReleaseNote = ""
+	item.UpdatedAt = now
+	updated, err := s.repo.UpdateAttachment(item)
+	if err == nil {
+		s.audit(actorUserID, access.ID, "attachment.quarantined", item.ID, map[string]any{"reason": reason})
+	}
+	return updated, err
+}
+
+func (s *AttachmentService) ReleaseQuarantine(actorUserID int64, access model.WorkspaceAccess, attachmentID int64, req model.AttachmentReleaseRequest) (model.Attachment, error) {
+	if !attachmentAdmin(access) {
+		return model.Attachment{}, ErrAttachmentGovernanceDenied
+	}
+	note := strings.TrimSpace(req.Note)
+	if note == "" || len(note) > 2000 {
+		return model.Attachment{}, ErrInvalidAttachment
+	}
+	item, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return model.Attachment{}, err
+	}
+	if item.Status != model.AttachmentStatusQuarantine {
+		return model.Attachment{}, ErrInvalidAttachment
+	}
+	now := time.Now().UTC()
+	item.Status = model.AttachmentStatusClean
+	item.ReleasedByUserID = &actorUserID
+	item.ReleasedAt = &now
+	item.ReleaseNote = note
+	if s.previewer.Enabled() && previewableAttachmentMIME(item.ContentType) && item.PreviewStatus != model.AttachmentPreviewStatusReady {
+		item.PreviewStatus = model.AttachmentPreviewStatusPending
+		item.PreviewMessage = ""
+	}
+	item.UpdatedAt = now
+	updated, err := s.repo.UpdateAttachment(item)
+	if err == nil {
+		s.audit(actorUserID, access.ID, "attachment.quarantine_released", item.ID, map[string]any{
+			"quarantine_reason": item.QuarantineReason, "release_note": note,
+		})
 	}
 	return updated, err
 }
