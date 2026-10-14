@@ -1,6 +1,6 @@
 # Phase 38 — Connector OAuth Lifecycle & Enterprise Secret Governance
 
-Phase 38 completes the Phase 32 integration hub authentication lifecycle with OAuth 2.0 authorization-code + PKCE, refresh-token handling, credential metadata, rotation, revocation, health validation and auditable secret access.
+Phase 38 completes the Phase 32 integration hub authentication lifecycle with OAuth 2.0 authorization-code + PKCE, refresh-token handling, credential metadata, policy-driven rotation, revocation, health validation, least-privilege scope enforcement and auditable secret access.
 
 ## OAuth flow
 
@@ -42,6 +42,31 @@ The connection APIs support:
 
 Raw access tokens, refresh tokens and client secrets are never returned by these APIs.
 
+## Credential governance policy
+
+Organization owners, admins and delegated admins can configure one credential policy per organization:
+
+- `rotation_enabled`: expose and enforce the rotation schedule;
+- `auto_rotate`: let the worker rewrite due stored credential material through the credential's active backend;
+- `rotation_interval_days`: 1–3650 days;
+- `enforce_least_privilege_scopes`: reject OAuth grants that contain scopes beyond the connector's configured `scopes` set.
+
+Automatic rotation is a storage-secret rotation, not a provider OAuth token mint. The worker reads the current credential through the active backend, writes the same logical credential through that backend again, advances credential/key version metadata, records `rotated_at`, and computes the next due time. For the database backend this re-encrypts the envelope; for external secret stores it creates the backend's next immutable/current secret version.
+
+Existing OAuth refresh remains independent. Refresh changes provider access/refresh token material when the provider returns it, while the secret-rotation policy governs how long the stored secret representation may remain without rotation.
+
+## Least-privilege OAuth scopes
+
+Required scopes are the connector connection's configured `scopes`. OAuth completion and refresh always reject missing required scopes. When `enforce_least_privilege_scopes` is enabled, they also reject any provider-granted scope that was not requested.
+
+`POST .../test` returns required, granted, missing and excess scope arrays plus `least_privilege_valid`. This lets administrators see a provider over-grant even when strict enforcement is disabled.
+
+## Credential access audit
+
+Credential reads now write access-audit records in addition to the existing write/refresh/rotate/revoke lifecycle records. The audit distinguishes runtime reads, OAuth exchange reads, connection-test reads, automatic-refresh reads, automatic-rotation reads, failed reads and legacy database fallbacks. Actor user IDs are retained for administrator-initiated operations; worker/runtime access is recorded with a system actor.
+
+Audit rows contain backend/reference metadata only. Raw access tokens, refresh tokens, client secrets and credential payloads are never written into the credential-access audit.
+
 ## Secret-store abstraction
 
 The database envelope backend remains the default. The backend catalog also lists AWS Secrets Manager, Azure Key Vault, GCP Secret Manager and HashiCorp Vault.
@@ -50,7 +75,7 @@ This hardening release adds a native HashiCorp Vault KV v2 adapter. Connector cr
 
 When a credential is rotated from the database backend to HashiCorp Vault, the service writes the credential payload to the configured KV v2 path, persists only backend/reference/version metadata, and removes the database credential copy after cutover. Subsequent connector updates and refresh-token writes continue to the Vault backend. Rotation back to the database envelope remains supported.
 
-The backend catalog reports `configured` and `native_adapter`. AWS, Azure and GCP remain declared roadmap capabilities but cannot be selected for new rotations until an implementation is registered.
+The backend catalog reports `configured` and `native_adapter`. Database envelope encryption, HashiCorp Vault, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager all have native adapters; external backends are selectable only when their deployment configuration is present.
 
 ### HashiCorp Vault configuration
 
@@ -134,13 +159,17 @@ With this implementation, the native Phase 38 secret backends are complete: data
 ```text
 CONNECTOR_OAUTH_REFRESH_POLL_INTERVAL=1m
 CONNECTOR_OAUTH_REFRESH_BATCH_SIZE=50
+CONNECTOR_SECRET_ROTATION_POLL_INTERVAL=15m
+CONNECTOR_SECRET_ROTATION_BATCH_SIZE=25
 ```
 
-Refresh failures transition credential metadata to `error`, or `expired` when the access token has already expired. Successful refreshes preserve refresh tokens when providers omit a replacement and increment the credential version.
+Refresh failures transition credential metadata to `error`, or `expired` when the access token has already expired. Successful refreshes preserve refresh tokens when providers omit a replacement and increment the credential version. The rotation worker separately scans only organizations that explicitly enable `auto_rotate`; failed storage rotations are audited but do not revoke or expire an otherwise usable provider credential.
 
 ## API routes
 
 - `GET /api/integrations/secret-backends`
+- `GET /api/organizations/{id}/integrations/credential-policy`
+- `PUT /api/organizations/{id}/integrations/credential-policy`
 - `POST /api/organizations/{id}/integrations/connections/{connection_id}/oauth/start`
 - `POST /api/organizations/{id}/integrations/connections/{connection_id}/oauth/callback`
 - `GET /api/organizations/{id}/integrations/connections/{connection_id}/credential`
