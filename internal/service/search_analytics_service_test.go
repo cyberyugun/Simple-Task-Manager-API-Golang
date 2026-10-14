@@ -112,3 +112,83 @@ func TestSearchAnalyticsValidation(t *testing.T) {
 		t.Fatalf("invalid export error=%v", err)
 	}
 }
+
+
+func TestSearchAnalyticsSynonymsAndRankingControls(t *testing.T) {
+	t.Run("synonym expands recall", func(t *testing.T) {
+		tasks := repository.NewInMemoryTaskRepository()
+		workspaces := repository.NewInMemoryWorkspaceRepository()
+		access, err := workspaces.Create(21, "Synonyms", time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		if _, err := tasks.Create(model.Task{
+			WorkspaceID: access.ID, UserID: 21, Title: "Investigate production defect",
+			Description: "checkout regression", Status: model.TaskStatusTodo,
+			Priority: model.TaskPriorityHigh, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		relevance := model.DefaultSearchRelevanceOptions()
+		relevance.Synonyms = map[string][]string{"bug": {"defect", "issue"}}
+		svc := NewSearchAnalyticsServiceWithRelevance(
+			repository.NewInMemorySearchAnalyticsRepository(tasks),
+			workspaces,
+			relevance,
+		)
+
+		result, err := svc.Search(access.ID, model.SearchQuery{Query: "bug", Page: 1, Limit: 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Pagination.Total != 1 || len(result.Items) != 1 || result.Items[0].Task.Title != "Investigate production defect" {
+			t.Fatalf("unexpected synonym result: %+v", result)
+		}
+		if result.Items[0].MatchType != "synonym" || result.Items[0].Rank <= 0 {
+			t.Fatalf("unexpected synonym match metadata: %+v", result.Items[0])
+		}
+	})
+
+	t.Run("field weights change ordering", func(t *testing.T) {
+		tasks := repository.NewInMemoryTaskRepository()
+		workspaces := repository.NewInMemoryWorkspaceRepository()
+		access, err := workspaces.Create(22, "Ranking", time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		if _, err := tasks.Create(model.Task{
+			WorkspaceID: access.ID, UserID: 22, Title: "Signal outage",
+			Description: "generic description", Status: model.TaskStatusTodo,
+			Priority: model.TaskPriorityMedium, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tasks.Create(model.Task{
+			WorkspaceID: access.ID, UserID: 22, Title: "Investigate network",
+			Description: "signal degradation detected", Status: model.TaskStatusTodo,
+			Priority: model.TaskPriorityMedium, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		relevance := model.DefaultSearchRelevanceOptions()
+		relevance.TitleWeight = 0.1
+		relevance.DescriptionWeight = 2
+		svc := NewSearchAnalyticsServiceWithRelevance(
+			repository.NewInMemorySearchAnalyticsRepository(tasks),
+			workspaces,
+			relevance,
+		)
+
+		result, err := svc.Search(access.ID, model.SearchQuery{Query: "signal", Page: 1, Limit: 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Items) != 2 || result.Items[0].Task.Title != "Investigate network" {
+			t.Fatalf("weighted order = %+v", result.Items)
+		}
+	})
+}
