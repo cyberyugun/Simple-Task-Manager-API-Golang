@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.9.0
+  version: 1.10.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -725,6 +725,39 @@ paths:
         '200': { description: Attachment deleted }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: Attachment is protected by retention or legal hold }
+  /api/attachments/{attachment_id}/versions:
+    get:
+      tags: [Files & Attachments]
+      summary: List all versions in an attachment version chain
+      operationId: listAttachmentVersions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Attachment versions ordered from oldest to newest }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Files & Attachments]
+      summary: Create a new presigned upload session as the next attachment version
+      operationId: createAttachmentVersion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file_name, content_type, size_bytes, sha256]
+              properties:
+                file_name: { type: string, maxLength: 255 }
+                content_type: { type: string }
+                size_bytes: { type: integer, format: int64, minimum: 1 }
+                sha256: { type: string, minLength: 64, maxLength: 64 }
+      responses:
+        '201': { description: Presigned upload session for the next version }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Attachment versioning or workspace storage conflict }
   /api/attachments/{attachment_id}/complete:
     post:
       tags: [Files & Attachments]
@@ -745,6 +778,56 @@ paths:
         '200': { description: Presigned download URL }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: Attachment is not clean or is quarantined }
+  /api/attachments/{attachment_id}/preview:
+    post:
+      tags: [Files & Attachments]
+      summary: Create a short-lived URL for a generated attachment preview
+      operationId: createAttachmentPreview
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Presigned preview URL and preview metadata }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Attachment or preview is not ready, or attachment is blocked }
+  /api/attachments/{attachment_id}/quarantine:
+    post:
+      tags: [Files & Attachments]
+      summary: Manually quarantine an attachment for workspace security review
+      operationId: quarantineAttachment
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200': { description: Attachment quarantined }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Workspace role is not allowed to quarantine attachments }
+  /api/attachments/{attachment_id}/quarantine/release:
+    post:
+      tags: [Files & Attachments]
+      summary: Release a quarantined attachment after owner/admin review
+      operationId: releaseAttachmentQuarantine
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '200': { description: Quarantined attachment released and download access restored }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Attachment is not quarantined or workspace role is not allowed to release it }
   /api/attachments/{attachment_id}/governance:
     patch:
       tags: [Files & Attachments]

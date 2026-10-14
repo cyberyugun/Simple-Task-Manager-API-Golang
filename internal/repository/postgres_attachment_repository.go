@@ -14,7 +14,7 @@ func NewPostgresAttachmentRepository(db *sql.DB) *PostgresAttachmentRepository {
 	return &PostgresAttachmentRepository{db: db}
 }
 
-const attachmentColumns = `id,workspace_id,task_id,comment_id,uploaded_by_user_id,provider,bucket,object_key,file_name,content_type,size_bytes,sha256,status,scan_engine,scan_message,encryption,encryption_key_id,version,legal_hold,retain_until,uploaded_at,scanned_at,deleted_at,created_at,updated_at`
+const attachmentColumns = `id,workspace_id,task_id,comment_id,uploaded_by_user_id,provider,bucket,object_key,file_name,content_type,size_bytes,sha256,status,scan_engine,scan_message,encryption,encryption_key_id,version,version_group_id,previous_attachment_id,legal_hold,retain_until,quarantine_reason,released_by_user_id,released_at,release_note,preview_status,preview_object_key,preview_content_type,preview_width,preview_height,preview_engine,preview_message,preview_created_at,uploaded_at,scanned_at,deleted_at,created_at,updated_at`
 
 type attachmentScanner interface{ Scan(...any) error }
 
@@ -23,26 +23,47 @@ func scanAttachment(s attachmentScanner) (model.Attachment, error) {
 	err := s.Scan(
 		&a.ID, &a.WorkspaceID, &a.TaskID, &a.CommentID, &a.UploadedByUserID, &a.Provider, &a.Bucket,
 		&a.ObjectKey, &a.FileName, &a.ContentType, &a.SizeBytes, &a.SHA256, &a.Status, &a.ScanEngine,
-		&a.ScanMessage, &a.Encryption, &a.EncryptionKeyID, &a.Version, &a.LegalHold, &a.RetainUntil,
+		&a.ScanMessage, &a.Encryption, &a.EncryptionKeyID, &a.Version, &a.VersionGroupID,
+		&a.PreviousAttachmentID, &a.LegalHold, &a.RetainUntil, &a.QuarantineReason, &a.ReleasedByUserID,
+		&a.ReleasedAt, &a.ReleaseNote, &a.PreviewStatus, &a.PreviewObjectKey, &a.PreviewContentType,
+		&a.PreviewWidth, &a.PreviewHeight, &a.PreviewEngine, &a.PreviewMessage, &a.PreviewCreatedAt,
 		&a.UploadedAt, &a.ScannedAt, &a.DeletedAt, &a.CreatedAt, &a.UpdatedAt,
 	)
 	return a, err
 }
 
 func (r *PostgresAttachmentRepository) CreateAttachment(a model.Attachment) (model.Attachment, error) {
+	if a.PreviewStatus == "" {
+		a.PreviewStatus = model.AttachmentPreviewStatusNone
+	}
 	return scanAttachment(r.db.QueryRow(`INSERT INTO attachments
-		(workspace_id,task_id,comment_id,uploaded_by_user_id,provider,bucket,object_key,file_name,content_type,size_bytes,sha256,status,scan_engine,scan_message,encryption,encryption_key_id,version,legal_hold,retain_until,uploaded_at,scanned_at,deleted_at,created_at,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+		(workspace_id,task_id,comment_id,uploaded_by_user_id,provider,bucket,object_key,file_name,content_type,size_bytes,sha256,status,scan_engine,scan_message,encryption,encryption_key_id,version,version_group_id,previous_attachment_id,legal_hold,retain_until,quarantine_reason,released_by_user_id,released_at,release_note,preview_status,preview_object_key,preview_content_type,preview_width,preview_height,preview_engine,preview_message,preview_created_at,uploaded_at,scanned_at,deleted_at,created_at,updated_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
 		RETURNING `+attachmentColumns,
-		a.WorkspaceID, a.TaskID, a.CommentID, a.UploadedByUserID, a.Provider, a.Bucket, a.ObjectKey, a.FileName, a.ContentType, a.SizeBytes, a.SHA256, a.Status, a.ScanEngine, a.ScanMessage, a.Encryption, a.EncryptionKeyID, a.Version, a.LegalHold, a.RetainUntil, a.UploadedAt, a.ScannedAt, a.DeletedAt, a.CreatedAt, a.UpdatedAt))
+		a.WorkspaceID, a.TaskID, a.CommentID, a.UploadedByUserID, a.Provider, a.Bucket, a.ObjectKey, a.FileName,
+		a.ContentType, a.SizeBytes, a.SHA256, a.Status, a.ScanEngine, a.ScanMessage, a.Encryption, a.EncryptionKeyID,
+		a.Version, a.VersionGroupID, a.PreviousAttachmentID, a.LegalHold, a.RetainUntil, a.QuarantineReason,
+		a.ReleasedByUserID, a.ReleasedAt, a.ReleaseNote, a.PreviewStatus, a.PreviewObjectKey, a.PreviewContentType,
+		a.PreviewWidth, a.PreviewHeight, a.PreviewEngine, a.PreviewMessage, a.PreviewCreatedAt, a.UploadedAt,
+		a.ScannedAt, a.DeletedAt, a.CreatedAt, a.UpdatedAt,
+	))
 }
 
 func (r *PostgresAttachmentRepository) UpdateAttachment(a model.Attachment) (model.Attachment, error) {
+	if a.PreviewStatus == "" {
+		a.PreviewStatus = model.AttachmentPreviewStatusNone
+	}
 	out, err := scanAttachment(r.db.QueryRow(`UPDATE attachments SET
-		task_id=$3,comment_id=$4,provider=$5,bucket=$6,object_key=$7,file_name=$8,content_type=$9,size_bytes=$10,sha256=$11,status=$12,scan_engine=$13,scan_message=$14,encryption=$15,encryption_key_id=$16,version=$17,legal_hold=$18,retain_until=$19,uploaded_at=$20,scanned_at=$21,deleted_at=$22,updated_at=$23
+		task_id=$3,comment_id=$4,provider=$5,bucket=$6,object_key=$7,file_name=$8,content_type=$9,size_bytes=$10,sha256=$11,status=$12,scan_engine=$13,scan_message=$14,encryption=$15,encryption_key_id=$16,version=$17,version_group_id=$18,previous_attachment_id=$19,legal_hold=$20,retain_until=$21,quarantine_reason=$22,released_by_user_id=$23,released_at=$24,release_note=$25,preview_status=$26,preview_object_key=$27,preview_content_type=$28,preview_width=$29,preview_height=$30,preview_engine=$31,preview_message=$32,preview_created_at=$33,uploaded_at=$34,scanned_at=$35,deleted_at=$36,updated_at=$37
 		WHERE workspace_id=$1 AND id=$2
 		RETURNING `+attachmentColumns,
-		a.WorkspaceID, a.ID, a.TaskID, a.CommentID, a.Provider, a.Bucket, a.ObjectKey, a.FileName, a.ContentType, a.SizeBytes, a.SHA256, a.Status, a.ScanEngine, a.ScanMessage, a.Encryption, a.EncryptionKeyID, a.Version, a.LegalHold, a.RetainUntil, a.UploadedAt, a.ScannedAt, a.DeletedAt, a.UpdatedAt))
+		a.WorkspaceID, a.ID, a.TaskID, a.CommentID, a.Provider, a.Bucket, a.ObjectKey, a.FileName, a.ContentType,
+		a.SizeBytes, a.SHA256, a.Status, a.ScanEngine, a.ScanMessage, a.Encryption, a.EncryptionKeyID, a.Version,
+		a.VersionGroupID, a.PreviousAttachmentID, a.LegalHold, a.RetainUntil, a.QuarantineReason, a.ReleasedByUserID,
+		a.ReleasedAt, a.ReleaseNote, a.PreviewStatus, a.PreviewObjectKey, a.PreviewContentType, a.PreviewWidth,
+		a.PreviewHeight, a.PreviewEngine, a.PreviewMessage, a.PreviewCreatedAt, a.UploadedAt, a.ScannedAt,
+		a.DeletedAt, a.UpdatedAt,
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Attachment{}, ErrAttachmentNotFound
 	}
@@ -78,9 +99,47 @@ func (r *PostgresAttachmentRepository) ListAttachments(workspaceID int64, taskID
 	return out, rows.Err()
 }
 
+func (r *PostgresAttachmentRepository) ListAttachmentVersions(workspaceID int64, versionGroupID string) ([]model.Attachment, error) {
+	rows, err := r.db.Query(`SELECT `+attachmentColumns+` FROM attachments
+		WHERE workspace_id=$1 AND version_group_id=$2
+		ORDER BY version,id`, workspaceID, versionGroupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Attachment{}
+	for rows.Next() {
+		a, err := scanAttachment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 func (r *PostgresAttachmentRepository) ListPendingScans(limit int) ([]model.Attachment, error) {
 	rows, err := r.db.Query(`SELECT `+attachmentColumns+` FROM attachments
-		WHERE status IN ('uploaded','scanning') ORDER BY id LIMIT $1`, limit)
+		WHERE deleted_at IS NULL AND status IN ('uploaded','scanning') ORDER BY id LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Attachment{}
+	for rows.Next() {
+		a, e := scanAttachment(rows)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (r *PostgresAttachmentRepository) ListPendingPreviews(limit int) ([]model.Attachment, error) {
+	rows, err := r.db.Query(`SELECT `+attachmentColumns+` FROM attachments
+		WHERE deleted_at IS NULL AND status='clean' AND preview_status IN ('pending','processing')
+		ORDER BY id LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +182,15 @@ func (r *PostgresAttachmentRepository) FindCleanByHash(workspaceID int64, sha256
 		return model.Attachment{}, ErrAttachmentNotFound
 	}
 	return out, err
+}
+
+func (r *PostgresAttachmentRepository) CountObjectReferences(workspaceID int64, objectKey string, excludeAttachmentID int64) (int, error) {
+	var count int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM attachments
+		WHERE workspace_id=$1 AND object_key=$2 AND id<>$3 AND deleted_at IS NULL`,
+		workspaceID, objectKey, excludeAttachmentID,
+	).Scan(&count)
+	return count, err
 }
 
 func (r *PostgresAttachmentRepository) UsageBytes(workspaceID int64) (int64, error) {

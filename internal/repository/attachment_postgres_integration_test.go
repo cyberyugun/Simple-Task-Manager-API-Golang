@@ -72,6 +72,7 @@ func TestIntegrationPostgresAttachmentPlatform(t *testing.T) {
 		Provider: model.AttachmentProviderS3Compatible, Bucket: "bucket", ObjectKey: "workspaces/test/report.pdf",
 		FileName: "report.pdf", ContentType: "application/pdf", SizeBytes: 128, SHA256: hash,
 		Status: model.AttachmentStatusUploaded, Encryption: "AES256", Version: 1,
+		VersionGroupID: "integration-version-group", PreviewStatus: model.AttachmentPreviewStatusNone,
 		UploadedAt: &now, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil || item.ID == 0 {
@@ -87,11 +88,21 @@ func TestIntegrationPostgresAttachmentPlatform(t *testing.T) {
 	item.Status = model.AttachmentStatusClean
 	item.ScanEngine = "integration"
 	item.ScanMessage = "clean"
+	item.PreviewStatus = model.AttachmentPreviewStatusPending
 	item.ScannedAt = &scannedAt
 	item.UpdatedAt = scannedAt
 	item, err = attachments.UpdateAttachment(item)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	versions, err := attachments.ListAttachmentVersions(access.ID, "integration-version-group")
+	if err != nil || len(versions) != 1 || versions[0].ID != item.ID {
+		t.Fatalf("versions=%+v err=%v", versions, err)
+	}
+	pendingPreviews, err := attachments.ListPendingPreviews(10)
+	if err != nil || len(pendingPreviews) != 1 || pendingPreviews[0].ID != item.ID {
+		t.Fatalf("pending previews=%+v err=%v", pendingPreviews, err)
 	}
 
 	found, err := attachments.FindCleanByHash(access.ID, hash, 128)

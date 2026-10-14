@@ -1,5 +1,19 @@
 # API Changelog
 
+## 1.10.0 — Phase 36 post-roadmap attachment hardening
+
+Compatibility line: **v1**.
+
+Additive files and content-security hardening:
+
+- adds explicit attachment version chains with immutable version numbers and previous-version links
+- adds list/create-version endpoints while preserving the existing upload contract
+- adds owner/admin manual quarantine and reviewed-release endpoints with audit metadata
+- adds optional remote image/PDF thumbnail-preview generation with fail-closed HTTPS configuration and signed gateway requests
+- adds preview lifecycle metadata and short-lived preview URLs that remain blocked while the attachment is quarantined or infected
+- avoids deleting a shared deduplicated source object while another live attachment still references it
+- preserves all existing v1 paths, operation IDs, request requirements and response fields
+
 ## 1.9.0 — Phase 45
 
 Compatibility line: **v1**.

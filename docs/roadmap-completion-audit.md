@@ -16,7 +16,7 @@ The remaining work is not a missing Phase 45 feature. The material gaps are prod
 | Phase 33 Task Management 2.0 | Rich task lifecycle, collaboration, recurrence, dependencies, labels, custom-field foundation, audit/events | Complete at repository level |
 | Phase 34 Workflow Builder | Versioned DAG, approvals, delay/branch/parallel/join, checkpoint/resume, retry/compensation and observability | Complete at repository level |
 | Phase 35 Notifications | In-app/email abstraction, preferences, quiet hours, digest, retries/DLQ and reminders | Complete at repository level |
-| Phase 36 Files & Content Security | Direct upload contract, validation, scan states, quotas, governance, native scanner/storage adapters and live-provider contract harness | Repository hardening complete; provider-environment evidence remains deployment-specific |
+| Phase 36 Files & Content Security | Direct upload contract, validation, scan states, quotas, governance, attachment version chains, reviewed quarantine release, preview pipeline, native scanner/storage adapters and live-provider contract harness | Repository hardening complete; provider-environment evidence remains deployment-specific |
 | Phase 37 Search & Analytics | PostgreSQL FTS, saved views, dashboards, exports, scheduled reports, configurable field/recency ranking and bounded symmetric synonym expansion | Complete at repository level |
 | Phase 38 Connector OAuth & Secret Governance | OAuth PKCE, refresh, rotation, envelope encryption, health, audit and native Vault/AWS/Azure/GCP secret backends | Repository hardening complete; live provider validation remains deployment-specific |
 | Phase 39 Event Fabric | Schema registry, compatibility, routing, durable subscriptions, replay/DLQ and outbox adapter | Complete at repository level; external buses are optional |
@@ -30,6 +30,8 @@ The remaining work is not a missing Phase 45 feature. The material gaps are prod
 ## Post-roadmap product hardening
 
 Phase 37's roadmap recommendation for search synonyms and ranking controls is now implemented without changing the v1 API. Search relevance is deployment-configurable, synonym expansion is bounded and symmetric, PostgreSQL full-text search remains the primary matcher, and the in-memory implementation follows the same relevance model for test/runtime parity.
+
+Phase 36's remaining product recommendations are also closed at repository level: attachment version chains are persisted with previous-version links, owner/admin quarantine release is audited and blocked for infected content, and an optional signed remote preview gateway supports image/PDF thumbnail generation without pulling raw object bytes into the core API process.
 
 ## Confirmed production-hardening gaps
 

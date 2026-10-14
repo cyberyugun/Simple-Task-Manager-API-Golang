@@ -273,6 +273,10 @@ func main() {
 		ScannerURL: os.Getenv("ATTACHMENT_SCANNER_URL"), ScannerBearerToken: os.Getenv("ATTACHMENT_SCANNER_BEARER_TOKEN"),
 		ScannerSigningSecret: os.Getenv("ATTACHMENT_SCANNER_SIGNING_SECRET"),
 		ScannerRequired:      os.Getenv("ATTACHMENT_SCANNER_REQUIRED") == "true",
+		PreviewURL:           os.Getenv("ATTACHMENT_PREVIEW_URL"),
+		PreviewBearerToken:   os.Getenv("ATTACHMENT_PREVIEW_BEARER_TOKEN"),
+		PreviewSigningSecret: os.Getenv("ATTACHMENT_PREVIEW_SIGNING_SECRET"),
+		PreviewRequired:      os.Getenv("ATTACHMENT_PREVIEW_REQUIRED") == "true",
 	}
 	if attachmentConfig.SigningSecret == "" {
 		attachmentConfig.SigningSecret = cfg.JWTSecret
@@ -287,7 +291,13 @@ func main() {
 		logger.Error("attachment_scanner_configuration_failed", "error", err)
 		os.Exit(1)
 	}
+	attachmentPreviewer, err := service.NewAttachmentPreviewer(attachmentConfig)
+	if err != nil {
+		logger.Error("attachment_preview_configuration_failed", "error", err)
+		os.Exit(1)
+	}
 	attachmentService := service.NewAttachmentService(attachmentRepo, taskRepo, taskCollaborationRepo, workspaceRepo, attachmentStore, attachmentScanner, attachmentConfig)
+	attachmentService.SetPreviewer(attachmentPreviewer)
 	searchRelevance, err := service.NewSearchRelevanceOptionsFromEnv()
 	if err != nil {
 		logger.Error("search_relevance_configuration_failed", "error", err)
@@ -712,8 +722,12 @@ func main() {
 	mux.Handle("/api/attachments", protectedWorkspace(attachmentHandler.Attachments))
 	mux.Handle("/api/attachments/usage", protectedWorkspace(attachmentHandler.Usage))
 	mux.Handle("/api/attachments/{attachment_id}", protectedWorkspace(attachmentHandler.AttachmentByID))
+	mux.Handle("/api/attachments/{attachment_id}/versions", protectedWorkspaceIdempotent(attachmentHandler.Versions))
 	mux.Handle("/api/attachments/{attachment_id}/complete", protectedWorkspaceIdempotent(attachmentHandler.Complete))
 	mux.Handle("/api/attachments/{attachment_id}/download", protectedWorkspace(attachmentHandler.Download))
+	mux.Handle("/api/attachments/{attachment_id}/preview", protectedWorkspace(attachmentHandler.Preview))
+	mux.Handle("/api/attachments/{attachment_id}/quarantine", protectedWorkspace(attachmentHandler.Quarantine))
+	mux.Handle("/api/attachments/{attachment_id}/quarantine/release", protectedWorkspace(attachmentHandler.ReleaseQuarantine))
 	mux.Handle("/api/attachments/{attachment_id}/governance", protectedWorkspace(attachmentHandler.Governance))
 
 	mux.Handle("/api/tasks", protectedWorkspaceIdempotent(taskHandler.Tasks))

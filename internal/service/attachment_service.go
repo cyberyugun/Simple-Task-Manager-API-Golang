@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -21,6 +22,7 @@ var (
 	ErrAttachmentQuotaExceeded    = errors.New("attachment quota exceeded")
 	ErrAttachmentNotReady         = errors.New("attachment is not ready")
 	ErrAttachmentBlocked          = errors.New("attachment is blocked")
+	ErrAttachmentPreviewNotReady  = errors.New("attachment preview is not ready")
 	ErrAttachmentGovernanceDenied = errors.New("attachment governance action is forbidden")
 )
 
@@ -41,6 +43,11 @@ type AttachmentConfig struct {
 	ScannerSigningSecret string
 	ScannerTimeout       time.Duration
 	ScannerRequired      bool
+	PreviewURL           string
+	PreviewBearerToken   string
+	PreviewSigningSecret string
+	PreviewTimeout       time.Duration
+	PreviewRequired      bool
 }
 
 type ObjectStore interface {
@@ -124,6 +131,7 @@ type AttachmentService struct {
 	workspaces repository.WorkspaceRepository
 	store      ObjectStore
 	scanner    AttachmentScanner
+	previewer  AttachmentPreviewer
 	cfg        AttachmentConfig
 }
 
@@ -151,15 +159,77 @@ func NewAttachmentService(
 	if scanner == nil {
 		scanner = NoopAttachmentScanner{}
 	}
-	return &AttachmentService{repo: repo, tasks: tasks, collab: collab, workspaces: workspaces, store: store, scanner: scanner, cfg: cfg}
+	return &AttachmentService{
+		repo: repo, tasks: tasks, collab: collab, workspaces: workspaces,
+		store: store, scanner: scanner, previewer: NoopAttachmentPreviewer{}, cfg: cfg,
+	}
+}
+
+func (s *AttachmentService) SetPreviewer(previewer AttachmentPreviewer) {
+	if previewer == nil {
+		previewer = NoopAttachmentPreviewer{}
+	}
+	s.previewer = previewer
 }
 
 func (s *AttachmentService) CreateUpload(actorUserID int64, access model.WorkspaceAccess, req model.AttachmentUploadRequest) (model.AttachmentUploadSession, error) {
+	groupID, err := newAttachmentVersionGroupID()
+	if err != nil {
+		return model.AttachmentUploadSession{}, err
+	}
+	return s.createUpload(actorUserID, access, req, groupID, 1, nil)
+}
+
+func (s *AttachmentService) CreateVersionUpload(actorUserID int64, access model.WorkspaceAccess, attachmentID int64, req model.AttachmentVersionUploadRequest) (model.AttachmentUploadSession, error) {
+	current, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return model.AttachmentUploadSession{}, err
+	}
+	if current.Status == model.AttachmentStatusDeleted || current.DeletedAt != nil {
+		return model.AttachmentUploadSession{}, ErrInvalidAttachment
+	}
+	if current.UploadedByUserID != actorUserID && access.Role == model.WorkspaceRoleMember {
+		return model.AttachmentUploadSession{}, ErrAttachmentGovernanceDenied
+	}
+	groupID := strings.TrimSpace(current.VersionGroupID)
+	if groupID == "" {
+		groupID, err = newAttachmentVersionGroupID()
+		if err != nil {
+			return model.AttachmentUploadSession{}, err
+		}
+		current.VersionGroupID = groupID
+		if current.Version <= 0 {
+			current.Version = 1
+		}
+		current.UpdatedAt = time.Now().UTC()
+		if _, err := s.repo.UpdateAttachment(current); err != nil {
+			return model.AttachmentUploadSession{}, err
+		}
+	}
+	versions, err := s.repo.ListAttachmentVersions(access.ID, groupID)
+	if err != nil {
+		return model.AttachmentUploadSession{}, err
+	}
+	nextVersion := current.Version + 1
+	for _, version := range versions {
+		if version.Version >= nextVersion {
+			nextVersion = version.Version + 1
+		}
+	}
+	previousID := current.ID
+	return s.createUpload(actorUserID, access, model.AttachmentUploadRequest{
+		TaskID: current.TaskID, CommentID: current.CommentID, FileName: req.FileName,
+		ContentType: req.ContentType, SizeBytes: req.SizeBytes, SHA256: req.SHA256,
+	}, groupID, nextVersion, &previousID)
+}
+
+func (s *AttachmentService) createUpload(actorUserID int64, access model.WorkspaceAccess, req model.AttachmentUploadRequest, versionGroupID string, version int, previousAttachmentID *int64) (model.AttachmentUploadSession, error) {
 	fileName := strings.TrimSpace(req.FileName)
 	contentType := strings.ToLower(strings.TrimSpace(req.ContentType))
 	hash := strings.ToLower(strings.TrimSpace(req.SHA256))
 	if req.TaskID == nil || *req.TaskID <= 0 || fileName == "" || len(fileName) > 255 ||
-		req.SizeBytes <= 0 || req.SizeBytes > s.cfg.MaxFileBytes || !validSHA256(hash) || !allowedAttachmentMIME(contentType) {
+		req.SizeBytes <= 0 || req.SizeBytes > s.cfg.MaxFileBytes || !validSHA256(hash) || !allowedAttachmentMIME(contentType) ||
+		strings.TrimSpace(versionGroupID) == "" || version <= 0 {
 		return model.AttachmentUploadSession{}, ErrInvalidAttachment
 	}
 	if _, err := s.tasks.FindByID(access.ID, *req.TaskID); err != nil {
@@ -200,7 +270,28 @@ func (s *AttachmentService) CreateUpload(actorUserID int64, access model.Workspa
 			item.CommentID = req.CommentID
 			item.UploadedByUserID = actorUserID
 			item.FileName = fileName
-			item.Version++
+			item.ContentType = contentType
+			item.Version = version
+			item.VersionGroupID = versionGroupID
+			item.PreviousAttachmentID = previousAttachmentID
+			item.LegalHold = false
+			item.RetainUntil = nil
+			item.QuarantineReason = ""
+			item.ReleasedByUserID = nil
+			item.ReleasedAt = nil
+			item.ReleaseNote = ""
+			item.PreviewObjectKey = ""
+			item.PreviewContentType = ""
+			item.PreviewWidth = 0
+			item.PreviewHeight = 0
+			item.PreviewEngine = ""
+			item.PreviewMessage = ""
+			item.PreviewCreatedAt = nil
+			item.PreviewStatus = model.AttachmentPreviewStatusNone
+			if s.previewer.Enabled() && previewableAttachmentMIME(contentType) {
+				item.PreviewStatus = model.AttachmentPreviewStatusPending
+			}
+			item.DeletedAt = nil
 			item.CreatedAt = now
 			item.UpdatedAt = now
 			item.UploadedAt = &now
@@ -209,7 +300,9 @@ func (s *AttachmentService) CreateUpload(actorUserID int64, access model.Workspa
 			if err != nil {
 				return model.AttachmentUploadSession{}, err
 			}
-			s.audit(actorUserID, access.ID, "attachment.deduplicated", item.ID, map[string]any{"source_attachment_id": existing.ID})
+			s.audit(actorUserID, access.ID, "attachment.deduplicated", item.ID, map[string]any{
+				"source_attachment_id": existing.ID, "version": version, "version_group_id": versionGroupID,
+			})
 			return model.AttachmentUploadSession{Attachment: item, Method: "DEDUPLICATED", ExpiresAt: now}, nil
 		}
 	}
@@ -218,8 +311,9 @@ func (s *AttachmentService) CreateUpload(actorUserID int64, access model.Workspa
 		WorkspaceID: access.ID, TaskID: req.TaskID, CommentID: req.CommentID, UploadedByUserID: actorUserID,
 		Provider: s.cfg.Provider, Bucket: s.cfg.Bucket, ObjectKey: objectKey, FileName: fileName,
 		ContentType: contentType, SizeBytes: req.SizeBytes, SHA256: hash, Status: model.AttachmentStatusPending,
-		Encryption: s.cfg.Encryption, EncryptionKeyID: s.cfg.EncryptionKeyID, Version: 1,
-		CreatedAt: now, UpdatedAt: now,
+		Encryption: s.cfg.Encryption, EncryptionKeyID: s.cfg.EncryptionKeyID, Version: version,
+		VersionGroupID: versionGroupID, PreviousAttachmentID: previousAttachmentID,
+		PreviewStatus: model.AttachmentPreviewStatusNone, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		return model.AttachmentUploadSession{}, err
@@ -229,7 +323,9 @@ func (s *AttachmentService) CreateUpload(actorUserID int64, access model.Workspa
 	if err != nil {
 		return model.AttachmentUploadSession{}, err
 	}
-	s.audit(actorUserID, access.ID, "attachment.upload_requested", item.ID, map[string]any{"size_bytes": req.SizeBytes, "content_type": contentType})
+	s.audit(actorUserID, access.ID, "attachment.upload_requested", item.ID, map[string]any{
+		"size_bytes": req.SizeBytes, "content_type": contentType, "version": version, "version_group_id": versionGroupID,
+	})
 	return model.AttachmentUploadSession{Attachment: item, UploadURL: uploadURL, Method: "PUT", Headers: headers, ExpiresAt: expires}, nil
 }
 
@@ -262,6 +358,18 @@ func (s *AttachmentService) List(access model.WorkspaceAccess, taskID, commentID
 	return s.repo.ListAttachments(access.ID, taskID, commentID)
 }
 
+func (s *AttachmentService) Versions(access model.WorkspaceAccess, attachmentID int64) ([]model.Attachment, error) {
+	item, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return nil, err
+	}
+	groupID := strings.TrimSpace(item.VersionGroupID)
+	if groupID == "" {
+		return []model.Attachment{item}, nil
+	}
+	return s.repo.ListAttachmentVersions(access.ID, groupID)
+}
+
 func (s *AttachmentService) Download(actorUserID int64, access model.WorkspaceAccess, attachmentID int64) (model.AttachmentDownload, error) {
 	item, err := s.repo.GetAttachment(access.ID, attachmentID)
 	if err != nil {
@@ -282,6 +390,29 @@ func (s *AttachmentService) Download(actorUserID int64, access model.WorkspaceAc
 	return model.AttachmentDownload{Attachment: item, DownloadURL: u, ExpiresAt: expires}, nil
 }
 
+func (s *AttachmentService) Preview(actorUserID int64, access model.WorkspaceAccess, attachmentID int64) (model.AttachmentPreviewDownload, error) {
+	item, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return model.AttachmentPreviewDownload{}, err
+	}
+	if item.Status != model.AttachmentStatusClean {
+		if item.Status == model.AttachmentStatusInfected || item.Status == model.AttachmentStatusQuarantine {
+			return model.AttachmentPreviewDownload{}, ErrAttachmentBlocked
+		}
+		return model.AttachmentPreviewDownload{}, ErrAttachmentNotReady
+	}
+	if item.PreviewStatus != model.AttachmentPreviewStatusReady || strings.TrimSpace(item.PreviewObjectKey) == "" {
+		return model.AttachmentPreviewDownload{}, ErrAttachmentPreviewNotReady
+	}
+	expires := time.Now().UTC().Add(s.cfg.PresignTTL)
+	u, err := s.store.PresignDownload(item.PreviewObjectKey, expires)
+	if err != nil {
+		return model.AttachmentPreviewDownload{}, err
+	}
+	s.audit(actorUserID, access.ID, "attachment.preview_requested", item.ID, nil)
+	return model.AttachmentPreviewDownload{Attachment: item, PreviewURL: u, ExpiresAt: expires}, nil
+}
+
 func (s *AttachmentService) Delete(actorUserID int64, access model.WorkspaceAccess, attachmentID int64) (model.Attachment, error) {
 	item, err := s.repo.GetAttachment(access.ID, attachmentID)
 	if err != nil {
@@ -293,7 +424,7 @@ func (s *AttachmentService) Delete(actorUserID int64, access model.WorkspaceAcce
 	if item.UploadedByUserID != actorUserID && access.Role == model.WorkspaceRoleMember {
 		return model.Attachment{}, ErrAttachmentGovernanceDenied
 	}
-	if err := s.store.Delete(context.Background(), item.ObjectKey); err != nil {
+	if err := s.deleteAttachmentObjects(item); err != nil {
 		return model.Attachment{}, err
 	}
 	now := time.Now().UTC()
@@ -323,6 +454,70 @@ func (s *AttachmentService) Governance(actorUserID int64, access model.Workspace
 	updated, err := s.repo.UpdateAttachment(item)
 	if err == nil {
 		s.audit(actorUserID, access.ID, "attachment.governance_updated", item.ID, map[string]any{"legal_hold": item.LegalHold, "retain_until": item.RetainUntil})
+	}
+	return updated, err
+}
+
+func (s *AttachmentService) Quarantine(actorUserID int64, access model.WorkspaceAccess, attachmentID int64, req model.AttachmentQuarantineRequest) (model.Attachment, error) {
+	if !attachmentAdmin(access) {
+		return model.Attachment{}, ErrAttachmentGovernanceDenied
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" || len(reason) > 1000 {
+		return model.Attachment{}, ErrInvalidAttachment
+	}
+	item, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return model.Attachment{}, err
+	}
+	if item.DeletedAt != nil ||
+		(item.Status != model.AttachmentStatusClean && item.Status != model.AttachmentStatusQuarantine) {
+		return model.Attachment{}, ErrInvalidAttachment
+	}
+	now := time.Now().UTC()
+	item.Status = model.AttachmentStatusQuarantine
+	item.QuarantineReason = reason
+	item.ReleasedByUserID = nil
+	item.ReleasedAt = nil
+	item.ReleaseNote = ""
+	item.UpdatedAt = now
+	updated, err := s.repo.UpdateAttachment(item)
+	if err == nil {
+		s.audit(actorUserID, access.ID, "attachment.quarantined", item.ID, map[string]any{"reason": reason})
+	}
+	return updated, err
+}
+
+func (s *AttachmentService) ReleaseQuarantine(actorUserID int64, access model.WorkspaceAccess, attachmentID int64, req model.AttachmentReleaseRequest) (model.Attachment, error) {
+	if !attachmentAdmin(access) {
+		return model.Attachment{}, ErrAttachmentGovernanceDenied
+	}
+	note := strings.TrimSpace(req.Note)
+	if note == "" || len(note) > 2000 {
+		return model.Attachment{}, ErrInvalidAttachment
+	}
+	item, err := s.repo.GetAttachment(access.ID, attachmentID)
+	if err != nil {
+		return model.Attachment{}, err
+	}
+	if item.Status != model.AttachmentStatusQuarantine {
+		return model.Attachment{}, ErrInvalidAttachment
+	}
+	now := time.Now().UTC()
+	item.Status = model.AttachmentStatusClean
+	item.ReleasedByUserID = &actorUserID
+	item.ReleasedAt = &now
+	item.ReleaseNote = note
+	if s.previewer.Enabled() && previewableAttachmentMIME(item.ContentType) && item.PreviewStatus != model.AttachmentPreviewStatusReady {
+		item.PreviewStatus = model.AttachmentPreviewStatusPending
+		item.PreviewMessage = ""
+	}
+	item.UpdatedAt = now
+	updated, err := s.repo.UpdateAttachment(item)
+	if err == nil {
+		s.audit(actorUserID, access.ID, "attachment.quarantine_released", item.ID, map[string]any{
+			"quarantine_reason": item.QuarantineReason, "release_note": note,
+		})
 	}
 	return updated, err
 }
@@ -357,10 +552,17 @@ func (s *AttachmentService) ProcessPendingScans(limit int) ([]model.Attachment, 
 		if scanErr != nil {
 			item.Status = model.AttachmentStatusQuarantine
 			item.ScanMessage = strings.TrimSpace(result.Message + " " + scanErr.Error())
+			item.QuarantineReason = "automatic quarantine after scanner failure"
 		} else if result.Clean {
 			item.Status = model.AttachmentStatusClean
+			item.QuarantineReason = ""
+			if s.previewer.Enabled() && previewableAttachmentMIME(item.ContentType) && item.PreviewStatus != model.AttachmentPreviewStatusReady {
+				item.PreviewStatus = model.AttachmentPreviewStatusPending
+				item.PreviewMessage = ""
+			}
 		} else {
 			item.Status = model.AttachmentStatusInfected
+			item.QuarantineReason = "malware scanner reported infected content"
 		}
 		item.UpdatedAt = now
 		item, err = s.repo.UpdateAttachment(item)
@@ -368,6 +570,71 @@ func (s *AttachmentService) ProcessPendingScans(limit int) ([]model.Attachment, 
 			return nil, err
 		}
 		s.audit(0, item.WorkspaceID, "attachment.scan_completed", item.ID, map[string]any{"status": item.Status, "engine": item.ScanEngine})
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *AttachmentService) ProcessPendingPreviews(limit int) ([]model.Attachment, error) {
+	if !s.previewer.Enabled() {
+		return []model.Attachment{}, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	items, err := s.repo.ListPendingPreviews(limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Attachment, 0, len(items))
+	for _, item := range items {
+		if !previewableAttachmentMIME(item.ContentType) {
+			item.PreviewStatus = model.AttachmentPreviewStatusNone
+			item.PreviewMessage = "preview is not supported for this content type"
+			item.UpdatedAt = time.Now().UTC()
+			item, err = s.repo.UpdateAttachment(item)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, item)
+			continue
+		}
+		item.PreviewStatus = model.AttachmentPreviewStatusProcessing
+		item.UpdatedAt = time.Now().UTC()
+		item, err = s.repo.UpdateAttachment(item)
+		if err != nil {
+			return nil, err
+		}
+		previewObjectKey := fmt.Sprintf("workspaces/%d/previews/%d/v%d/preview", item.WorkspaceID, item.ID, item.Version)
+		result, previewErr := s.previewer.Generate(context.Background(), item, previewObjectKey)
+		now := time.Now().UTC()
+		if previewErr != nil {
+			item.PreviewStatus = model.AttachmentPreviewStatusFailed
+			item.PreviewObjectKey = ""
+			item.PreviewContentType = ""
+			item.PreviewWidth = 0
+			item.PreviewHeight = 0
+			item.PreviewEngine = strings.TrimSpace(result.Engine)
+			item.PreviewMessage = previewErr.Error()
+			item.PreviewCreatedAt = nil
+		} else {
+			item.PreviewStatus = model.AttachmentPreviewStatusReady
+			item.PreviewObjectKey = result.ObjectKey
+			item.PreviewContentType = result.ContentType
+			item.PreviewWidth = result.Width
+			item.PreviewHeight = result.Height
+			item.PreviewEngine = result.Engine
+			item.PreviewMessage = result.Message
+			item.PreviewCreatedAt = &now
+		}
+		item.UpdatedAt = now
+		item, err = s.repo.UpdateAttachment(item)
+		if err != nil {
+			return nil, err
+		}
+		s.audit(0, item.WorkspaceID, "attachment.preview_processed", item.ID, map[string]any{
+			"preview_status": item.PreviewStatus, "engine": item.PreviewEngine,
+		})
 		out = append(out, item)
 	}
 	return out, nil
@@ -383,7 +650,7 @@ func (s *AttachmentService) ProcessRetention(limit int) ([]model.Attachment, err
 	}
 	out := make([]model.Attachment, 0, len(items))
 	for _, item := range items {
-		if err := s.store.Delete(context.Background(), item.ObjectKey); err != nil {
+		if err := s.deleteAttachmentObjects(item); err != nil {
 			continue
 		}
 		now := time.Now().UTC()
@@ -400,6 +667,22 @@ func (s *AttachmentService) ProcessRetention(limit int) ([]model.Attachment, err
 	return out, nil
 }
 
+func (s *AttachmentService) deleteAttachmentObjects(item model.Attachment) error {
+	if strings.TrimSpace(item.PreviewObjectKey) != "" {
+		if err := s.store.Delete(context.Background(), item.PreviewObjectKey); err != nil {
+			return err
+		}
+	}
+	references, err := s.repo.CountObjectReferences(item.WorkspaceID, item.ObjectKey, item.ID)
+	if err != nil {
+		return err
+	}
+	if references == 0 {
+		return s.store.Delete(context.Background(), item.ObjectKey)
+	}
+	return nil
+}
+
 func (s *AttachmentService) audit(actorUserID, workspaceID int64, action string, attachmentID int64, metadata map[string]any) {
 	workspace := workspaceID
 	var actor *int64
@@ -410,6 +693,27 @@ func (s *AttachmentService) audit(actorUserID, workspaceID int64, action string,
 		WorkspaceID: &workspace, ActorUserID: actor, Action: action, ResourceType: "attachment",
 		ResourceID: fmt.Sprint(attachmentID), Metadata: metadata, CreatedAt: time.Now().UTC(),
 	})
+}
+
+func newAttachmentVersionGroupID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return "av-" + hex.EncodeToString(raw[:]), nil
+}
+
+func attachmentAdmin(access model.WorkspaceAccess) bool {
+	return access.Role == model.WorkspaceRoleOwner || access.Role == model.WorkspaceRoleAdmin
+}
+
+func previewableAttachmentMIME(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf":
+		return true
+	default:
+		return false
+	}
 }
 
 func validSHA256(value string) bool {
