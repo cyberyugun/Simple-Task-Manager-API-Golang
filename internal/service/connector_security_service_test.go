@@ -145,7 +145,6 @@ func TestConnectorOAuthPKCERefreshRotationAndHealth(t *testing.T) {
 	}
 }
 
-
 func TestConnectorCredentialPolicyLeastPrivilegeAndAutomaticRotation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
