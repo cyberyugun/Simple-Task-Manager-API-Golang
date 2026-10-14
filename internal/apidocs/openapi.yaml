@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Simple Task Manager API
-  version: 1.11.0
+  version: 1.12.0
   description: |
     REST API for user authentication and per-user task management.
     Protected task endpoints require a Bearer JWT access token.
@@ -3768,6 +3768,55 @@ paths:
       responses:
         '200':
           description: Secret backend catalog
+  /api/organizations/{id}/integrations/credential-policy:
+    get:
+      tags: [Enterprise Integrations]
+      summary: Get organization connector credential rotation and scope governance policy
+      operationId: getConnectorCredentialPolicy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Connector credential governance policy
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags: [Enterprise Integrations]
+      summary: Configure automatic secret rotation and least-privilege OAuth scope enforcement
+      operationId: updateConnectorCredentialPolicy
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - rotation_enabled
+                - auto_rotate
+                - rotation_interval_days
+                - enforce_least_privilege_scopes
+              properties:
+                rotation_enabled:
+                  type: boolean
+                auto_rotate:
+                  type: boolean
+                  description: Automatically rewrite the stored credential when its rotation interval is due.
+                rotation_interval_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 3650
+                enforce_least_privilege_scopes:
+                  type: boolean
+                  description: Reject OAuth credentials that grant scopes beyond the configured requested scope set.
+      responses:
+        '200':
+          description: Connector credential governance policy updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/organizations/{id}/integrations/connections/{connection_id}/oauth/start:
     post:
       tags: [Enterprise Integrations]
@@ -3785,7 +3834,7 @@ paths:
   /api/organizations/{id}/integrations/connections/{connection_id}/oauth/callback:
     post:
       tags: [Enterprise Integrations]
-      summary: Complete OAuth code exchange and scope verification
+      summary: Complete OAuth code exchange with required-scope and optional least-privilege verification
       operationId: completeConnectorOAuth
       security:
         - bearerAuth: []
@@ -3797,7 +3846,7 @@ paths:
   /api/organizations/{id}/integrations/connections/{connection_id}/credential:
     get:
       tags: [Enterprise Integrations]
-      summary: Get connector credential metadata without secret material
+      summary: Get connector credential metadata and next rotation due time without secret material
       operationId: getConnectorCredentialMetadata
       security:
         - bearerAuth: []
@@ -3833,7 +3882,7 @@ paths:
   /api/organizations/{id}/integrations/connections/{connection_id}/test:
     post:
       tags: [Enterprise Integrations]
-      summary: Validate connector scopes and provider health
+      summary: Validate required scopes, least-privilege scope posture and provider health
       operationId: testConnectorConnection
       security:
         - bearerAuth: []
@@ -3843,7 +3892,7 @@ paths:
   /api/organizations/{id}/integrations/connections/{connection_id}/credential-audit:
     get:
       tags: [Enterprise Integrations]
-      summary: List credential access and lifecycle audit records
+      summary: List credential read, write, rotation, refresh and lifecycle audit records
       operationId: listConnectorCredentialAudit
       security:
         - bearerAuth: []
